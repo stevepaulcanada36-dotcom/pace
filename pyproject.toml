@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pacesense"
+version = "2.2.0"
+description = "Interactive case-based marathon prediction and study platform (after Muijlwijk et al., IUI '24)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = ["numpy>=1.24", "pandas>=2.0", "scipy>=1.10", "PyYAML>=6.0"]
+
+[project.optional-dependencies]
+# The Streamlit dashboard. 1.40 is the oldest Streamlit with every feature the pages use
+# (st.navigation, st.fragment(run_every=...), st.page_link, bordered containers).
+dashboard = ["streamlit>=1.40", "matplotlib>=3.7"]
+serve = ["gunicorn>=21"]
+local-stt = ["faster-whisper>=1.1", "av>=11,<19"]
+dev = ["pytest>=7", "matplotlib>=3.7"]
+
+[project.scripts]
+pacesense = "pacesense.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"pacesense.resources" = ["*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

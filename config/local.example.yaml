@@ -1,0 +1,4 @@
+# Copy this file to config/local.yaml and put your private key there.
+# config/local.yaml is ignored by git and must never be committed or shared.
+openrouter:
+  api_key: "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"

@@ -1,0 +1,25 @@
+# Central, non-secret PaceSense configuration.
+# Edit model IDs here instead of scattering them through Python files.
+openrouter:
+  base_url: "https://openrouter.ai/api/v1"
+  app_name: "PaceSense"
+  app_url: null
+
+models:
+  assistant:
+    model: "openai/gpt-4o-mini"
+    temperature: 0.2
+  transcribe:
+    model: "openai/whisper-1"
+    temperature: 0.0
+  extract:
+    model: "openai/gpt-4o-mini"
+    temperature: 0.0
+  refine:
+    model: "openai/gpt-4o-mini"
+    temperature: 0.3
+
+voice:
+  transcription_backend: "local"
+  local_whisper_model: "base"
+  language: null

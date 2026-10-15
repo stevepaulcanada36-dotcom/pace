@@ -1,0 +1,81 @@
+{
+  "_note": "Structure follows Muijlwijk et al. (2024), Sec. 4.2.1 and 4.2.3. Items with source 'paper' are quoted from the paper. Items with source 'adapted' are placeholders written for this implementation: the paper does not print them. Replace their text with the original translated items (trust: McKnight et al. 2002; computer self-efficacy: Marakas et al. 2007) before running a real study. Item ids and scale ids are what the analysis uses, so keep them.",
+  "scales": [
+    {
+      "id": "trust",
+      "title": "Your experience with the model",
+      "instruction": "Please indicate to what extent you agree with the following statements.",
+      "points": 7,
+      "anchors": ["Strongly disagree", "Strongly agree"],
+      "items": [
+        {"id": "comp1", "score": "perceived_competence", "source": "paper", "text": "The model performs its role of predicting marathon performances well."},
+        {"id": "comp2", "score": "perceived_competence", "source": "adapted", "text": "The model is competent in setting finish times and pacing strategies."},
+        {"id": "comp3", "score": "perceived_competence", "source": "adapted", "text": "The model is capable of predicting what a runner can achieve."},
+        {"id": "comp4", "score": "perceived_competence", "source": "adapted", "text": "Overall, the model is effective in predicting marathon performances."},
+        {"id": "dep1", "score": "willingness_to_depend", "source": "paper", "text": "I feel I can count on the model when I need a suitable finish time and pace strategy."},
+        {"id": "dep2", "score": "willingness_to_depend", "source": "adapted", "text": "When planning an important race, I would feel comfortable depending on the model."},
+        {"id": "dep3", "score": "willingness_to_depend", "source": "adapted", "text": "I can always rely on the model for setting a finish time and pace strategy."},
+        {"id": "dep4", "score": "willingness_to_depend", "source": "adapted", "text": "I would be willing to depend on the model when advising my runners."},
+        {"id": "adv1", "score": "willingness_to_depend", "source": "paper", "text": "If I had to set a suitable finish time and pace strategy, I would want to use the model again."},
+        {"id": "adv2", "score": "willingness_to_depend", "source": "adapted", "text": "I would feel comfortable acting on the advice the model gives."},
+        {"id": "adv3", "score": "willingness_to_depend", "source": "adapted", "text": "I would not hesitate to use the advice the model gives."},
+        {"id": "adv4", "score": "willingness_to_depend", "source": "adapted", "text": "I would follow the model's advice for my runners."}
+      ]
+    },
+    {
+      "id": "self_efficacy_finish",
+      "title": "Setting finish times",
+      "points": 7,
+      "anchors": ["Strongly disagree", "Strongly agree"],
+      "items": [
+        {"id": "sef1", "score": "se_finish", "source": "paper", "text": "I believe I am able to set a suitable finish time and pace strategy without the help of a model."}
+      ]
+    },
+    {
+      "id": "self_efficacy_input",
+      "title": "Adjusting the model",
+      "condition": "interactive",
+      "points": 7,
+      "anchors": ["Strongly disagree", "Strongly agree"],
+      "items": [
+        {"id": "sei1", "score": "se_input", "source": "paper", "text": "I believe I am able to determine which races are representative for a runner."},
+        {"id": "sei2", "score": "se_input", "source": "paper", "text": "I believe I am able to adjust the model such that it gives a meaningful prediction."}
+      ]
+    },
+    {
+      "id": "computer_self_efficacy",
+      "title": "Working with computers",
+      "instruction": "How confident are you that you could do the following?",
+      "points": 10,
+      "anchors": ["Not at all confident", "Totally confident"],
+      "items": [
+        {"id": "cse1", "score": "comp_eff", "source": "adapted", "text": "Learn to use a new software program without help from others."},
+        {"id": "cse2", "score": "comp_eff", "source": "adapted", "text": "Find out how to do something in a program by trying it myself."},
+        {"id": "cse3", "score": "comp_eff", "source": "adapted", "text": "Solve a problem when a program does not work as I expected."},
+        {"id": "cse4", "score": "comp_eff", "source": "adapted", "text": "Understand the main features of a new program quickly."},
+        {"id": "cse5", "score": "comp_eff", "source": "adapted", "text": "Use a program to analyse data, such as a spreadsheet."},
+        {"id": "cse6", "score": "comp_eff", "source": "adapted", "text": "Adjust the settings of a program to suit my needs."}
+      ]
+    },
+    {
+      "id": "model_experience",
+      "title": "Experience with models",
+      "points": 7,
+      "anchors": ["Strongly disagree", "Strongly agree"],
+      "items": [
+        {"id": "mex1", "score": "data_exp", "source": "paper", "text": "As running coach I often use (calculation) models."},
+        {"id": "mex2", "score": "data_exp", "source": "adapted", "text": "I regularly use tools or calculators to set target finish times."},
+        {"id": "mex3", "score": "data_exp", "source": "adapted", "text": "I am experienced in analysing my runners' data."}
+      ]
+    }
+  ],
+  "demographics": [
+    {"id": "age", "type": "number", "text": "What is your age?", "min": 15, "max": 100},
+    {"id": "gender", "type": "choice", "text": "What is your gender?", "options": ["Female", "Male", "Other", "Prefer not to say"]},
+    {"id": "education", "type": "choice", "text": "What is your highest completed education?", "options": ["High school", "Vocational", "Undergraduate", "Graduate"]},
+    {"id": "years_coach", "type": "number", "text": "How many years have you been a running coach?", "min": 0, "max": 80},
+    {"id": "years_run", "type": "number", "text": "How many years have you been running?", "min": 0, "max": 90},
+    {"id": "runners_coached", "type": "number", "text": "How many runners do you coach?", "min": 0, "max": 5000},
+    {"id": "marathons", "type": "number", "text": "In how many marathons have you participated?", "min": 0, "max": 1000}
+  ]
+}

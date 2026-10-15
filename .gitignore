@@ -1,0 +1,11 @@
+__pycache__/
+*.sqlite3*
+run/
+*.egg-info/
+dist/
+build/
+output/
+
+# Private local configuration; never commit API keys
+config/local.yaml
+.env
