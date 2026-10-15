@@ -1,0 +1,89 @@
+{
+  "command": "pacesense reproduce",
+  "environment": {
+    "git_commit": "16cfb6430975fdac008a19db5c1450707b447859",
+    "implementation": "CPython",
+    "machine": "x86_64",
+    "pacesense": "2.3.0",
+    "packages": {
+      "PyYAML": "6.0.3",
+      "faster-whisper": null,
+      "matplotlib": "3.11.2",
+      "numpy": "2.5.3",
+      "pandas": "3.0.5",
+      "scipy": "1.18.1",
+      "streamlit": null
+    },
+    "platform": "Linux-6.18.44-fc-v114-x86_64-with-glibc2.39",
+    "python": "3.13.16"
+  },
+  "inputs": {
+    "benchmark_sha256": "4199ce00410335a684e5899363441162acd7ec082a81bed7e2b20ffcdc3bbf7f",
+    "config_sha256": "120eeaa82cdd30be7f4e27b8245bcc68c7b41e0bdbfd4c634338202f414dc606",
+    "data_sha256": "933673202c078bb8163da358def9586a334bc10568079f4717322f1492854841",
+    "lexicon_sha256": "8027f0dfd5b3027c6b7ee615a33ac9ed20a925889dfd533859fbf63baf154841",
+    "questionnaire_sha256": "85fe7d344f9a303e38102e5da9e0b4bdc7e5362c3c7824f8dc259184aab072fa"
+  },
+  "manifest_version": 1,
+  "not_compared": {
+    "created_at": "2026-10-15T12:22:36-0400",
+    "note": "study.sqlite3 holds random session ids and clock times, so it is not hashed; its analysis (study_report.md) is.",
+    "seconds": 9.1
+  },
+  "outputs": {
+    "recency_fit.json": "dbb59cc2a5d03de6d9e16cf6a1a191ab645fd62c29126a756e7e7a9e2479a248",
+    "steer_benchmark.json": "d7f544c8b88544479ba2ae9ff192571ef1c88e70c538839f8bffee177c9879a0",
+    "study_report.md": "07aff71a4bc38891ad2e945507228eb072ae62229da3343f71d574ae5d1e2029",
+    "validation.json": "880f4c01e353f328e05969922afb8438478f70eda7f8f6237f4da68dec514641"
+  },
+  "parameters": {
+    "coaches": 71,
+    "data": null,
+    "n_runners": 8000,
+    "recency_n": 300,
+    "seed": 20240318,
+    "validate_n": 400
+  },
+  "summary": {
+    "benchmark": {
+      "dev": {
+        "accuracy": 1.0,
+        "cases": 18,
+        "correct": 18,
+        "race_precision": 1.0,
+        "race_recall": 1.0
+      },
+      "test": {
+        "accuracy": 0.5833,
+        "cases": 24,
+        "correct": 14,
+        "race_precision": 1.0,
+        "race_recall": 0.5
+      }
+    },
+    "recency": {
+      "best_half_life": 4.0,
+      "equal_weights_error_pct": 2.2674,
+      "errors_pct": {
+        "1.0": 2.3899,
+        "2.0": 2.2708,
+        "3.0": 2.2287,
+        "4.0": 2.2122,
+        "6.0": 2.2196,
+        "8.0": 2.2213,
+        "equal": 2.2674
+      },
+      "n": 300,
+      "seed": 20240318
+    },
+    "validation": {
+      "cases": 14206,
+      "mean_error_pct": 2.29251,
+      "median_error_pct": 1.99491,
+      "n": 400,
+      "p90_error_pct": 4.76436,
+      "paper_initial_model_error_pct": 3.14,
+      "range_coverage_pct": 80.75
+    }
+  }
+}
