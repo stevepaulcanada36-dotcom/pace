@@ -1,0 +1,112 @@
+# How PaceSense Live turns a coach's words into race-weight changes.
+#
+# Every phrase is matched case-insensitively on word boundaries; longer phrases win over shorter ones,
+# so "not representative" is read before "representative". The file is hashed into every
+# `pacesense reproduce` manifest: change it and the manifest shows that the interpretation rules changed.
+#
+# Effects and what they do to the weight of the race they refer to (weights run from 0 to 1, step 0.1):
+#   exclude      set to 0.0  ("ignore 2016")
+#   full         set to 1.0  ("2018 is exactly how she runs now")
+#   down_strong  -0.3        ("she was injured")
+#   down         -0.2        ("it was windy")
+#   up           +0.2        ("a good race")
+#   up_strong    +0.3        ("her best race")
+# A modifier just before a phrase scales it; a negation just before it flips it (at half strength).
+# `verb: true` marks phrases spoken before the race they refer to ("ignore 2016", "trust 2018 more").
+
+version: 1
+
+effects:
+  exclude: {set: 0.0}
+  full: {set: 1.0}
+  down_strong: {shift: -0.3}
+  down: {shift: -0.2}
+  up: {shift: 0.2}
+  up_strong: {shift: 0.3}
+
+phrases:
+  exclude:
+    verb: [ignore, disregard, "throw out", "leave out", exclude, drop, "forget about", "don't use", "do not use",
+           "get rid of", "take out", remove]
+    describe: ["doesn't count", "does not count", "shouldn't count", "should not count", "not representative at all",
+               "means nothing", "irrelevant", "a dnf", dnf, "did not finish", "didn't finish", "walked most of it",
+               "a fun run", "fun run", "a training run", "training run", "paced a friend", "was pacing",
+               "pacer for"]
+  full:
+    verb: ["give full weight to", "full weight on", "rely entirely on", "only trust", "only use"]
+    describe: ["exactly how she runs now", "exactly how he runs now", "exactly where she is now",
+               "exactly where he is now", "the benchmark", "her benchmark", "his benchmark"]
+  down_strong:
+    verb: [downweight, "down weight", "lower", "reduce", "count less", "trust less", "less weight on",
+           "less weight for", "weight down", "discount"]
+    describe: [injured, injury, "an injury", sick, ill, "the flu", flu, "covid", "hot day", "very hot", heat,
+               heatwave, "hit the wall", "hitting the wall", "blew up", "cramped", cramps, cramping,
+               "not representative", "unrepresentative", "a disaster", disaster, "a bad race", "bad race",
+               "terrible", "awful", "stomach problems", "stomach issues", "fell", "a fall", "off day",
+               "an off day", "overtrained", "undertrained", "barely trained", "no training", "jet lag",
+               "jetlagged", "pregnant", "postpartum", "coming back from", "comeback race", "after surgery"]
+  down:
+    verb: ["count a bit less", "trust a bit less"]
+    describe: [windy, wind, rain, rainy, "the rain", humid, humidity, cold, freezing, "a bit off", "not great",
+               "not her best", "not his best", "slow", slower, "struggled", "tired", "long ago", "a long time ago", "long time ago", "ages ago",
+               outdated, "old race", "a while ago", "years ago", "before she changed", "before he changed",
+               "started too fast", "went out too fast", "faded", "crowded", "bad pacing", "poor pacing",
+               "busy at work", "stressful", "stress"]
+  up:
+    verb: ["count more", "trust more", "more weight on", "more weight for", "weight up", "upweight",
+           "up weight", "raise", "increase", "boost", "focus on", "use more"]
+    describe: ["a good race", "good race", "solid", "strong", "fit", "in shape", "in good shape", "well trained",
+               "trained well", "well prepared", "typical", "normal race", "representative", "realistic",
+               "consistent", "even pacing", "paced well", "negative split", "good conditions", "cool day",
+               "recent", "current form", "how she runs now", "how he runs now"]
+  up_strong:
+    verb: ["count much more", "trust much more", "mostly use", "mostly trust", "rely on"]
+    describe: ["her best race", "his best race", "best race", "best ever", "personal best", "a pb", "pb",
+               "peak", "her peak", "his peak", "great race", "a great race", "perfect race", "perfect conditions",
+               "ideal conditions", "most representative", "very representative", "really representative",
+               "exactly her level", "exactly his level", "breakthrough"]
+
+modifiers:
+  soften: {factor: 0.5, words: ["a bit", "a little", "slightly", "somewhat", "kind of", "kinda", "sort of",
+                                 "maybe", "a tad", "partly", "little"]}
+  intensify: {factor: 1.5, words: [very, really, totally, completely, "a lot", much, extremely, way, hugely,
+                                    seriously, badly, massively]}
+negations: [not, "wasn't", "isn't", "wasnt", "isnt", never, "no", "didn't", "didnt", "don't", "dont", "doesn't",
+            "doesnt", "without", "hardly"]
+
+# Phrases that pick a group of races or a race by its position (newest = most recent).
+references:
+  most_recent: ["last race", "latest race", "most recent race", "most recent", "last marathon", "latest marathon",
+                "the last one", "her last", "his last", "newest race", "this year's race", "the recent one"]
+  previous: ["second last", "second to last", "second-to-last", "race before last", "previous race",
+             "the one before", "one before that", "before that"]
+  oldest: ["first race", "oldest race", "earliest race", "first marathon", "the first one", "oldest", "earliest",
+           "her first", "his first", "debut"]
+  recent_group: ["recent races", "recent ones", "last two races", "last two", "latest races", "newer races",
+                 "newest races", "recent marathons"]
+  older_group: ["older races", "old races", "earlier races", "older ones", "early races", "old ones",
+                "older marathons", "everything before", "the rest"]
+  all: ["all races", "all the races", "every race", "all of them", "all her races", "all his races", "everything"]
+  pronoun: ["that race", "that one", "that marathon", "this race", "this one", "it", "there", "she was",
+            "he was", "she had", "he had", "she ran"]
+
+# Whole-utterance commands.
+commands:
+  reset: ["reset", "start over", "equal weights", "back to equal", "default weights", "clear everything",
+          "clear the weights", "back to the model"]
+  undo: ["undo", "scratch that", "cancel that", "never mind", "go back", "revert"]
+  recency: ["trust recent races more", "recent races matter more", "recent races count more",
+            "more weight on recent", "weight recent races", "newer races count more", "focus on recent",
+            "recent form", "current form matters", "older races count less", "older races matter less",
+            "she has improved", "he has improved", "she's improved", "he's improved", "getting faster"]
+
+# Words that announce the coach's own estimate ("I think she can run 3:25"): used for the steering index.
+estimate_cues: ["i think", "i reckon", "my guess", "i'd say", "i would say", "i expect", "i believe",
+                "my estimate", "my target", "she can run", "he can run", "she could run", "he could run",
+                "she'll run", "he'll run", "aim for", "target is", "target of", "capable of", "can do"]
+
+# Recency profile used by the `recency` command: weight = 2 ** (-years_before_latest / half_life),
+# clipped to [floor, 1]. `pacesense reproduce` re-fits half_life on the data and reports it.
+recency:
+  half_life_years: 3.0
+  floor: 0.2

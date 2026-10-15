@@ -1,0 +1,65 @@
+# Benchmark for PaceSense Live's interpreter (src/pacesense/steer/intent.py).
+#
+# Each case is one thing a coach might say about this runner's four races. `expect` gives, per race year,
+# the direction the weight should move ("down", "up"), an exact value (0.0-1.0), or "same" (must not move).
+# Races not listed must not move. `command` and `estimate` check the whole-utterance commands and the coach's
+# own estimate. `context` is the race the conversation was already about (for "she was injured there").
+#
+# split: dev   - sentences used while writing the rules (the rules were tuned on these)
+# split: test  - written before the rules were run on them and never used to tune them.
+#                Report this split's score; failures here are kept, not fixed, so the number stays honest.
+# Score: `pacesense reproduce` and tests/test_steer.py run `pacesense.steer.benchmark.run()`.
+
+races:
+  - {event: Rotterdam, year: 2012}
+  - {event: Eindhoven, year: 2014}
+  - {event: Amsterdam, year: 2016}
+  - {event: Rotterdam, year: 2018}
+
+cases:
+  # ---------------------------------------------------------------- dev
+  - {split: dev, text: "2016 was a hot day and she was injured", expect: {2016: down}}
+  - {split: dev, text: "ignore 2016", expect: {2016: 0.0}}
+  - {split: dev, text: "Amsterdam was terrible. She had the flu.", expect: {2016: down}}
+  - {split: dev, text: "trust the recent races more", command: recency}
+  - {split: dev, text: "2018 was her best race, 2012 was a long time ago", expect: {2018: up, 2012: down}}
+  - {split: dev, text: "set 2014 to 0.3", expect: {2014: 0.3}}
+  - {split: dev, text: "I think she can run 3:25", estimate: "3:25:00"}
+  - {split: dev, text: "the last race was slightly windy", expect: {2018: down}}
+  - {split: dev, text: "2014 was fine, ignore 2016", expect: {2016: 0.0}}
+  - {split: dev, text: "twenty sixteen doesn't count", expect: {2016: 0.0}}
+  - {split: dev, text: "put Eindhoven at point eight", expect: {2014: 0.8}}
+  - {split: dev, text: "reset", command: reset}
+  - {split: dev, text: "scratch that", command: undo}
+  - {split: dev, text: "she was injured", context: 2016, expect: {2016: down}}
+  - {split: dev, text: "Rotterdam 2018 is exactly how she runs now, I reckon 3 hours 22", expect: {2018: 1.0},
+     estimate: "3:22:00"}
+  - {split: dev, text: "count 2012 a bit less", expect: {2012: down}}
+  - {split: dev, text: "she wasn't injured in 2014", expect: {2014: up}}
+  - {split: dev, text: "2015 was hot", expect: {}}
+
+  # ---------------------------------------------------------------- test (held out)
+  - {split: test, text: "the Amsterdam race went badly, she had stomach issues", expect: {2016: down}}
+  - {split: test, text: "Eindhoven was a solid, well paced race", expect: {2014: up}}
+  - {split: test, text: "leave out the first race", expect: {2012: 0.0}}
+  - {split: test, text: "her most recent marathon is the most representative", expect: {2018: up}}
+  - {split: test, text: "In 2016 she started too fast and faded", expect: {2016: down}}
+  - {split: test, text: "give 2018 full weight", expect: {2018: 1.0}}
+  - {split: test, text: "2012 and 2014 are old races", expect: {2012: down, 2014: down}}
+  - {split: test, text: "Rotterdam 2012 was a training run", expect: {2012: 0.0}}
+  - {split: test, text: "she ran 2016 with a broken toe", expect: {2016: down}}
+  - {split: test, text: "Amsterdam shows her real level", expect: {2016: up}}
+  - {split: test, text: "my guess is she can do 3:18 this time", estimate: "3:18:00"}
+  - {split: test, text: "go back to equal weights", command: reset}
+  - {split: test, text: "the race before last was in perfect conditions", expect: {2016: up}}
+  - {split: test, text: "lower 2014 a little", expect: {2014: down}}
+  - {split: test, text: "don't use the Eindhoven race", expect: {2014: 0.0}}
+  - {split: test, text: "2018 was a mess, it rained the whole way", expect: {2018: down}}
+  - {split: test, text: "she is much fitter now than in 2012", expect: {2012: down}}
+  - {split: test, text: "weight Rotterdam 2018 at 0.9", expect: {2018: 0.9}}
+  - {split: test, text: "never mind", command: undo}
+  - {split: test, text: "the oldest race doesn't matter anymore", expect: {2012: down}}
+  - {split: test, text: "2014 was her debut and she was nervous", expect: {2014: down}}
+  - {split: test, text: "nothing special about 2018", expect: {}}
+  - {split: test, text: "she was sick there", context: 2014, expect: {2014: down}}
+  - {split: test, text: "Rotterdam was great both times", expect: {2012: up, 2018: up}}
