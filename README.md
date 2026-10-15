@@ -20,6 +20,8 @@ Everything is Python: the model, the services, the analysis, and a **Streamlit d
 | **Race-day watch** (dashboard page) | A saved plan as a watch screen during the race: target pace, ahead or behind, next split, cue; live race simulation; pace band | PaceSense addition |
 | **Ask PaceSense** (dashboard page) | An AI assistant that analyses runners and plans by calling PaceSense's own functions, and checks and corrects runner details before they are added | PaceSense addition |
 | **Voice input** (several pages) | Speak instead of typing: transcribed, fields filled in, a refined version suggested for review | PaceSense addition |
+| **PaceSense Live** (`steer/`, `pacesense live`, Plan step 2) | *Proposal.* Talk instead of dragging: what the coach says moves the race sliders, continuously; each move is checked against the data, and a live steering index shows whose view the model is taking | Proposed extension (answers the paper's open question on steering) |
+| **Reproducibility** (`repro.py`, `pacesense reproduce`) | One command rebuilds every reported number and writes a manifest of input and output hashes; `--check` proves a re-run matches | PaceSense addition |
 | **AI models per task** (`llm/`, Settings, Model lab) | Chat, field filling and refining use per-task OpenRouter models; speech-to-text defaults to local Whisper and can optionally use OpenRouter | PaceSense addition |
 
 ## Quick start
@@ -44,6 +46,102 @@ pacesense predict  --data data/races.csv R00042 --weights 0.2,1.0
 pacesense simulate --data data/races.csv --coaches 71 --db study.sqlite3   # simulated coaches (testing only)
 pacesense analyze  --db study.sqlite3 --out report.md  # the paper's Section 5 analyses
 ```
+
+## PaceSense Live: talk to the sliders (proposal)
+
+```bash
+pacesense live --data data/races.csv        # opens http://127.0.0.1:8000/live
+```
+
+Press **Demo runner**, then the microphone, and talk the way a coach talks about a runner:
+
+> "2014 was a hot day and she was injured. I think she can run 3:29. Trust the recent races more."
+
+The sliders move as you speak. Every move shows **why** (the words it came from) and **what the data says**:
+
+| Tag | Meaning |
+|---|---|
+| ✅ data agrees | you lowered a race that was clearly slower than her others (or raised a faster one) |
+| 🧠 your knowledge | the times do not single this race out; the change rests on what you know (an injury does not show in a finish time) |
+| ⚠️ against the data | you lowered one of her faster races (or raised a slow one): the target gets slower |
+
+The right-hand panel shows the prediction, its likely range and the **steering index**: the paper's Model
+Adaptation, (model now − model at equal weights) / (your estimate − model at equal weights), live. At 1.0 the
+sliders have moved the model exactly onto your own estimate. "Scratch that" undoes the last thing you said.
+"Play demo script" runs a scripted conversation for presenting without a microphone.
+
+**Listening.** *Browser speech* (Chrome, Edge) listens continuously; those browsers send the audio to their own
+speech service. *Private: local Whisper* keeps audio on the computer: it detects pauses, cuts the speech into
+phrases and transcribes each with faster-whisper (`pip install -e ".[local-stt]"`). Typing works everywhere.
+On **Plan a race**, step 2 has the same as a box: type, or record a phrase.
+
+**How words become weights** (`src/pacesense/steer/`):
+
+```
+"2014 was a hot day and she was injured"
+   │ intent.py      race references ("2014", "Amsterdam", "the last race", "it") + cues from
+   │                resources/steer_lexicon.yaml ("hot day" −0.3, "injured" −0.3, "ignore" → 0, "best race" +0.3,
+   │                "a bit" ×0.5, "not" flips); descriptions attach to the race before them, commands
+   │                ("ignore 2016") to the race after; no race → the race talked about last; never guessed
+   ▼
+Amsterdam 2014 −0.6 ("hot day + injured")
+   │ session.py     PlanSession.set_weight(…) → same change log, plan check and saved plan as the sliders
+   │ evidence.py    robust leave-one-out z-score of the race vs her other races → ✅ / 🧠 / ⚠️;
+   │                influence of each race (seconds it pulls the prediction); steering index
+   ▼
+"Amsterdam 2014: 0.5 → 0.0. The data agrees: Amsterdam 2014 was 19 min slower than her other races."
+```
+
+The rules are deterministic, so a session can be replayed exactly from its transcript (`steer.replay`). With an
+OpenRouter key and *AI reads paraphrases* ticked, an AI model reads what the rules miss; it may only propose
+changes in a fixed JSON form, and code drops any proposal whose race does not exist or whose quoted reason was not
+actually said (`steer/llm_interpret.py`).
+
+**How well it understands** (`resources/steer_benchmark.yaml`, scored by `pacesense reproduce`): 18/18 on the
+sentences the rules were written with; **14/24 on held-out sentences** written before the rules saw them, with
+race precision 1.00 (it never moved a race the coach did not mean) and recall 0.50 (it misses paraphrases such as
+"she ran it with a broken toe"). The held-out failures are kept, not tuned away, so this number stays honest; the
+AI reader is the proposed fix, to be scored on the same set.
+
+API for other programs: `POST /api/steer/sessions`, `…/utterances`, `…/audio`, `…/manual`, `…/undo`,
+`GET …/transcript` (see `web/steer_api.py`). Live sessions are kept in memory and are never written to the study
+database: the research study stays exactly as the paper ran it.
+
+## Reproducibility
+
+```bash
+pacesense reproduce --out results                    # about 15 s; --quick for a smaller run
+pacesense reproduce --check results/manifest.json    # re-run in a temporary folder and compare
+```
+
+`reproduce` rebuilds every number PaceSense reports: the synthetic data (or your `--data`), the model's
+leave-best-out accuracy, the fitted "recent races" profile, the interpreter benchmark, and the simulated study
+with its Section 5 analysis. `results/manifest.json` records:
+
+- **inputs**: seed and parameters, SHA-256 of the data, `config/pacesense.yaml`, the lexicon, the benchmark and the
+  questionnaire;
+- **outputs**: SHA-256 of `validation.json`, `recency_fit.json`, `steer_benchmark.json`, `study_report.md`
+  (numbers rounded to 6 significant digits before hashing, so last-bit floating-point differences between machines
+  do not count; real changes do);
+- **environment**: Python, platform, package versions and the git commit (marked `-dirty` with uncommitted edits).
+
+`--check` prints `REPRODUCED` or lists what differs (and whether the environment changed), and exits 1 on a
+mismatch, so it can gate CI (`.github/workflows/ci.yml` runs the tests and two independent `reproduce` runs on
+Linux and Windows, Python 3.10 to 3.13).
+
+**One seed.** Everything random (synthetic data, validation samples, the recency fit, study assignment, simulated
+coaches) uses `reproducibility.seed` in `config/pacesense.yaml` unless `--seed` is given.
+
+**Freezing the environment.** `constraints-verified.txt` lists the numerical library versions the pipeline was
+last verified with (`pip install -e ".[dashboard]" -c constraints-verified.txt`). After a run you are happy with,
+freeze your own environment next to the manifest:
+
+```bash
+pip freeze --exclude-editable > requirements-lock.txt     # then: pip install -r requirements-lock.txt
+```
+
+or use the Docker image, which copies the config and pins the Python version. The study database
+(`study.sqlite3`) is not hashed: it holds random session ids and clock times by design; its analysis is.
 
 ## One central YAML configuration (recommended)
 
@@ -121,6 +219,10 @@ src/pacesense/
     pages/              one file per page: plan, watch, assistant, lab, runners, saved, record, study, results, howitworks, settings
   assistant/            Ask PaceSense: input checks, functions for the AI, the chat loop, offline helper
   llm/                  OpenRouter client, AI tasks and their models, forms voice can fill, AIService, evals
+  steer/                PaceSense Live: intent.py (words → weight changes), evidence.py (data checks, influence,
+                        steering index), recency.py, session.py (SteeringSession, undo, replay),
+                        llm_interpret.py (checked AI reader), benchmark.py
+  repro.py              `pacesense reproduce`: the pipeline, the manifest and --check
   planning.py           PlanSession: weights, strategies, pace edits, change log (no UI code)
   racewatch.py          race-day watch: km splits, status and cues, race simulation, pace band exports
   explain.py            every explanation and the list of functions
@@ -350,10 +452,12 @@ keep `pacesense serve` bound to localhost or place any public deployment behind 
 
 ```bash
 pip install -e ".[dev]"
-python -m unittest discover -s tests -t .     # 138 tests
+python -m unittest discover -s tests -t .     # 175 tests
 ```
 
-They cover the model, measures and statistics, the study procedure, planning sessions, the race-day watch,
+They cover PaceSense Live (interpreter, evidence statistics, sessions, replay, benchmark floors, the checked AI
+reader, the HTTP routes and the Plan-page box), `reproduce` (two runs give identical hashes; a changed seed is
+detected), the model, measures and statistics, the study procedure, planning sessions, the race-day watch,
 the assistant, the OpenRouter client, voice input and the Model lab (against `tests/fake_openrouter.py`, a
 stand-in for OpenRouter's API, so no key or network is needed), every chart, and every
 dashboard page. Pages are run against `tests/fake_streamlit.py`, a stand-in that takes

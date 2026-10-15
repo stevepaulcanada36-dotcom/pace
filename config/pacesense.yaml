@@ -23,3 +23,8 @@ voice:
   transcription_backend: "local"
   local_whisper_model: "base"
   language: null
+
+# One seed for everything random: synthetic data, validation samples, the recency fit, study assignment
+# and simulated coaches. `pacesense reproduce` records it in results/manifest.json.
+reproducibility:
+  seed: 20240318

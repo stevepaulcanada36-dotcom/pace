@@ -10,6 +10,7 @@ from .analysis import analyze_repository
 from .cbr import CaseBase, MarathonModel, validate_model
 from .data import load_csv, runners_to_frame, synthetic_runners
 from .domain import SEGMENT_LABELS, ValidationError, format_time, pace_per_km
+from .repro import configured_seed
 from .storage import Repository
 from .study import StudyService
 
@@ -35,7 +36,7 @@ def cmd_generate(args) -> int:
 def cmd_validate(args) -> int:
     runners, _ = _runners(args)
     model = MarathonModel(CaseBase(runners))
-    v = validate_model(model, runners, n=args.n)
+    v = validate_model(model, runners, n=args.n, seed=args.seed)
     print(f"Case base: {len(model.case_base):,} cases")
     print(f"Leave-best-out validation on {v.n} runners (equal weights):")
     print(f"  mean error {v.mean_error_pct:.2f}%   median {v.median_error_pct:.2f}%   90th percentile {v.p90_error_pct:.2f}%")
@@ -164,6 +165,18 @@ def cmd_live(args) -> int:
     return 0
 
 
+def cmd_reproduce(args) -> int:
+    from .repro import Params, check, run_pipeline
+    if args.check:
+        return check(Path(args.check))
+    seed = args.seed if args.seed is not None else configured_seed()
+    p = Params.quick(seed) if args.quick else Params(seed)
+    p.data = args.data
+    run_pipeline(Path(args.out), p)
+    print(f"Check it later (or on another computer) with:  pacesense reproduce --check {Path(args.out) / 'manifest.json'}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="pacesense", description=__doc__)
     p.add_argument("-v", "--verbose", action="store_true")
@@ -172,10 +185,11 @@ def build_parser() -> argparse.ArgumentParser:
     def data_opts(sp):
         sp.add_argument("--data", help="race CSV (default: synthetic demo data)")
         sp.add_argument("--synthetic-n", type=int, default=8000)
-        sp.add_argument("--seed", type=int, default=20240318)
+        sp.add_argument("--seed", type=int, default=seed, help=f"random seed (default {seed}, from config)")
 
+    seed = configured_seed()
     g = sub.add_parser("generate-data", help="write a synthetic race CSV")
-    g.add_argument("--n", type=int, default=8000); g.add_argument("--seed", type=int, default=20240318)
+    g.add_argument("--n", type=int, default=8000); g.add_argument("--seed", type=int, default=seed)
     g.add_argument("--out", default="races.csv"); g.set_defaults(fn=cmd_generate)
 
     v = sub.add_parser("validate", help="leave-best-out accuracy of the model"); data_opts(v)
@@ -213,6 +227,13 @@ def build_parser() -> argparse.ArgumentParser:
     lv.add_argument("--db", default="live.sqlite3"); lv.add_argument("--host", default="127.0.0.1")
     lv.add_argument("--port", type=int, default=8000); lv.add_argument("--no-browser", action="store_true")
     lv.set_defaults(fn=cmd_live)
+
+    rp = sub.add_parser("reproduce", help="rebuild every reported number and write a manifest (or --check one)")
+    rp.add_argument("--out", default="results"); rp.add_argument("--data", help="race CSV (default: synthetic)")
+    rp.add_argument("--seed", type=int, default=None, help="default: reproducibility.seed in config/pacesense.yaml")
+    rp.add_argument("--quick", action="store_true", help="smaller run (about 15 s) for CI and quick checks")
+    rp.add_argument("--check", metavar="MANIFEST", help="re-run and compare with an existing manifest.json")
+    rp.set_defaults(fn=cmd_reproduce)
     return p
 
 

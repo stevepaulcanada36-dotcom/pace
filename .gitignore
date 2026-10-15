@@ -9,3 +9,7 @@ output/
 # Private local configuration; never commit API keys
 config/local.yaml
 .env
+
+# Outputs of `pacesense reproduce` (keep results/manifest.json if you want to publish it)
+results/
+live.sqlite3*

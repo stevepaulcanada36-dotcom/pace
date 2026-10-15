@@ -1,15 +1,11 @@
-# Everything needed to run the dashboard. Same as: pip install -e ".[dashboard]"
+# Everything needed to run the dashboard and PaceSense Live. Same as: pip install -e ".[dashboard]"
+# For an exact, frozen environment, see "Reproducibility" in README.md (requirements-lock.txt).
 numpy>=1.24
 pandas>=2.0
 scipy>=1.10
+PyYAML>=6.0
 matplotlib>=3.7
 streamlit>=1.40
 # The AI features call OpenRouter with the Python standard library: no extra package is needed.
-
-# Optional local, no-per-request-cost speech-to-text: pip install -e ".[local-stt]"
-# faster-whisper>=1.1
-# PyAV 19 removed metadata_errors, which faster-whisper 1.2.1 still passes.
-# Keep PyAV below 19 until faster-whisper ships the compatibility fix.
-av>=11,<19
-
-PyYAML>=6.0
+# Optional local speech-to-text (no per-recording cost, audio stays on your computer):
+#   pip install -e ".[local-stt]"     (installs faster-whisper and a compatible PyAV, av<19)

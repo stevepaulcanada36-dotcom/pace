@@ -106,7 +106,8 @@ estimate_cues: ["i think", "i reckon", "my guess", "i'd say", "i would say", "i 
                 "she'll run", "he'll run", "aim for", "target is", "target of", "capable of", "can do"]
 
 # Recency profile used by the `recency` command: weight = 2 ** (-years_before_latest / half_life),
-# clipped to [floor, 1]. `pacesense reproduce` re-fits half_life on the data and reports it.
+# clipped to [floor, 1]. `pacesense reproduce` re-fits half_life on the data and reports it in
+# results/recency_fit.json. 4.0 is the fit on the synthetic demo data (seed 20240318); re-fit on real data.
 recency:
-  half_life_years: 3.0
+  half_life_years: 4.0
   floor: 0.2
