@@ -1,0 +1,866 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PaceSense Live Proposal</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#2B3A8C; --navy-d:#1F2A6B; --navy-t:#EEF0FA; --navy-m:#C9CEEA;
+  --coral:#EF5B66; --coral-t:#FDECEE; --green:#2F8F5B; --green-t:#E6F3EC; --amber:#B7791F; --amber-t:#FDF4E3;
+  --blue:#2F6FB3; --blue-t:#E8F0FA; --ink:#1B2140; --muted:#666C8C; --line:#DADDEB; --bg:#FBFBFD; --card:#FFFFFF;
+  --mono:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#0E1230;overflow:hidden;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink)}
+#viewport{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+#stage{width:1600px;height:900px;position:relative;transform-origin:center center;flex:none}
+.slide{position:absolute;inset:0;background:var(--bg);padding:58px 80px 66px;opacity:0;visibility:hidden;transform:translateX(40px);transition:opacity .45s ease,transform .45s ease,visibility 0s .45s;overflow:hidden}
+.slide.active{opacity:1;visibility:visible;transform:none;transition:opacity .45s ease,transform .45s ease}
+.slide.past{transform:translateX(-40px)}
+.slide.dark{background:var(--navy);color:#fff}
+.foot{position:absolute;left:80px;right:80px;bottom:24px;display:flex;justify-content:space-between;font-size:13px;color:var(--muted);letter-spacing:.05em}
+.dark .foot{color:#AEB5E0}
+.kicker{font-size:15px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--coral);margin-bottom:10px}
+h1{font-size:64px;line-height:1.08;font-weight:800;letter-spacing:-.02em}
+h2{font-size:42px;line-height:1.15;font-weight:800;color:var(--navy);letter-spacing:-.015em}
+.dark h2{color:#fff}
+.sub{font-size:21px;color:var(--muted);margin-top:12px;line-height:1.45;max-width:1300px}
+.dark .sub{color:#D3D8F5}
+.card{background:var(--card);border:2px solid var(--navy-m);border-radius:16px;padding:26px 28px}
+.card.coral{border-color:#F6B3B8}
+.card h3{font-size:26px;color:var(--navy);margin-bottom:8px}
+.card.coral h3{color:var(--coral)}
+.card p,.card li{font-size:21px;line-height:1.5;color:#3C4366}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+.mono{font-family:var(--mono)}
+.pill{display:inline-block;padding:3px 11px;border-radius:999px;font-size:14px;font-weight:700}
+.callout{margin-top:22px;font-size:19px;color:var(--muted);font-style:italic}
+.rise{opacity:0;transform:translateY(18px)}
+.active .rise{animation:rise .6s cubic-bezier(.2,.8,.2,1) forwards;animation-delay:calc(var(--d,0) * 110ms + 150ms)}
+@keyframes rise{to{opacity:1;transform:none}}
+.frag{opacity:0;transform:translateY(12px);transition:opacity .4s,transform .4s}
+.frag.shown{opacity:1;transform:none}
+#progress{position:fixed;left:0;top:0;height:4px;background:var(--coral);transition:width .4s;z-index:20}
+#hud{position:fixed;right:18px;bottom:14px;display:flex;gap:8px;align-items:center;z-index:20;opacity:0;transition:opacity .3s}
+#hud:hover{opacity:1}
+#hud button{background:#fff;border:0;border-radius:8px;padding:8px 12px;font:600 13px Inter,sans-serif;color:var(--navy);cursor:pointer}
+#hud span{color:#fff;font:600 13px var(--mono);padding:0 6px}
+#notes{position:fixed;left:50%;bottom:16px;transform:translateX(-50%) translateY(140%);width:min(1100px,92vw);background:#fff;border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.35);padding:18px 22px;z-index:30;transition:transform .35s;font-size:17px;line-height:1.5;color:var(--ink)}
+#notes.open{transform:translateX(-50%) translateY(0)}
+#notes b{color:var(--coral)}
+#overview{position:fixed;inset:0;background:rgba(14,18,48,.94);z-index:40;display:none;padding:40px;overflow:auto}
+#overview.open{display:block}
+#overview .ov{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;max-width:1400px;margin:0 auto}
+#overview .ov button{background:#fff;border:0;border-radius:10px;padding:16px;text-align:left;font:600 15px Inter,sans-serif;color:var(--navy);cursor:pointer;line-height:1.35}
+#overview .ov button small{display:block;color:var(--coral);font-weight:800;margin-bottom:4px}
+#overview .ov button.cur{outline:4px solid var(--coral)}
+#help{position:fixed;left:18px;bottom:14px;color:#8E95C7;font:12px Inter,sans-serif;z-index:20;transition:opacity .6s}
+.btn{border:2px solid var(--navy);background:#fff;color:var(--navy);border-radius:10px;padding:8px 14px;font:700 15px Inter,sans-serif;cursor:pointer}
+.btn:hover,.btn.on{background:var(--navy);color:#fff}
+.btn.coral{border-color:var(--coral);color:var(--coral)}
+.btn.coral:hover,.btn.coral.on{background:var(--coral);color:#fff}
+input[type=range]{width:100%;accent-color:var(--coral);height:22px}
+svg text{font-family:Inter,system-ui,sans-serif}
+/* demo */
+.d-race{border:1.5px solid var(--line);border-radius:12px;padding:9px 12px;margin-bottom:9px;background:#fff;transition:box-shadow .4s,border-color .4s}
+.d-race.moved{border-color:var(--coral);box-shadow:0 0 0 4px var(--coral-t)}
+.d-top{display:flex;justify-content:space-between;align-items:baseline;font-size:17px}
+.d-top b{font-family:var(--mono)}
+.chip{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:2px 9px}
+.chip.slow{background:var(--coral-t);color:var(--coral)} .chip.fast{background:var(--green-t);color:var(--green)} .chip.typical{background:var(--navy-t);color:var(--navy)}
+.d-sl{display:grid;grid-template-columns:1fr 40px;gap:8px;align-items:center;margin-top:3px}
+.d-w{font-family:var(--mono);font-weight:700;color:var(--coral);text-align:right}
+#micBtn{width:70px;height:70px;border-radius:50%;border:0;background:var(--navy);color:#fff;font-size:28px;cursor:pointer;flex:none;position:relative}
+#micBtn.on{background:var(--coral)}
+#micBtn.on:after{content:"";position:absolute;inset:-7px;border-radius:50%;border:3px solid var(--coral);animation:pulse 1.4s infinite}
+@keyframes pulse{0%{opacity:.8;transform:scale(.95)}100%{opacity:0;transform:scale(1.25)}}
+#caption{min-height:54px;margin-top:12px;padding:10px 14px;border-radius:10px;background:#fff;border:1.5px dashed var(--line);font-size:19px}
+#caption .interim{color:var(--muted);font-style:italic}
+#typed{flex:1;font:17px Inter,sans-serif;padding:9px 12px;border:1.5px solid var(--line);border-radius:10px}
+.feed{margin-top:12px;display:flex;flex-direction:column;gap:8px;max-height:370px;overflow:hidden}
+.turn{border-left:4px solid var(--navy-m);padding:4px 10px;background:#fff;border-radius:0 10px 10px 0}
+.turn .said{font-weight:700;font-size:16px}
+.move{font-size:14px;margin-top:4px;padding:5px 8px;border-radius:8px;line-height:1.35}
+.move b{font-family:var(--mono)}
+.v-supported{background:var(--green-t)} .v-your_knowledge{background:var(--blue-t)} .v-against_data{background:var(--amber-t)} .v-undo{background:var(--navy-t)}
+.tag{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;margin-right:6px}
+.v-supported .tag{color:var(--green)} .v-your_knowledge .tag{color:var(--blue)} .v-against_data .tag{color:var(--amber)} .v-undo .tag{color:var(--navy)}
+.note{font-size:13px;color:var(--muted);margin-top:3px}
+.meter{position:relative;height:14px;border-radius:99px;margin:20px 0 6px;background:linear-gradient(90deg,var(--green-t),var(--blue-t) 45%,var(--amber-t) 85%,var(--coral-t))}
+.meter .pin{position:absolute;top:-7px;width:5px;height:28px;background:var(--ink);border-radius:2px;transition:left .6s}
+.term{background:#141833;color:#E3E6FA;border-radius:14px;padding:18px 22px;font-family:var(--mono);font-size:16px;line-height:1.65;white-space:pre;overflow:hidden}
+.term .c{color:#8E95C7} .term .g{color:#7EE0A6} .term .y{color:#F7D77A} .term .p{color:#FF9AA1}
+table.t{border-collapse:collapse;width:100%;font-size:17px}
+table.t th,table.t td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+table.t th{color:var(--muted);font-size:14px;letter-spacing:.06em;text-transform:uppercase}
+.calc-row{display:grid;grid-template-columns:300px 1fr 70px;gap:14px;align-items:center;margin:22px 0;font-size:21px}
+.calc-row b{font-family:var(--mono);text-align:right;color:var(--coral)}
+.s2 .card{min-height:230px}
+.s3 .card{min-height:200px} .s3 .card p{font-size:22px}
+.s4 .card{min-height:350px} .s4 .card p{font-size:22px}
+.s7 .card{min-height:230px}
+.s13 td,.s13 th{padding:15px 12px!important} .s13 table.t{font-size:21px!important}
+.s10 table.t{font-size:19px}
+.term{font-size:18px!important}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<div id="viewport"><div id="stage">
+
+<!-- 1 TITLE -->
+<section class="slide dark" data-title="Title" data-notes="<b>~0:45.</b> Last time I presented Muijlwijk et al.: letting coaches adjust a marathon model with sliders raised acceptance and even improved accuracy, but left one question open: when a coach moves a slider, is that expertise or steering? This proposal is my answer: let the coach talk to the model, record why every slider moves, check each move against the data, and show live whose view the model is taking.">
+  <svg id="titleWave" width="1600" height="900" viewBox="0 0 1600 900" style="position:absolute;inset:0"></svg>
+  <div style="position:relative;margin-top:120px;max-width:1200px">
+    <div class="kicker rise" style="--d:0;color:#FF9AA1">CSC2524H · Human–AI Interaction · Project proposal</div>
+    <h1 class="rise" style="--d:1">PaceSense Live: steering a prediction model by talking to it, with the data checking every move</h1>
+    <div class="rise" style="--d:2;height:4px;width:180px;background:var(--coral);margin:32px 0 24px"></div>
+    <p class="sub rise" style="--d:3">Building on Muijlwijk, Willemsen, Smyth &amp; IJsselsteijn, <i>Benefits of Human–AI Interaction for Expert Users Interacting with Prediction Models</i>, IUI '24</p>
+    <p class="rise" style="--d:5;margin-top:44px;font-size:19px;font-weight:600">Allwin Steve Paul Justin Anantharaj</p>
+  </div>
+  <div class="foot"><span>CSC2524H · PROPOSAL</span><span>→ to begin · N notes · O slides · F fullscreen</span></div>
+</section>
+
+<!-- 2 WHERE THE PAPER LEFT US -->
+<section class="slide" data-title="Where the paper left us" data-notes="<b>~1:15.</b> Three results to carry forward. Sliders raised acceptance (β = 0.266) and perceived competence (β = 0.780). Coaches' adjustments improved accuracy: 3.14% to 2.33% error. But the paper itself flags the catch: in some cases the coach dragged the model onto their own estimate and then 'accepted' it, scoring full acceptance while ignoring the model. Acceptance cannot tell trust from steering. That is the gap this proposal targets.">
+  <div class="kicker">Starting point</div>
+  <h2>What the paper showed, and what it could not see</h2>
+  <div class="grid3 s2" style="margin-top:48px">
+    <div class="card rise" style="--d:1"><h3>Buy-in went up</h3><p>Sliders raised <b>acceptance</b> (β = 0.266, p &lt; .001) and <b>perceived competence</b> (β = 0.780, p &lt; .001).</p></div>
+    <div class="card rise" style="--d:2"><h3>Coaches improved the model</h3><p>Adapted predictions were closer to the held-out best race: <b class="mono">3.14% → 2.33%</b> mean error (p = .018).</p></div>
+    <div class="card coral rise" style="--d:3"><h3>But steering was invisible</h3><p>Some coaches dragged the model onto their own estimate, then “accepted” it. Same score as being persuaded.</p></div>
+  </div>
+  <div class="card rise" style="--d:5;margin-top:40px;background:var(--navy);border-color:var(--navy);color:#fff;font-size:29px;padding:34px 36px;line-height:1.45;font-style:italic">“When a coach moves a slider, is that expertise correcting the model, or the model being steered toward what the coach already believed?”
+    <div style="font-size:15px;font-style:normal;color:#C9CEEA;margin-top:8px">The open question from the paper's discussion (Sec. 5.7 and 6)</div></div>
+  <div class="foot"><span>Muijlwijk et al., IUI '24</span><span>2</span></div>
+</section>
+
+<!-- 3 THE GAP -->
+<section class="slide" data-title="Four limits of sliders" data-notes="<b>~1:15.</b> Four limits of the slider interface. One: silent. A slider at 0.2 records a number, never the reason, so the analysis can't separate a hot-day correction from wishful thinking. Two: coaches think in stories ('she was injured in Amsterdam'), not in weights. The think-aloud sessions show exactly that rich talk, and the interface throws it away. Three: no check. Nothing tells the coach whether the data backs the change. Four: steering is only measured after the fact, and only for researchers.">
+  <div class="kicker">The gap</div>
+  <h2>Four things a slider cannot do</h2>
+  <div class="grid2 s3" style="margin-top:48px;gap:28px">
+    <div class="card rise" style="--d:1"><h3>1 · It is silent</h3><p>A slider at 0.2 stores a number, never the reason. The study cannot tell “hot day, injured” from “I just think she's faster”.</p></div>
+    <div class="card rise" style="--d:2"><h3>2 · Coaches think in stories</h3><p>In the think-aloud sessions coaches talked: <i>“Here she hit the wall, maybe it was hot weather”</i> (P7). The interface keeps none of it.</p></div>
+    <div class="card coral rise" style="--d:3"><h3>3 · Nothing checks the change</h3><p>The coach sees the new finish time, but not whether the data supports lowering that race or quietly contradicts it.</p></div>
+    <div class="card coral rise" style="--d:4"><h3>4 · Steering is found too late</h3><p>Model Adaptation was computed afterwards, for researchers. The coach never sees that the model is drifting onto their own estimate.</p></div>
+  </div>
+  <div class="foot"><span>Quotes: think-aloud sessions, Sec. 5.2</span><span>3</span></div>
+</section>
+
+<!-- 4 PROPOSAL -->
+<section class="slide" data-title="The proposal" data-notes="<b>~1:00.</b> The proposal in one line: the coach talks, and the sliders follow. Three parts. Speak: continuous listening; what the coach says becomes slider moves, with the words kept as the reason. Check: each move is compared with the runner's own races and labelled 'data agrees', 'your knowledge' or 'against the data'. Reflect: a live steering meter, the paper's Model Adaptation computed live, shows whether the model is moving towards the coach's own estimate.">
+  <div class="kicker">Proposal</div>
+  <h2>The coach talks. The sliders follow. The data checks.</h2>
+  <div class="grid3 s4" style="margin-top:52px">
+    <div class="card rise" style="--d:1"><div style="font-size:46px">🎙️</div><h3>Speak</h3><p>Continuous listening. <i>“2014 was a hot day and she was injured”</i> moves the 2014 slider down, and keeps those words as the reason.</p></div>
+    <div class="card rise" style="--d:2"><div style="font-size:46px">📊</div><h3>Check</h3><p>Each move is compared with the runner's other races: <span class="pill" style="background:var(--green-t);color:var(--green)">data agrees</span> <span class="pill" style="background:var(--blue-t);color:var(--blue)">your knowledge</span> <span class="pill" style="background:var(--amber-t);color:var(--amber)">against the data</span></p></div>
+    <div class="card coral rise" style="--d:3"><div style="font-size:46px">🪞</div><h3>Reflect</h3><p>A live <b>steering meter</b>: the paper's Model Adaptation, computed while the coach works. At 1.0 the model has become the coach's own estimate.</p></div>
+  </div>
+  <p class="callout rise" style="--d:5">Not a chatbot that predicts: the same case-based model as the paper. Voice only changes <i>how</i> the coach steers it, and makes the steering visible.</p>
+  <div class="foot"><span>PaceSense Live</span><span>4</span></div>
+</section>
+
+<!-- 5 LIVE DEMO -->
+<section class="slide" data-title="Live demo" data-notes="<b>~3:00 · LIVE DEMO.</b> Click the microphone (Chrome or Edge) and speak, or type, or press ▶ Script. Suggested lines: '2010 was a hot day and she was injured' (data agrees: it was her slowest). 'I think she can run 3:29' (sets your estimate: watch the meter). 'Trust the recent races more' (several sliders move). 'The Rotterdam 2015 race was a training run' (AGAINST the data: it was her fastest; target gets slower). 'Scratch that' (undo). These are the real model's numbers for this synthetic runner, the same as the Python system computes.">
+  <div style="display:flex;justify-content:space-between;align-items:flex-end">
+    <div><div class="kicker">Live demo · real model numbers, synthetic runner</div><h2>Talk to the model</h2></div>
+    <div style="display:flex;gap:10px"><button class="btn" id="dReset">Equal weights</button><button class="btn coral" id="dScript">▶ Script</button></div>
+  </div>
+  <div style="display:grid;grid-template-columns:380px 1fr 400px;gap:24px;margin-top:16px">
+    <div id="dRaces"></div>
+    <div>
+      <div style="display:flex;gap:14px;align-items:center">
+        <button id="micBtn" title="Listen (Chrome/Edge)">🎙</button>
+        <div><div id="micStatus" style="font-weight:800;font-size:18px">Click to listen</div><div id="micHint" style="font-size:14px;color:var(--muted)">Continuous listening in Chrome or Edge. Or type below.</div></div>
+      </div>
+      <div id="caption"><span class="interim">Try: “2010 was a hot day and she was injured”</span></div>
+      <form id="dForm" style="display:flex;gap:8px;margin-top:10px"><input id="typed" placeholder="Type what a coach would say, press Enter"><button class="btn" type="submit">Send</button></form>
+      <div class="feed" id="dFeed"></div>
+    </div>
+    <div>
+      <div class="card" style="padding:16px 18px">
+        <div style="font-size:13px;color:var(--muted);font-weight:700;letter-spacing:.1em">MODEL PREDICTION</div>
+        <div id="dFinish" class="mono" style="font-size:54px;font-weight:800;color:var(--navy);line-height:1.1">–</div>
+        <div id="dDelta" style="color:var(--muted);font-size:15px">&nbsp;</div>
+        <svg id="dRange" viewBox="0 0 360 64" width="360" height="64" style="margin-top:6px"></svg>
+      </div>
+      <div class="card" style="padding:16px 18px;margin-top:14px">
+        <div style="font-size:13px;color:var(--muted);font-weight:700;letter-spacing:.1em">WHOSE VIEW IS THE MODEL TAKING?</div>
+        <div class="meter"><div class="pin" id="dPin" style="left:0"></div></div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted)"><span>0 · the data</span><span>1 · your estimate</span></div>
+        <div id="dSteer" style="font-size:15px;margin-top:8px;min-height:44px"></div>
+        <div style="display:flex;justify-content:space-between;border-top:1px solid var(--line);padding-top:8px;margin-top:6px;font-size:15px"><span>Steering index</span><b id="dIdx" class="mono">–</b></div>
+        <div style="display:flex;justify-content:space-between;padding-top:6px;font-size:15px"><span>Changes with a spoken reason</span><b id="dReason" class="mono">–</b></div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Browser port of the Python interpreter (same lexicon, same arithmetic) · run it for real with <span class="mono">pacesense live</span></span><span>5</span></div>
+</section>
+
+<!-- 6 ARCHITECTURE -->
+<section class="slide" data-title="How it works" data-notes="<b>~1:30.</b> The pipeline. Speech becomes text in the browser (or locally with Whisper, for privacy). The interpreter finds which race each part is about and what is said about it, using a readable vocabulary file. An optional AI model can read paraphrases, but it only proposes changes in a fixed form; code rejects any race that doesn't exist or any reason that wasn't actually said. Accepted changes go through the same PlanSession as the sliders, so the change log and saved plans are identical. Then the evidence layer labels each change and updates the steering meter.">
+  <div class="kicker">Architecture</div>
+  <h2>From a sentence to a slider, with a check at every step</h2>
+  <svg id="archSvg" viewBox="0 0 1440 520" width="1440" height="520" style="margin-top:14px"></svg>
+  <div class="foot"><span>src/pacesense/steer/: intent.py · llm_interpret.py · session.py · evidence.py</span><span>6</span></div>
+</section>
+
+<!-- 7 STATISTICS -->
+<section class="slide" data-title="The statistics layer" data-notes="<b>~1:45.</b> Four measures, all plain arithmetic on the model's own numbers. Race evidence: a robust leave-one-out z-score of each race against the runner's other races, using the median and MAD, with a floor of 2% so three similar races don't make a one-minute gap look extreme. The evidence check compares the direction of the coach's change with that z-score. Influence: how many seconds each race pulls the combined prediction; the pulls sum to zero. The steering index is exactly the paper's Model Adaptation, but live.">
+  <div class="kicker">Statistics</div>
+  <h2>Four measures behind every move</h2>
+  <div class="grid2 s7" style="margin-top:40px;gap:26px">
+    <div class="card rise" style="--d:1"><h3>Race evidence</h3><p class="mono" style="font-size:17px">z<sub>i</sub> = (t<sub>i</sub> − med(t<sub>−i</sub>)) / max(1.4826·MAD(t<sub>−i</sub>), 0.02·med)</p><p>Is this race unusual compared with the runner's <i>other</i> races? Robust to one bad race; |z| ≥ 1 counts as unusual.</p></div>
+    <div class="card rise" style="--d:2"><h3>Evidence check</h3><p>Direction of the change vs. sign of z:</p><p><span class="pill" style="background:var(--green-t);color:var(--green)">data agrees</span> lower a slow race · <span class="pill" style="background:var(--blue-t);color:var(--blue)">your knowledge</span> race is typical · <span class="pill" style="background:var(--amber-t);color:var(--amber)">against the data</span> lower a fast race</p></div>
+    <div class="card rise" style="--d:3"><h3>Influence</h3><p class="mono" style="font-size:17px">pull<sub>i</sub> = w<sub>i</sub>(p<sub>i</sub> − F) / Σw,  Σ pull = 0</p><p>Seconds each race drags the prediction faster or slower; plus the exact change if it were left out.</p></div>
+    <div class="card coral rise" style="--d:4"><h3>Steering index (live)</h3><p class="mono" style="font-size:17px">S = (F<sub>now</sub> − F<sub>equal</sub>) / (Coach<sub>estimate</sub> − F<sub>equal</sub>)</p><p>The paper's Model Adaptation (Sec. 5.7), shown while the coach works. 0 = the data's view, 1 = the coach's own.</p></div>
+  </div>
+  <div class="foot"><span>src/pacesense/steer/evidence.py · tests/test_steer.py</span><span>7</span></div>
+</section>
+
+<!-- 8 INTERPRETER RESULTS -->
+<section class="slide" data-title="How well it understands" data-notes="<b>~1:30.</b> I measured the interpreter instead of claiming it works. Dev set: 18 sentences I wrote the rules against, 18 out of 18. Held-out test set: 24 sentences written before the rules ever saw them; 14 out of 24 fully right. The important part: race precision is 1.00. It never moved a race the coach didn't mean. It misses paraphrases like 'broken toe' or 'shows her real level', so recall is 0.50. I kept the failures in the benchmark rather than tuning them away. That's the motivation for the checked AI reader: it should raise recall without losing that precision, and it gets scored on the same set.">
+  <div class="kicker">Evaluation of the interpreter</div>
+  <h2>Safe, but it misses paraphrases</h2>
+  <div style="display:grid;grid-template-columns:760px 1fr;gap:36px;margin-top:22px">
+    <svg id="benchSvg" viewBox="0 0 760 480" width="760" height="480"></svg>
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div class="card rise" style="--d:2"><h3>Never the wrong race</h3><p>Race precision <b class="mono">1.00</b> on held-out sentences: when unsure, it changes nothing and says so.</p></div>
+      <div class="card coral rise" style="--d:3"><h3>Misses paraphrases</h3><p>“she ran 2016 with a <b>broken toe</b>”, “Amsterdam <b>shows her real level</b>”, “2018 was <b>a mess</b>”. Recall <b class="mono">0.50</b>.</p></div>
+      <div class="card rise" style="--d:4"><h3>Next: checked AI reader</h3><p>An AI model proposes; code keeps a proposal only if the race exists and the quoted reason was really said. Scored on the same held-out set.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>resources/steer_benchmark.yaml · failures kept, not tuned away</span><span>8</span></div>
+</section>
+
+<!-- 9 RECENCY -->
+<section class="slide" data-title="Fitting 'recent races count more'" data-notes="<b>~1:00.</b> The paper found coaches set newer races as more representative (slider position rose with race year, β = 0.042). When a coach says 'trust the recent races more', PaceSense uses a half-life profile. Instead of guessing the half-life, I fit it with the paper's own hold-out protocol. On the synthetic data, a 4-year half-life is best: 2.21% error vs 2.27% for equal weights. Be clear this is synthetic data whose generator builds in improvement over time, so it demonstrates the method, not a finding about real runners.">
+  <div class="kicker">Data-driven defaults</div>
+  <h2>“Trust the recent races more”: how much more?</h2>
+  <div style="display:grid;grid-template-columns:820px 1fr;gap:36px;margin-top:22px">
+    <svg id="recSvg" viewBox="0 0 820 470" width="820" height="470"></svg>
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div class="card rise" style="--d:2"><h3>From the paper</h3><p>Coaches made newer races more representative (slider ~ year, β = 0.042, p &lt; .001).</p></div>
+      <div class="card rise" style="--d:3"><h3>Fitted, not guessed</h3><p>w = 2<sup>−years before latest / h</sup>. h is chosen by the paper's hold-out protocol on a seeded sample.</p></div>
+      <div class="card coral rise" style="--d:4"><h3>Honest caveat</h3><p>Synthetic data with improvement built in: this shows the method works, not that real runners behave this way.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>steer/recency.py · results/recency_fit.json (n = 300 runners, seed 20240318)</span><span>9</span></div>
+</section>
+
+<!-- 10 STUDY DESIGN -->
+<section class="slide" data-title="Proposed study" data-notes="<b>~1:45.</b> To test it, I'd extend the paper's own design with a third arm. Between subjects: no sliders, sliders (the paper), and PaceSense Live. Within subjects, as in the paper: familiar and unfamiliar runners. Same measures as the paper so results compare directly, plus two new ones: the share of steered decisions (Model Adaptation ≥ 0.85) and the share of changes that came with a reason. The key hypothesis is H2: seeing the steering meter and the evidence labels reduces steering, without lowering acceptance.">
+  <div class="kicker">Evaluation plan</div>
+  <h2>A third arm on the paper's own design</h2>
+  <div class="s10" style="display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:30px">
+    <div>
+      <table class="t rise" style="--d:1">
+        <tr><th>Arm</th><th>Coach can</th></tr>
+        <tr><td><b>A · Non-interactive</b></td><td>see the equal-weights prediction (paper)</td></tr>
+        <tr><td><b>B · Sliders</b></td><td>drag one slider per race (paper)</td></tr>
+        <tr><td><b style="color:var(--coral)">C · PaceSense Live</b></td><td>talk; sliders follow; evidence labels and steering meter</td></tr>
+      </table>
+      <p class="rise" style="--d:2;margin-top:14px;font-size:17px;color:var(--muted)">× familiar / unfamiliar runners (within coach), 4 runners each, as in the paper. Unfamiliar runners keep the held-out best race for accuracy.</p>
+      <div class="card rise" style="--d:3;margin-top:16px"><h3>Measures</h3><p>Paper: acceptance, perceived competence, willingness to depend, accuracy, Model Adaptation.<br><b>New:</b> share of steered decisions (adaptation ≥ 0.85), share of changes with a reason, evidence-consistent changes, SUS and NASA-TLX.</p></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="card rise" style="--d:3"><h3>H1 · Acceptance</h3><p>C is not lower than B (non-inferiority, margin 0.10).</p></div>
+      <div class="card coral rise" style="--d:4"><h3>H2 · Less steering (primary)</h3><p>C has fewer steered decisions than B.</p></div>
+      <div class="card rise" style="--d:5"><h3>H3 · Accuracy</h3><p>C's adapted error ≤ B's (paper: 2.33%).</p></div>
+      <div class="card rise" style="--d:6"><h3>H4 · Familiarity</h3><p>The steering reduction is larger for familiar runners (paper RQ2/RQ3).</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>Analysis as the paper: multilevel models, random intercept per coach (pacesense.analysis)</span><span>10</span></div>
+</section>
+
+<!-- 11 POWER -->
+<section class="slide" data-title="How many coaches?" data-notes="<b>~1:15 · INTERACTIVE.</b> Sample size for H2. Each coach rates 4 runners, and ratings from one coach are correlated, so I inflate the sample with a design effect, 1 + (m − 1)·ICC. If 30% of slider decisions are steered and Live halves that to 15%, with ICC 0.2, we need about 49 coaches per arm. Drag the sliders: a bigger effect needs far fewer coaches; a smaller one far more. The paper had 71 coaches in total, so realistically this is a two-arm comparison (B vs C) first. For H1, replicating the paper's acceptance effect needs about 28 coaches per group at SD 0.35.">
+  <div class="kicker">Statistics · sample size</div>
+  <h2>How many coaches would H2 need?</h2>
+  <div style="display:grid;grid-template-columns:1fr 520px;gap:40px;margin-top:24px">
+    <div class="card">
+      <div class="calc-row" style="margin-top:4px"><span>Steered decisions with sliders</span><input type="range" id="pB" min="0.10" max="0.50" step="0.01" value="0.30"><b id="pBv"></b></div>
+      <div class="calc-row"><span>…with PaceSense Live</span><input type="range" id="pC" min="0.02" max="0.45" step="0.01" value="0.15"><b id="pCv"></b></div>
+      <div class="calc-row"><span>ICC (within-coach correlation)</span><input type="range" id="icc" min="0" max="0.5" step="0.05" value="0.20"><b id="iccv"></b></div>
+      <div class="calc-row"><span>Runners per coach</span><input type="range" id="m" min="2" max="8" step="1" value="4"><b id="mv"></b></div>
+      <div class="calc-row"><span>Power</span><input type="range" id="pw" min="0.7" max="0.95" step="0.05" value="0.80"><b id="pwv"></b></div>
+      <p style="font-size:15px;color:var(--muted);margin-top:12px">Two proportions, α = .05 two-sided, normal approximation; × design effect 1 + (m − 1)·ICC for repeated ratings per coach.</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div class="card" style="text-align:center;background:var(--navy);border-color:var(--navy)"><div style="color:#C9CEEA;font-weight:700;letter-spacing:.1em;font-size:14px">COACHES PER ARM</div><div id="nOut" class="mono" style="font-size:96px;font-weight:800;color:#fff;line-height:1.1">–</div><div id="nNote" style="color:#C9CEEA;font-size:16px"></div></div>
+      <div class="card"><h3>For comparison</h3><p>The paper recruited <b>71</b> coaches in total. Replicating its acceptance effect (β = 0.266, SD ≈ 0.35) needs about <b class="mono">28</b> per group.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>Assumed rates are planning values to be replaced by pilot data (think-aloud, n ≈ 7)</span><span>11</span></div>
+</section>
+
+<!-- 12 REPRODUCIBILITY -->
+<section class="slide" data-title="Reproducibility" data-notes="<b>~1:15.</b> Everything here is reproducible with one command. 'pacesense reproduce' rebuilds every number from this talk: data, model validation, the recency fit, the interpreter benchmark, and the simulated study with the paper's analysis. It writes a manifest with the seed, hashes of every input (data, config, vocabulary, benchmark) and every output, plus the environment. '--check' re-runs it and compares; it prints REPRODUCED or exactly what changed. CI runs the tests and this check on Linux and Windows. The numbers on slides 8 and 9 come from that manifest.">
+  <div class="kicker">Open science</div>
+  <h2>One command rebuilds every number in this talk</h2>
+  <div style="display:grid;grid-template-columns:1fr 520px;gap:30px;margin-top:22px">
+    <div class="term" id="term"></div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="card rise" style="--d:2"><h3>Manifest</h3><p>Seed, parameters, SHA-256 of data, config, vocabulary and benchmark, every output, Python and package versions, git commit.</p></div>
+      <div class="card rise" style="--d:3"><h3>Deterministic by design</h3><p>One seed in <span class="mono">config/pacesense.yaml</span>; rule-based interpreter; spoken sessions replay exactly from their transcript.</p></div>
+      <div class="card rise" style="--d:4"><h3>Checked automatically</h3><p>175 tests + two independent runs compared in CI (Linux, Windows; Python 3.10–3.13).</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>src/pacesense/repro.py · .github/workflows/ci.yml · examples/reproduce_manifest.json</span><span>12</span></div>
+</section>
+
+<!-- 13 RISKS -->
+<section class="slide" data-title="Risks and ethics" data-notes="<b>~1:15.</b> Risks I take seriously. Privacy: Chrome's speech recognition sends audio to Google; PaceSense offers a local Whisper mode where audio never leaves the laptop, and the study would use that. Over-trust in labels: 'data agrees' could make coaches defer to the data even when their knowledge is right; that's why the label for typical races says 'your knowledge', not 'unsupported'. Misrecognition, especially with accents: every change is shown with the words it came from and can be undone by saying 'scratch that'. And the nudge itself: showing the steering meter could suppress legitimate expertise, which is exactly what H1 and H3 test.">
+  <div class="kicker">Limits</div>
+  <h2>Risks, and what the design does about them</h2>
+  <div class="s13"><table class="t" style="margin-top:34px">
+    <tr><th style="width:24%">Risk</th><th>Mitigation</th></tr>
+    <tr class="rise" style="--d:1"><td><b>Privacy of speech</b></td><td>Browser speech (Chrome, Edge) sends audio to a cloud service. <b>Local Whisper mode</b> keeps audio on the laptop; the study would use it, with recording consent.</td></tr>
+    <tr class="rise" style="--d:2"><td><b>Misrecognition</b> (accents, noise)</td><td>Every move shows the words it came from; “scratch that” undoes; unclear speech changes nothing and says so.</td></tr>
+    <tr class="rise" style="--d:3"><td><b>Deference to the labels</b></td><td>A typical race is labelled <i>your knowledge</i>, not <i>unsupported</i>: an injury never shows in a finish time.</td></tr>
+    <tr class="rise" style="--d:4"><td><b>The meter suppresses expertise</b></td><td>Exactly what H1 (acceptance) and H3 (accuracy) test; the meter can be hidden.</td></tr>
+    <tr class="rise" style="--d:5"><td><b>AI reader hallucinates</b></td><td>It only proposes; code drops unknown races and reasons that were not said.</td></tr>
+    <tr class="rise" style="--d:6"><td><b>Synthetic data</b></td><td>All numbers here are from synthetic runners; the study uses real coaches and real race results.</td></tr>
+  </table></div>
+  <div class="foot"><span>CSC2524H · Human–AI Interaction</span><span>13</span></div>
+</section>
+
+<!-- 14 PLAN -->
+<section class="slide" data-title="Plan" data-notes="<b>~0:45.</b> What's done and what's next. Built and tested now: the interpreter, the evidence layer, the live page, the Plan-page box, the reproducibility pipeline. Next: run the checked AI reader against the held-out set; a think-aloud pilot with 5 to 7 coaches using local Whisper, which also gives real planning values for the power analysis; then the online study, two arms first, analysed with the same code as the paper.">
+  <div class="kicker">Plan</div>
+  <h2>Done, and what comes next</h2>
+  <svg id="ganttSvg" viewBox="0 0 1440 640" width="1440" height="640" style="margin-top:22px"></svg>
+  <div class="foot"><span>CSC2524H · Human–AI Interaction</span><span>14</span></div>
+</section>
+
+<!-- 15 CLOSE -->
+<section class="slide dark" data-title="Questions" data-notes="Close on the contribution, then open the floor. If discussion is slow: ask the room whether a coach should see the steering meter at all, or whether making steering visible changes what we're trying to measure.">
+  <div style="margin-top:150px;max-width:1300px">
+    <div class="kicker" style="color:#FF9AA1">Contribution</div>
+    <h1 class="rise" style="--d:0;font-size:56px">Make the coach's reasons part of the model, and make steering visible while it happens.</h1>
+    <div class="grid3" style="margin-top:46px;gap:20px">
+      <div class="rise" style="--d:2;font-size:23px;line-height:1.5;color:#E3E6FA"><b style="color:#fff">Speak</b><br>continuous voice → slider moves with their reasons</div>
+      <div class="rise" style="--d:3;font-size:23px;line-height:1.5;color:#E3E6FA"><b style="color:#fff">Check</b><br>every move compared with the runner's own data</div>
+      <div class="rise" style="--d:4;font-size:23px;line-height:1.5;color:#E3E6FA"><b style="color:#fff">Reflect</b><br>live steering index answers the paper's open question</div>
+    </div>
+    <p class="rise" style="--d:6;margin-top:54px;font-size:24px;color:#fff"><b style="color:#FF9AA1">Question for you:</b> should the coach see the steering meter, or does seeing it change what we are trying to measure?</p>
+  </div>
+  <div class="foot"><span>Thank you · Allwin Steve Paul Justin Anantharaj</span><span>15</span></div>
+</section>
+
+</div></div>
+<div id="notes"></div>
+<div id="overview"><div style="color:#fff;font:700 22px Inter,sans-serif;max-width:1400px;margin:0 auto 20px">Jump to slide <span style="font-weight:400;font-size:15px;color:#AEB5E0">· Esc to close</span></div><div class="ov"></div></div>
+<div id="help">← → navigate · N notes · O slides · F fullscreen</div>
+<div id="hud"><button id="bPrev">←</button><span id="counter"></span><button id="bNext">→</button><button id="bNotes">Notes</button><button id="bOv">Slides</button><button id="bFs">⤢</button></div>
+
+<script>
+const LEX = {"version":1,"effects":{"exclude":{"set":0.0},"full":{"set":1.0},"down_strong":{"shift":-0.3},"down":{"shift":-0.2},"up":{"shift":0.2},"up_strong":{"shift":0.3}},"phrases":{"exclude":{"verb":["ignore","disregard","throw out","leave out","exclude","drop","forget about","don't use","do not use","get rid of","take out","remove"],"describe":["doesn't count","does not count","shouldn't count","should not count","not representative at all","means nothing","irrelevant","a dnf","dnf","did not finish","didn't finish","walked most of it","a fun run","fun run","a training run","training run","paced a friend","was pacing","pacer for"]},"full":{"verb":["give full weight to","full weight on","rely entirely on","only trust","only use"],"describe":["exactly how she runs now","exactly how he runs now","exactly where she is now","exactly where he is now","the benchmark","her benchmark","his benchmark"]},"down_strong":{"verb":["downweight","down weight","lower","reduce","count less","trust less","less weight on","less weight for","weight down","discount"],"describe":["injured","injury","an injury","sick","ill","the flu","flu","covid","hot day","very hot","heat","heatwave","hit the wall","hitting the wall","blew up","cramped","cramps","cramping","not representative","unrepresentative","a disaster","disaster","a bad race","bad race","terrible","awful","stomach problems","stomach issues","fell","a fall","off day","an off day","overtrained","undertrained","barely trained","no training","jet lag","jetlagged","pregnant","postpartum","coming back from","comeback race","after surgery"]},"down":{"verb":["count a bit less","trust a bit less"],"describe":["windy","wind","rain","rainy","the rain","humid","humidity","cold","freezing","a bit off","not great","not her best","not his best","slow","slower","struggled","tired","long ago","a long time ago","long time ago","ages ago","outdated","old race","a while ago","years ago","before she changed","before he changed","started too fast","went out too fast","faded","crowded","bad pacing","poor pacing","busy at work","stressful","stress"]},"up":{"verb":["count more","trust more","more weight on","more weight for","weight up","upweight","up weight","raise","increase","boost","focus on","use more"],"describe":["a good race","good race","solid","strong","fit","in shape","in good shape","well trained","trained well","well prepared","typical","normal race","representative","realistic","consistent","even pacing","paced well","negative split","good conditions","cool day","recent","current form","how she runs now","how he runs now"]},"up_strong":{"verb":["count much more","trust much more","mostly use","mostly trust","rely on"],"describe":["her best race","his best race","best race","best ever","personal best","a pb","pb","peak","her peak","his peak","great race","a great race","perfect race","perfect conditions","ideal conditions","most representative","very representative","really representative","exactly her level","exactly his level","breakthrough"]}},"modifiers":{"soften":{"factor":0.5,"words":["a bit","a little","slightly","somewhat","kind of","kinda","sort of","maybe","a tad","partly","little"]},"intensify":{"factor":1.5,"words":["very","really","totally","completely","a lot","much","extremely","way","hugely","seriously","badly","massively"]}},"negations":["not","wasn't","isn't","wasnt","isnt","never","no","didn't","didnt","don't","dont","doesn't","doesnt","without","hardly"],"references":{"most_recent":["last race","latest race","most recent race","most recent","last marathon","latest marathon","the last one","her last","his last","newest race","this year's race","the recent one"],"previous":["second last","second to last","second-to-last","race before last","previous race","the one before","one before that","before that"],"oldest":["first race","oldest race","earliest race","first marathon","the first one","oldest","earliest","her first","his first","debut"],"recent_group":["recent races","recent ones","last two races","last two","latest races","newer races","newest races","recent marathons"],"older_group":["older races","old races","earlier races","older ones","early races","old ones","older marathons","everything before","the rest"],"all":["all races","all the races","every race","all of them","all her races","all his races","everything"],"pronoun":["that race","that one","that marathon","this race","this one","it","there","she was","he was","she had","he had","she ran"]},"commands":{"reset":["reset","start over","equal weights","back to equal","default weights","clear everything","clear the weights","back to the model"],"undo":["undo","scratch that","cancel that","never mind","go back","revert"],"recency":["trust recent races more","recent races matter more","recent races count more","more weight on recent","weight recent races","newer races count more","focus on recent","recent form","current form matters","older races count less","older races matter less","she has improved","he has improved","she's improved","he's improved","getting faster"]},"estimate_cues":["i think","i reckon","my guess","i'd say","i would say","i expect","i believe","my estimate","my target","she can run","he can run","she could run","he could run","she'll run","he'll run","aim for","target is","target of","capable of","can do"],"recency":{"half_life_years":4.0,"floor":0.2}};
+const DEMO = {"runner_id":"R00518","gender":"F","age":61,"races":[{"event":"Amsterdam","year":2009,"finish_s":13580.0,"pred_s":12885.81,"cases":[13249.8,13376.1,12441.2,12661.2,12901.2,12821.0,12276.0,13050.6,13359.1,12673.9,12940.9,12416.9,13237.2,13136.3,12625.5],"cw":[0.084399,0.076185,0.072536,0.069035,0.067783,0.065937,0.065042,0.064128,0.063047,0.062894,0.062511,0.062341,0.06212,0.061117,0.060925]},{"event":"Amsterdam","year":2010,"finish_s":14637.4,"pred_s":13532.6,"cases":[12852.3,13103.0,13686.2,11446.3,13456.7,13549.3,13050.8,14215.3,13672.0,14217.0,14276.1,14282.9,14089.0,12998.9,14571.2],"cw":[0.076035,0.075109,0.072225,0.071238,0.068147,0.065618,0.065373,0.065088,0.064996,0.064299,0.063123,0.062778,0.062288,0.062052,0.061631]},{"event":"Rotterdam","year":2013,"finish_s":13848.4,"pred_s":13064.99,"cases":[12991.3,12847.4,12784.8,13344.4,12961.1,13599.2,13172.1,13129.1,13079.5,12689.2,13752.2,12500.0,12909.6,12981.3,13237.4],"cw":[0.072042,0.071576,0.070634,0.070054,0.069152,0.068158,0.066411,0.066355,0.06533,0.065301,0.065166,0.064228,0.06286,0.061693,0.061041]},{"event":"Rotterdam","year":2014,"finish_s":13430.9,"pred_s":12809.64,"cases":[13181.1,12799.2,13300.9,12294.5,12652.2,12749.2,13387.5,12889.6,12365.6,12852.9,12736.9,12624.1,13127.4,12815.7,12210.9],"cw":[0.081327,0.07684,0.073782,0.070995,0.066487,0.065948,0.065893,0.065759,0.064414,0.064258,0.061906,0.061702,0.060482,0.060452,0.059754]},{"event":"Rotterdam","year":2015,"finish_s":12825.2,"pred_s":12147.71,"cases":[12483.2,11535.5,12293.5,11876.3,11959.5,12817.3,12369.2,12116.5,11587.9,11914.8,12303.5,11523.0,12267.8,12564.4,12658.0],"cw":[0.083046,0.079047,0.071186,0.066942,0.066743,0.066014,0.065844,0.065497,0.064229,0.063836,0.061974,0.061927,0.061599,0.061063,0.061052]}]};
+const BENCH = {"races":[{"event":"Rotterdam","year":2012},{"event":"Eindhoven","year":2014},{"event":"Amsterdam","year":2016},{"event":"Rotterdam","year":2018}],"cases":[{"split":"dev","text":"2016 was a hot day and she was injured","expect":{"2016":"down"}},{"split":"dev","text":"ignore 2016","expect":{"2016":0.0}},{"split":"dev","text":"Amsterdam was terrible. She had the flu.","expect":{"2016":"down"}},{"split":"dev","text":"trust the recent races more","command":"recency"},{"split":"dev","text":"2018 was her best race, 2012 was a long time ago","expect":{"2018":"up","2012":"down"}},{"split":"dev","text":"set 2014 to 0.3","expect":{"2014":0.3}},{"split":"dev","text":"I think she can run 3:25","estimate":"3:25:00"},{"split":"dev","text":"the last race was slightly windy","expect":{"2018":"down"}},{"split":"dev","text":"2014 was fine, ignore 2016","expect":{"2016":0.0}},{"split":"dev","text":"twenty sixteen doesn't count","expect":{"2016":0.0}},{"split":"dev","text":"put Eindhoven at point eight","expect":{"2014":0.8}},{"split":"dev","text":"reset","command":"reset"},{"split":"dev","text":"scratch that","command":"undo"},{"split":"dev","text":"she was injured","context":2016,"expect":{"2016":"down"}},{"split":"dev","text":"Rotterdam 2018 is exactly how she runs now, I reckon 3 hours 22","expect":{"2018":1.0},"estimate":"3:22:00"},{"split":"dev","text":"count 2012 a bit less","expect":{"2012":"down"}},{"split":"dev","text":"she wasn't injured in 2014","expect":{"2014":"up"}},{"split":"dev","text":"2015 was hot","expect":{}},{"split":"test","text":"the Amsterdam race went badly, she had stomach issues","expect":{"2016":"down"}},{"split":"test","text":"Eindhoven was a solid, well paced race","expect":{"2014":"up"}},{"split":"test","text":"leave out the first race","expect":{"2012":0.0}},{"split":"test","text":"her most recent marathon is the most representative","expect":{"2018":"up"}},{"split":"test","text":"In 2016 she started too fast and faded","expect":{"2016":"down"}},{"split":"test","text":"give 2018 full weight","expect":{"2018":1.0}},{"split":"test","text":"2012 and 2014 are old races","expect":{"2012":"down","2014":"down"}},{"split":"test","text":"Rotterdam 2012 was a training run","expect":{"2012":0.0}},{"split":"test","text":"she ran 2016 with a broken toe","expect":{"2016":"down"}},{"split":"test","text":"Amsterdam shows her real level","expect":{"2016":"up"}},{"split":"test","text":"my guess is she can do 3:18 this time","estimate":"3:18:00"},{"split":"test","text":"go back to equal weights","command":"reset"},{"split":"test","text":"the race before last was in perfect conditions","expect":{"2016":"up"}},{"split":"test","text":"lower 2014 a little","expect":{"2014":"down"}},{"split":"test","text":"don't use the Eindhoven race","expect":{"2014":0.0}},{"split":"test","text":"2018 was a mess, it rained the whole way","expect":{"2018":"down"}},{"split":"test","text":"she is much fitter now than in 2012","expect":{"2012":"down"}},{"split":"test","text":"weight Rotterdam 2018 at 0.9","expect":{"2018":0.9}},{"split":"test","text":"never mind","command":"undo"},{"split":"test","text":"the oldest race doesn't matter anymore","expect":{"2012":"down"}},{"split":"test","text":"2014 was her debut and she was nervous","expect":{"2014":"down"}},{"split":"test","text":"nothing special about 2018","expect":{}},{"split":"test","text":"she was sick there","context":2014,"expect":{"2014":"down"}},{"split":"test","text":"Rotterdam was great both times","expect":{"2012":"up","2018":"up"}}]};
+const MANIFEST = {"recency": {"best_half_life": 4.0, "equal_weights_error_pct": 2.2674, "errors_pct": {"1.0": 2.3899, "2.0": 2.2708, "3.0": 2.2287, "4.0": 2.2122, "6.0": 2.2196, "8.0": 2.2213, "equal": 2.2674}, "n": 300, "seed": 20240318}, "benchmark": {"dev": {"accuracy": 1.0, "cases": 18, "correct": 18, "race_precision": 1.0, "race_recall": 1.0}, "test": {"accuracy": 0.5833, "cases": 24, "correct": 14, "race_precision": 1.0, "race_recall": 0.5}}, "validation": {"cases": 14206, "mean_error_pct": 2.29251, "median_error_pct": 1.99491, "n": 400, "p90_error_pct": 4.76436, "paper_initial_model_error_pct": 3.14, "range_coverage_pct": 80.75}, "outputs": {"recency_fit.json": "dbb59cc2a5d03de6d9e16cf6a1a191ab645fd62c29126a756e7e7a9e2479a248", "steer_benchmark.json": "d7f544c8b88544479ba2ae9ff192571ef1c88e70c538839f8bffee177c9879a0", "study_report.md": "07aff71a4bc38891ad2e945507228eb072ae62229da3343f71d574ae5d1e2029", "validation.json": "880f4c01e353f328e05969922afb8438478f70eda7f8f6237f4da68dec514641"}, "inputs": {"benchmark_sha256": "4199ce00410335a684e5899363441162acd7ec082a81bed7e2b20ffcdc3bbf7f", "config_sha256": "120eeaa82cdd30be7f4e27b8245bcc68c7b41e0bdbfd4c634338202f414dc606", "data_sha256": "933673202c078bb8163da358def9586a334bc10568079f4717322f1492854841", "lexicon_sha256": "8027f0dfd5b3027c6b7ee615a33ac9ed20a925889dfd533859fbf63baf154841", "questionnaire_sha256": "85fe7d344f9a303e38102e5da9e0b4bdc7e5362c3c7824f8dc259184aab072fa"}, "env": {"pacesense": "2.3.0", "python": "3.13.16", "git_commit": "16cfb6430975fdac008a19db5c1450707b447859"}};
+</script>
+<script>
+/* ======================= interpreter: a faithful port of src/pacesense/steer/intent.py ======================= */
+const Steer = (() => {
+  const TEENS = {ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19};
+  const POINT = {zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9};
+  const NUMW = {zero:0,nothing:0,none:0,half:.5,full:1,one:1,max:1,maximum:1,minimum:0};
+  const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const cache = new Map();
+  const re = p => { if (!cache.has(p)) cache.set(p, new RegExp("(?<![\\w'])" + esc(p).replace(/ /g, "\\s+") + "(?![\\w'])", "g")); const r = cache.get(p); r.lastIndex = 0; return r; };
+  const cues = [];
+  for (const [effect, g] of Object.entries(LEX.phrases)) for (const kind of ["verb","describe"]) for (const p of (g[kind] || [])) cues.push({phrase: String(p).toLowerCase(), effect, verb: kind === "verb"});
+  cues.push({phrase:"less", effect:"down", verb:false}, {phrase:"more", effect:"up", verb:false});
+  cues.sort((a, b) => b.phrase.length - a.phrase.length);
+  const byPhrase = Object.fromEntries(cues.map(c => [c.phrase, c]));
+  const soften = LEX.modifiers.soften, intensify = LEX.modifiers.intensify;
+
+  function normalise(t){
+    t = t.toLowerCase().replace(/’/g, "'").replace(/–/g, "-");
+    t = t.replace(/\btwenty (ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen)\b/g, (m, a) => String(2000 + TEENS[a]));
+    t = t.replace(/\btwenty twenty(?: (one|two|three|four|five|six|seven|eight|nine))?\b/g, (m, a) => String(2020 + (a ? POINT[a] : 0)));
+    t = t.replace(/\btwo thousand (?:and )?(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen)\b/g, (m, a) => String(2000 + (POINT[a] ?? TEENS[a])));
+    t = t.replace(/\bpoint (zero|one|two|three|four|five|six|seven|eight|nine)\b/g, (m, a) => "0." + POINT[a]);
+    t = t.replace(/\b'(\d\d)\b/g, (m, a) => "20" + a);
+    return t.replace(/\s+/g, " ").trim();
+  }
+  const overlaps = (s, e, taken) => taken.some(([ts, te]) => s < te && ts < e);
+  function findAll(text, phrases, taken){
+    const out = [];
+    for (const p of [...new Set(phrases)].sort((a, b) => b.length - a.length)){
+      for (const m of text.matchAll(re(p))){ const s = m.index, e = s + m[0].length; if (overlaps(s, e, taken)) continue; taken.push([s, e]); out.push([s, e, p]); }
+    }
+    return out.sort((a, b) => a[0] - b[0]);
+  }
+  const wordsBefore = (text, pos, n) => (text.slice(0, pos).match(/[\w']+/g) || []).slice(-n);
+  function hasBefore(text, pos, phrases, n){ const w = wordsBefore(text, pos, n).join(" "); for (const p of [...phrases].sort((a, b) => b.length - a.length)) if (re(p).test(w)) return p; return null; }
+  const stripArticles = t => t.replace(/\b(?:the|her|his|their|a|an)\s+/g, "");
+  function spanIn(text, phrase){ const pat = "(?<![\\w'])" + phrase.split(" ").map(esc).join("\\s+(?:(?:the|her|his|their|a|an)\\s+)?") + "(?![\\w'])"; const m = new RegExp(pat).exec(text); return m ? [m.index, m.index + m[0].length] : null; }
+  const sentences = t => t.split(/(?<!\d)[.,](?!\d)|[;!?]+|\s+\bbut\b\s+|\s+\bhowever\b\s+|\s+\bwhereas\b\s+|\s+\balthough\b\s+/).map(s => (s || "").trim()).filter(Boolean);
+  function order(races){ return races.map((r, i) => i).sort((a, b) => ((races[b].year || 0) - (races[a].year || 0)) || (b - a)); }
+  function references(clause, races, taken, unknown){
+    const refs = [], newest = order(races);
+    const groups = {most_recent: newest.slice(0, 1), previous: newest.slice(1, 2), oldest: newest.slice(-1), recent_group: newest.slice(0, 2),
+      older_group: newest.length <= 3 ? newest.slice(1) : newest.slice(2), all: races.map((r, i) => i)};
+    const events = [...new Set(races.map(r => String(r.event || "").toLowerCase()).filter(Boolean))].sort((a, b) => b.length - a.length);
+    for (const ev of events){
+      for (const m of clause.matchAll(new RegExp("(?<![\\w'])" + esc(ev) + "(?:\\s+(?:in\\s+)?((?:19|20)\\d\\d))?(?![\\w'])", "g"))){
+        const s = m.index, e = s + m[0].length; if (overlaps(s, e, taken)) continue;
+        const year = m[1] ? +m[1] : null, idx = races.map((r, i) => i).filter(i => String(races[i].event).toLowerCase() === ev && (year === null || races[i].year === year));
+        taken.push([s, e]); if (idx.length) refs.push({s, e, races: idx, pronoun: false}); else unknown.push(m[0]);
+      }
+    }
+    for (const m of clause.matchAll(/(?<![\w.])((?:19|20)\d\d)(?![\w.])/g)){
+      const s = m.index, e = s + m[0].length; if (overlaps(s, e, taken)) continue; taken.push([s, e]);
+      const idx = races.map((r, i) => i).filter(i => races[i].year === +m[1]);
+      if (idx.length) refs.push({s, e, races: idx, pronoun: false}); else unknown.push(m[1]);
+    }
+    for (const [key, phrases] of Object.entries(LEX.references)){ if (key === "pronoun") continue;
+      for (const [s, e] of findAll(clause, phrases, taken)) if (groups[key] && groups[key].length) refs.push({s, e, races: groups[key], pronoun: false}); }
+    for (const [s, e] of findAll(clause, LEX.references.pronoun || [], taken)) refs.push({s, e, races: [], pronoun: true});
+    return refs.sort((a, b) => a.s - b.s);
+  }
+  const VALUE = "(0?\\.\\d+|1\\.0+|0|1|zero|nothing|none|half|full|one|max|maximum|minimum)";
+  function explicitSets(clause, refs, taken){
+    const out = [];
+    if (!/\b(set|put|make|give|change|move|weight|weigh|slider|to|at)\b/.test(clause)) return out;
+    const r = new RegExp("(?:\\b(?:to|at|of|=|weight|weighted)\\s+(?:a\\s+)?(?:weight\\s+(?:of\\s+)?)?)" + VALUE + "(?![\\w:])", "g");
+    for (const m of clause.matchAll(r)){
+      const vs = m.index + m[0].length - m[1].length, ve = m.index + m[0].length; if (overlaps(vs, ve, taken)) continue;
+      let v = m[1] in NUMW ? NUMW[m[1]] : parseFloat(m[1]); if (!(v >= 0 && v <= 1)) continue;
+      taken.push([m.index, ve]);
+      const before = refs.filter(x => x.e <= m.index), target = before.length ? before[before.length - 1] : (refs[0] || null);
+      out.push([target, Math.round(v * 10) / 10, m[0].trim()]);
+    }
+    return out;
+  }
+  const TIME = /(\d{1,2}:\d{2}(?::\d{2})?|\d\s*h(?:ours?|rs?)?\s*(?:and\s*)?\d{1,2}\s*(?:m(?:in(?:ute)?s?)?)?(?:\s*\d{1,2}\s*s(?:ec(?:ond)?s?)?)?|(?:sub|under)\s*\d(?::\d{2})?)/;
+  function parseTime(raw){
+    raw = raw.replace(/^(?:sub|under)\s*/, "");
+    let m = raw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/); if (m) return +m[1] * 3600 + +m[2] * 60 + (+m[3] || 0);
+    m = raw.match(/^(\d)\s*h(?:ours?|rs?)?\s*(?:and\s*)?(\d{1,2})?/); if (m) return +m[1] * 3600 + (+m[2] || 0) * 60;
+    m = raw.match(/^(\d)$/); if (m) return +m[1] * 3600;
+    return null;
+  }
+  function estimate(text){
+    for (const cue of LEX.estimate_cues) for (const m of text.matchAll(re(cue))){
+      const from = m.index + m[0].length, tail = text.slice(from, from + 40), tm = TIME.exec(tail); if (!tm) continue;
+      const s = parseTime(tm[1]); if (s && s >= 7200 && s <= 25200) return [s, [from + tm.index, from + tm.index + tm[0].length]];
+    }
+    return [null, null];
+  }
+  function interpret(text, races, context){
+    const norm = normalise(text), out = {text, actions: [], estimate: null, unresolved: [], unknown: [], context};
+    if (!norm) return out;
+    const bare = stripArticles(norm);
+    for (const kind of ["undo", "reset"]){ const hit = findAll(bare, LEX.commands[kind] || [], []); if (hit.length){ out.actions.push({kind, races: [], value: null, cue: hit[0][2], conf: 1}); return out; } }
+    const [est, estSpan] = estimate(norm); out.estimate = est;
+    const rec = findAll(bare, LEX.commands.recency || [], []);
+    const recSpans = rec.map(r => spanIn(norm, r[2])).filter(Boolean);
+    if (rec.length) out.actions.push({kind: "recency", races: races.map((r, i) => i), value: null, cue: rec[0][2], conf: 1});
+    let ctx = context;
+    for (const clause of sentences(norm)){
+      const offset = norm.indexOf(clause), taken = [];
+      for (const sp of recSpans.concat(estSpan ? [estSpan] : [])) if (sp[0] >= offset && sp[1] <= offset + clause.length + 1) taken.push([sp[0] - offset, sp[1] - offset]);
+      const unknown = [], refs = references(clause, races, taken, unknown); out.unknown.push(...unknown);
+      const resolved = [];
+      for (const r of refs){ if (r.pronoun){ const prior = resolved.filter(x => !x.pronoun); const idx = prior.length ? prior[prior.length - 1].races : (ctx != null ? [ctx] : []); if (idx.length) resolved.push({...r, races: idx}); } else resolved.push(r); }
+      const named = resolved.filter(r => r.races.length);
+      for (const [target, value, cue] of explicitSets(clause, named, taken)){
+        const idx = target ? target.races : (ctx != null ? [ctx] : []);
+        if (idx.length){ out.actions.push({kind: "set", races: idx, value, cue, conf: 1}); ctx = idx[idx.length - 1]; } else out.unresolved.push(cue);
+      }
+      const hits = findAll(clause, cues.map(c => c.phrase), taken);
+      for (const [s, e, phrase] of hits){
+        const cue = byPhrase[phrase], spec = LEX.effects[cue.effect];
+        const neg = hasBefore(clause, s, LEX.negations, 3);
+        let mod = 1; if (hasBefore(clause, s, soften.words, 3)) mod = soften.factor; else if (hasBefore(clause, s, intensify.words, 2)) mod = intensify.factor;
+        const before = named.filter(r => r.e <= s), after = named.filter(r => r.s >= e);
+        const target = cue.verb ? (after[0] || before[before.length - 1] || null) : (before[before.length - 1] || after[0] || null);
+        let idx, conf = .8;
+        if (!target){ if (ctx == null){ out.unresolved.push(phrase); continue; } idx = [ctx]; conf = .6; } else { idx = target.races; if (target.pronoun) conf = .6; }
+        const label = neg ? neg + " " + phrase : phrase;
+        if ("set" in spec && !neg) out.actions.push({kind: "set", races: idx, value: spec.set, cue: label, conf});
+        else { let d = "shift" in spec ? spec.shift : (spec.set === 0 ? -.3 : .3); if (neg) d = -.5 * d; out.actions.push({kind: "shift", races: idx, value: Math.round(d * mod * 100) / 100, cue: label, conf}); }
+        if (idx.length === 1) ctx = idx[0];
+      }
+      if (named.length && !hits.length){ const last = named[named.length - 1]; if (last.races.length === 1) ctx = last.races[0]; }
+    }
+    out.context = ctx; out.actions = merge(out.actions); return out;
+  }
+  function merge(actions){
+    const singles = new Map(), keep = [];
+    for (const a of actions){ if (a.kind === "set" || a.kind === "shift"){ for (const i of a.races){ if (!singles.has(i)) singles.set(i, []); singles.get(i).push(a); } } else keep.push(a); }
+    for (const [i, acts] of singles){
+      const sets = acts.filter(a => a.kind === "set");
+      if (sets.length){ const a = sets[sets.length - 1]; keep.push({kind: "set", races: [i], value: a.value, cue: a.cue, conf: a.conf}); }
+      else { const tot = Math.max(-1, Math.min(1, acts.reduce((x, a) => x + a.value, 0))); keep.push({kind: "shift", races: [i], value: Math.round(tot * 100) / 100, cue: [...new Set(acts.map(a => a.cue))].join(" + "), conf: Math.min(...acts.map(a => a.conf))}); }
+    }
+    const ord = {undo: 0, reset: 1, recency: 2, set: 3, shift: 3};
+    return keep.sort((a, b) => (ord[a.kind] - ord[b.kind]) || ((a.races[0] ?? -1) - (b.races[0] ?? -1)));
+  }
+  function round1(x){ // Python round(x, 1): half to even on the decimal representation
+    const y = x * 10, f = Math.floor(y), d = y - f;
+    if (Math.abs(d - .5) < 1e-9) return (f % 2 === 0 ? f : f + 1) / 10;
+    return Math.round(y) / 10;
+  }
+  function recencyWeights(years, h, floor){ const latest = Math.max(...years); return years.map(y => round1(Math.min(1, Math.max(floor, Math.pow(2, -(latest - y) / h))))); }
+  return {interpret, recencyWeights, round1};
+})();
+
+/* ======================= model arithmetic: port of MarathonModel.combine and steer/evidence.py ======================= */
+const Model = (() => {
+  function combine(races, w){
+    const sw = w.reduce((a, b) => a + b, 0); if (sw <= 0) return null;
+    const finish = races.reduce((a, r, i) => a + w[i] * r.pred_s, 0) / sw;
+    const vals = [], wts = [];
+    races.forEach((r, i) => { if (w[i] > 0) r.cases.forEach((v, k) => { vals.push(v); wts.push(r.cw[k] * w[i] / sw); }); });
+    const ord = vals.map((v, i) => i).sort((a, b) => vals[a] - vals[b]);
+    const v = ord.map(i => vals[i]), ww = ord.map(i => wts[i]); let c = 0; const cum = ww.map(x => { c += x; return c - .5 * x; }); const tot = ww.reduce((a, b) => a + b, 0);
+    const q = p => { const t = p * tot; if (t <= cum[0]) return v[0]; for (let i = 1; i < cum.length; i++) if (t <= cum[i]) return v[i - 1] + (v[i] - v[i - 1]) * (t - cum[i - 1]) / (cum[i] - cum[i - 1]); return v[v.length - 1]; };
+    return {finish, low: q(.2), high: q(.8)};
+  }
+  const median = a => { const s = [...a].sort((x, y) => x - y), n = s.length; return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };
+  function evidence(times){
+    return times.map((x, i) => { const o = times.filter((_, j) => j !== i), med = median(o), mad = median(o.map(v => Math.abs(v - med))) * 1.4826, scale = Math.max(mad, .02 * med), z = (x - med) / scale;
+      return {z, med, dir: Math.abs(z) < 1 ? 0 : (z > 0 ? 1 : -1)}; });
+  }
+  const mins = s => { const m = Math.abs(s) / 60; return m >= 1.5 ? Math.round(m) + " min" : Math.round(Math.abs(s)) + " s"; };
+  function check(ev, finish, old, nw, name){
+    if (Steer.round1(nw - old) === 0) return ["no_change", "No change."];
+    const lowering = nw < old, gap = mins(finish - ev.med);
+    if (ev.dir === 0) return ["your_knowledge", `The times do not single out ${name}, so this rests on what you know about it.`];
+    const slow = ev.dir > 0;
+    if (lowering === slow) return ["supported", `The data agrees: ${name} was ${gap} ${slow ? "slower" : "faster"} than her other races.`];
+    return ["against_data", lowering ? `${name} was one of her faster races (${gap}); counting it less makes the target slower.` : `${name} was one of her slower races (${gap}); counting it more makes the target slower.`];
+  }
+  function steering(initial, now, est){
+    if (est == null) return [null, "Say your own estimate (“I think she can run 3:25”) to see whose view the model takes."];
+    const gap = est - initial; if (Math.abs(gap) < 60) return [null, "Your estimate and the model's agreed from the start."];
+    const a = (now - initial) / gap;
+    if (Math.abs(a) < .15) return [a, "The model is where the data put it."];
+    if (a < 0) return [a, "The model has moved away from your estimate."];
+    if (a < .85) return [a, `The model has moved ${Math.round(a * 100)}% of the way towards your estimate.`];
+    if (a <= 1.15) return [a, "The model now matches your own estimate. The data, or the sliders agreeing with you?"];
+    return [a, "The model has been pushed beyond your own estimate."];
+  }
+  return {combine, evidence, check, steering};
+})();
+const fmt = s => { if (s == null || !isFinite(s)) return "–"; s = Math.round(s); return `${Math.floor(s / 3600)}:${String(Math.floor(s % 3600 / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
+const fmtD = s => { const r = Math.round(Math.abs(s)); return `${s < 0 ? "−" : "+"}${Math.floor(r / 60)}:${String(r % 60).padStart(2, "0")}`; };
+const escH = t => String(t).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+</script>
+<script>
+(() => {
+const NS = "http://www.w3.org/2000/svg";
+const C = {navy:"#2B3A8C",navyT:"#EEF0FA",navyM:"#C9CEEA",coral:"#EF5B66",coralT:"#FDECEE",ink:"#1B2140",muted:"#666C8C",line:"#DADDEB",green:"#2F8F5B",greenT:"#E6F3EC",amber:"#B7791F",blue:"#2F6FB3"};
+function el(tag, a = {}, p){ const e = document.createElementNS(NS, tag); for (const k in a) e.setAttribute(k, a[k]); if (p) p.appendChild(e); return e; }
+function tx(p, x, y, s, a = {}){ const t = el("text", Object.assign({x, y}, a), p); t.textContent = s; return t; }
+const fadeIn = (node, delay, dur = 450) => node.animate([{opacity: 0}, {opacity: 1}], {duration: dur, delay, fill: "forwards"});
+
+/* ---------- deck engine ---------- */
+const stage = document.getElementById("stage");
+const fit = () => { stage.style.transform = `scale(${Math.min(innerWidth / 1600, innerHeight / 900)})`; };
+addEventListener("resize", fit); fit();
+const slides = [...document.querySelectorAll(".slide")]; let cur = 0; const hooks = {};
+const notes = document.getElementById("notes"), ov = document.getElementById("overview");
+function go(i, dir){
+  i = Math.max(0, Math.min(slides.length - 1, i));
+  slides.forEach((s, k) => { s.classList.toggle("active", k === i); s.classList.toggle("past", k < i); });
+  const s = slides[i];
+  s.querySelectorAll(".frag").forEach(f => f.classList.toggle("shown", dir < 0));
+  s.querySelectorAll(".rise").forEach(r => { r.style.animation = "none"; r.offsetHeight; r.style.animation = ""; });
+  cur = i; document.getElementById("counter").textContent = (i + 1) + " / " + slides.length;
+  document.getElementById("progress").style.width = ((i + 1) / slides.length * 100) + "%";
+  notes.innerHTML = `<div style="font-size:13px;color:#666C8C;font-weight:700;letter-spacing:.08em;margin-bottom:6px">SPEAKER NOTES · ${i + 1} · ${s.dataset.title.toUpperCase()}</div>` + (s.dataset.notes || "");
+  history.replaceState(null, "", "#" + (i + 1)); if (hooks[i]) hooks[i](); renderOv();
+  if (i > 0) document.getElementById("help").style.opacity = 0;
+}
+const next = () => { const f = slides[cur].querySelector(".frag:not(.shown)"); if (f){ f.classList.add("shown"); return; } go(cur + 1, 1); };
+const prev = () => { const sh = [...slides[cur].querySelectorAll(".frag.shown")]; if (sh.length){ sh[sh.length - 1].classList.remove("shown"); return; } go(cur - 1, -1); };
+const toggleFs = () => { if (!document.fullscreenElement) document.documentElement.requestFullscreen?.(); else document.exitFullscreen?.(); };
+addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" && !["Escape"].includes(e.key)) return;
+  if (ov.classList.contains("open") && !["Escape", "o", "O"].includes(e.key)) return;
+  switch (e.key){
+    case "ArrowRight": case "PageDown": case " ": e.preventDefault(); next(); break;
+    case "ArrowLeft": case "PageUp": e.preventDefault(); prev(); break;
+    case "Home": go(0, 1); break; case "End": go(slides.length - 1, 1); break;
+    case "n": case "N": notes.classList.toggle("open"); break;
+    case "o": case "O": ov.classList.toggle("open"); break;
+    case "f": case "F": toggleFs(); break;
+    case "Escape": ov.classList.remove("open"); notes.classList.remove("open"); if (e.target.blur) e.target.blur(); break;
+  }
+});
+document.getElementById("bNext").onclick = next; document.getElementById("bPrev").onclick = prev;
+document.getElementById("bNotes").onclick = () => notes.classList.toggle("open");
+document.getElementById("bOv").onclick = () => ov.classList.toggle("open"); document.getElementById("bFs").onclick = toggleFs;
+function renderOv(){ const g = ov.querySelector(".ov"); g.innerHTML = ""; slides.forEach((s, k) => { const b = document.createElement("button"); b.innerHTML = `<small>${k + 1}</small>${s.dataset.title}`; if (k === cur) b.className = "cur"; b.onclick = () => { ov.classList.remove("open"); go(k, 1); }; g.appendChild(b); }); }
+let tx0 = null; addEventListener("touchstart", e => { tx0 = e.touches[0].clientX; }, {passive: true});
+addEventListener("touchend", e => { if (tx0 === null) return; const d = e.changedTouches[0].clientX - tx0; if (Math.abs(d) > 60 && !e.target.closest("input,button")) (d < 0 ? next : prev)(); tx0 = null; });
+
+/* ---------- title wave: a voice waveform that becomes a pacing line ---------- */
+hooks[0] = () => {
+  const svg = document.getElementById("titleWave"); svg.innerHTML = "";
+  const g = el("g", {opacity: .5}, svg);
+  for (let i = 0; i < 90; i++){ const x = 80 + i * 16, h = 6 + Math.abs(Math.sin(i * .55) * Math.cos(i * .17)) * (i < 50 ? 60 : 60 * Math.max(0, (70 - i) / 20));
+    const r = el("rect", {x, y: 760 - h / 2, width: 7, height: h, rx: 3.5, fill: "#FF9AA1", opacity: 0}, g); fadeIn(r, i * 18, 300); }
+  const pts = [0, -2, -3, -2, 0, 3, 8, 14, 10].map((v, i) => [880 + i * 80, 760 + v * 4]);
+  let d = "M" + pts[0]; for (let i = 1; i < pts.length; i++){ const p = pts[i - 1], q = pts[i], mx = (p[0] + q[0]) / 2; d += ` C${mx},${p[1]} ${mx},${q[1]} ${q[0]},${q[1]}`; }
+  const path = el("path", {d, fill: "none", stroke: "#fff", "stroke-width": 3, opacity: .55}, svg); const L = path.getTotalLength();
+  path.style.strokeDasharray = L; path.animate([{strokeDashoffset: L}, {strokeDashoffset: 0}], {duration: 1800, delay: 1300, fill: "forwards"}); path.style.strokeDashoffset = L;
+};
+
+/* ---------- live demo ---------- */
+const D = {races: DEMO.races, w: DEMO.races.map(() => .5), est: null, ctx: null, turns: [], undo: [], moves: 0, reasoned: 0};
+D.ev = Model.evidence(D.races.map(r => r.finish_s));
+D.initial = Model.combine(D.races, D.w).finish;
+const nameOf = i => `${D.races[i].event} ${D.races[i].year}`;
+function buildRaces(){
+  const box = document.getElementById("dRaces");
+  box.innerHTML = D.races.map((r, i) => `<div class="d-race" id="dr${i}"><div class="d-top"><span><b style="font-family:Inter">${escH(r.event)} ${r.year}</b> <span class="chip ${D.ev[i].dir > 0 ? "slow" : D.ev[i].dir < 0 ? "fast" : "typical"}">${D.ev[i].dir > 0 ? "slower than her others" : D.ev[i].dir < 0 ? "faster than her others" : "typical"}</span></span><b>${fmt(r.finish_s)}</b></div>
+    <div class="d-sl"><input type="range" min="0" max="1" step="0.1" value="0.5" id="ds${i}" aria-label="${escH(r.event)} ${r.year} weight"><span class="d-w" id="dw${i}">0.5</span></div></div>`).join("");
+  D.races.forEach((r, i) => document.getElementById("ds" + i).addEventListener("change", e => { manual(i, parseFloat(e.target.value)); }));
+}
+const shown = new Map();
+function animateSlider(i, target){
+  const sl = document.getElementById("ds" + i), from = shown.has(i) ? shown.get(i) : target, t0 = performance.now();
+  shown.set(i, target); document.getElementById("dw" + i).textContent = target.toFixed(1);
+  if (from === target){ sl.value = target; return; }
+  (function step(now){ const p = Math.min(1, (now - t0) / 700), e = 1 - Math.pow(1 - p, 3); sl.value = from + (target - from) * e; if (p < 1) requestAnimationFrame(step); })(t0);
+}
+function setW(turn, i, nw, cue, reasoned){
+  nw = Steer.round1(Math.min(1, Math.max(0, nw))); const old = D.w[i]; if (nw === old) return;
+  const trial = D.w.slice(); trial[i] = nw; if (trial.every(x => x <= 0)){ turn.notes.push(`${nameOf(i)} left at ${old.toFixed(1)}: at least one race must count.`); return; }
+  D.w[i] = nw;
+  const [verdict, msg] = cue === "undo" ? ["undo", "Back to the value before."] : Model.check(D.ev[i], D.races[i].finish_s, old, nw, nameOf(i));
+  turn.applied.push({i, old, nw, cue, verdict, msg}); if (cue !== "undo"){ D.moves++; if (reasoned) D.reasoned++; }
+}
+function hear(text){
+  const it = Steer.interpret(text, D.races, D.ctx); D.ctx = it.context;
+  if (it.actions.some(a => a.kind === "undo")) return undo(text);
+  const before = Model.combine(D.races, D.w).finish, snap = D.w.slice(), turn = {text, applied: [], notes: []};
+  if (it.estimate != null){ D.est = it.estimate; turn.notes.push(`Your estimate: ${fmt(it.estimate)}.`); }
+  for (const a of it.actions){
+    if (a.kind === "reset") D.races.forEach((r, i) => setW(turn, i, .5, a.cue, true));
+    else if (a.kind === "recency"){ const t = Steer.recencyWeights(D.races.map(r => r.year), LEX.recency.half_life_years, LEX.recency.floor); t.forEach((w, i) => { if (D.w[i] < .5 && w > D.w[i]) return; setW(turn, i, w, a.cue, true); }); }
+    else if (a.kind === "set") a.races.forEach(i => setW(turn, i, a.value, a.cue, !/^(to|at|of|=|weight|weighted)\b/.test(a.cue)));
+    else if (a.kind === "shift") a.races.forEach(i => setW(turn, i, D.w[i] + a.value, a.cue, true));
+  }
+  it.unknown.forEach(u => turn.notes.push(`She has no race '${u}' here.`));
+  it.unresolved.forEach(u => turn.notes.push(`Heard “${u}” but not which race. Name the race or year.`));
+  if (!it.actions.length && it.estimate == null && !it.unknown.length && !it.unresolved.length) turn.notes.push("Nothing in that changes a race weight.");
+  if (turn.applied.length) D.undo.push(snap);
+  turn.before = before; finish(turn);
+}
+function undo(text){
+  const turn = {text, applied: [], notes: [], before: Model.combine(D.races, D.w).finish};
+  if (!D.undo.length) turn.notes.push("Nothing to undo."); else D.undo.pop().forEach((w, i) => setW(turn, i, w, "undo", true));
+  finish(turn);
+}
+function manual(i, w){ const turn = {text: `${nameOf(i)} slider`, manual: true, applied: [], notes: [], before: Model.combine(D.races, D.w).finish}, snap = D.w.slice(); setW(turn, i, w, "slider", false); if (turn.applied.length) D.undo.push(snap); finish(turn); }
+const TAG = {supported: "data agrees", your_knowledge: "your knowledge", against_data: "against the data", undo: "undone"};
+function finish(turn){
+  const now = Model.combine(D.races, D.w);
+  turn.after = now.finish; D.turns.unshift(turn);
+  const feed = document.getElementById("dFeed"), div = document.createElement("div"); div.className = "turn";
+  const delta = turn.applied.length ? `<div class="note"><b>Target ${fmt(turn.after)} (${fmtD(turn.after - turn.before)})</b></div>` : "";
+  div.innerHTML = `<div class="said">${turn.manual ? "Moved a slider by hand" : "“" + escH(turn.text) + "”"}</div>` +
+    turn.applied.map(a => `<div class="move v-${a.verdict}"><span class="tag">${TAG[a.verdict] || ""}</span>${escH(nameOf(a.i))} <b>${a.old.toFixed(1)} → ${a.nw.toFixed(1)}</b>${a.cue !== "slider" && a.cue !== "undo" ? ` · “${escH(a.cue)}”` : ""}<div class="note">${escH(a.msg)}</div></div>`).join("") +
+    turn.notes.map(n => `<div class="note">${escH(n)}</div>`).join("") + delta;
+  feed.prepend(div); while (feed.children.length > 4) feed.lastChild.remove();
+  render(turn);
+}
+function render(turn){
+  const now = Model.combine(D.races, D.w), moved = new Set((turn && turn.applied || []).map(a => a.i));
+  D.races.forEach((r, i) => { animateSlider(i, D.w[i]); if (moved.has(i)){ const c = document.getElementById("dr" + i); c.classList.add("moved"); setTimeout(() => c.classList.remove("moved"), 1500); } });
+  document.getElementById("dFinish").textContent = fmt(now.finish);
+  const d = now.finish - D.initial; document.getElementById("dDelta").textContent = Math.abs(d) < 1 ? "Same as equal weights" : `${fmtD(d)} vs equal weights (${fmt(D.initial)})`;
+  const svg = document.getElementById("dRange"); svg.innerHTML = "";
+  const vals = [now.low, now.high, now.finish, D.est].filter(v => v != null), lo = Math.min(...vals) - 150, hi = Math.max(...vals) + 150, X = v => 10 + (v - lo) / (hi - lo) * 340;
+  el("rect", {x: X(now.low), y: 26, width: X(now.high) - X(now.low), height: 10, rx: 5, fill: C.navyM}, svg);
+  tx(svg, X(now.low), 58, fmt(now.low), {"font-size": 11, fill: C.muted, "text-anchor": "middle"}); tx(svg, X(now.high), 58, fmt(now.high), {"font-size": 11, fill: C.muted, "text-anchor": "middle"});
+  el("rect", {x: X(now.finish) - 1.5, y: 18, width: 3, height: 26, fill: C.navy}, svg);
+  if (D.est != null){ el("rect", {x: X(D.est) - 1.5, y: 18, width: 3, height: 26, fill: C.coral}, svg); tx(svg, X(D.est), 13, "you " + fmt(D.est), {"font-size": 11, "font-weight": 700, fill: C.coral, "text-anchor": "middle"}); }
+  const [si, label] = Model.steering(D.initial, now.finish, D.est);
+  const pin = document.getElementById("dPin"); pin.style.left = (si == null ? 0 : Math.max(0, Math.min(1.25, si)) / 1.25 * 100) + "%"; pin.style.opacity = si == null ? .25 : 1;
+  document.getElementById("dSteer").textContent = label; document.getElementById("dIdx").textContent = si == null ? "–" : si.toFixed(2);
+  document.getElementById("dReason").textContent = D.moves ? Math.round(D.reasoned / D.moves * 100) + "%" : "–";
+}
+function caption(t, interim){ document.getElementById("caption").innerHTML = interim ? `<span class="interim">${escH(t)}</span>` : escH(t); }
+buildRaces(); render(null);
+document.getElementById("dForm").onsubmit = e => { e.preventDefault(); const i = document.getElementById("typed"), v = i.value.trim(); i.value = ""; if (v){ caption(v); hear(v); } };
+document.getElementById("dReset").onclick = () => { caption("equal weights"); hear("reset"); };
+let scripting = false;
+document.getElementById("dScript").onclick = async () => {
+  if (scripting) return; scripting = true;
+  const slow = D.races.findIndex((r, i) => D.ev[i].dir > 0), fastest = D.races.map((r, i) => i).sort((a, b) => D.races[a].finish_s - D.races[b].finish_s)[0];
+  const lines = [`${D.races[slow].year} was a hot day and she was injured`, `I think she can run ${fmt(D.initial - 300).slice(0, 4)}`, "trust the recent races more",
+                 `the ${D.races[fastest].event} ${D.races[fastest].year} race was a training run`, "scratch that"];
+  for (const line of lines){ for (let k = 1; k <= line.length; k++){ caption(line.slice(0, k), true); await new Promise(r => setTimeout(r, 26)); } caption(line); hear(line); await new Promise(r => setTimeout(r, 2300)); }
+  scripting = false;
+};
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition; let rec = null, listening = false;
+const mic = document.getElementById("micBtn"), ms = document.getElementById("micStatus");
+mic.onclick = () => {
+  if (listening){ listening = false; rec && rec.stop(); mic.classList.remove("on"); ms.textContent = "Click to listen"; return; }
+  if (!SR){ ms.textContent = "No speech recognition here"; document.getElementById("micHint").textContent = "Use Chrome or Edge, or type below."; return; }
+  rec = new SR(); rec.continuous = true; rec.interimResults = true; rec.lang = "en-US";
+  rec.onresult = e => { let interim = ""; for (let i = e.resultIndex; i < e.results.length; i++){ const r = e.results[i]; if (r.isFinal){ const t = r[0].transcript.trim(); if (t){ caption(t); hear(t); } } else interim += r[0].transcript; } if (interim) caption(interim, true); };
+  rec.onerror = e => { if (e.error === "not-allowed"){ listening = false; mic.classList.remove("on"); ms.textContent = "Microphone blocked"; } };
+  rec.onend = () => { if (listening) try { rec.start(); } catch (err) {} };
+  rec.start(); listening = true; mic.classList.add("on"); ms.textContent = "Listening continuously";
+};
+
+/* ---------- architecture ---------- */
+hooks[5] = () => {
+  const svg = document.getElementById("archSvg"); svg.innerHTML = "";
+  const defs = el("defs", {}, svg), mk = el("marker", {id: "ah", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto"}, defs); el("path", {d: "M0,0 L10,5 L0,10 z", fill: C.muted}, mk);
+  const nodes = [
+    {x: 0, y: 40, w: 220, t: "🎙️ Speech", s: ["browser (continuous)", "or local Whisper", "or typed"]},
+    {x: 270, y: 40, w: 250, t: "Interpreter", s: ["race: “2014”, “Amsterdam”,", "“the last race”, “it”", "cue: “hot day” −0.3"], hot: 1},
+    {x: 570, y: 40, w: 230, t: "Validator", s: ["race exists?", "reason really said?", "weights in [0, 1]"]},
+    {x: 850, y: 40, w: 250, t: "PlanSession", s: ["same set_weight() as", "the sliders: change log,", "plan check, saved plan"]},
+    {x: 1150, y: 40, w: 270, t: "Evidence layer", s: ["data agrees / your", "knowledge / against data", "influence · steering"], hot: 1},
+  ];
+  nodes.forEach((n, i) => {
+    if (i){ const p = nodes[i - 1]; el("path", {d: `M${p.x + p.w + 4},${n.y + 85} L${n.x - 6},${n.y + 85}`, stroke: C.muted, "stroke-width": 2.5, "marker-end": "url(#ah)"}, svg);
+      const dot = el("circle", {r: 6, fill: C.coral}, svg); dot.animate([{transform: `translate(${p.x + p.w}px,${n.y + 85}px)`}, {transform: `translate(${n.x}px,${n.y + 85}px)`}], {duration: 900, delay: i * 400, iterations: Infinity}); }
+    const g = el("g", {opacity: 0}, svg);
+    el("rect", {x: n.x, y: n.y, width: n.w, height: 170, rx: 16, fill: n.hot ? C.navy : "#fff", stroke: n.hot ? C.navy : C.navyM, "stroke-width": 2.5}, g);
+    tx(g, n.x + n.w / 2, n.y + 40, n.t, {"text-anchor": "middle", "font-size": 22, "font-weight": 800, fill: n.hot ? "#fff" : C.navy});
+    n.s.forEach((s, k) => tx(g, n.x + n.w / 2, n.y + 80 + k * 26, s, {"text-anchor": "middle", "font-size": 16, fill: n.hot ? "#DDE1FA" : C.muted}));
+    fadeIn(g, i * 160);
+  });
+  // AI side path
+  const ai = el("g", {opacity: 0}, svg);
+  el("rect", {x: 300, y: 300, width: 470, height: 120, rx: 16, fill: C.coralT, stroke: C.coral, "stroke-width": 2, "stroke-dasharray": "7 6"}, ai);
+  tx(ai, 535, 338, "Optional: checked AI reader", {"text-anchor": "middle", "font-size": 20, "font-weight": 800, fill: C.coral});
+  tx(ai, 535, 368, "reads paraphrases (“a broken toe”) and proposes", {"text-anchor": "middle", "font-size": 16, fill: C.ink});
+  tx(ai, 535, 392, "JSON changes; code keeps only valid ones", {"text-anchor": "middle", "font-size": 16, fill: C.ink});
+  el("path", {d: "M395,210 L395,298", stroke: C.coral, "stroke-width": 2, "stroke-dasharray": "6 5", "marker-end": "url(#ah)"}, ai);
+  el("path", {d: "M680,298 L680,212", stroke: C.coral, "stroke-width": 2, "stroke-dasharray": "6 5", "marker-end": "url(#ah)"}, ai);
+  fadeIn(ai, 1100);
+  const out = el("g", {opacity: 0}, svg);
+  el("rect", {x: 850, y: 300, width: 570, height: 120, rx: 16, fill: C.greenT, stroke: C.green, "stroke-width": 2}, out);
+  tx(out, 1135, 340, "“Amsterdam 2014: 0.5 → 0.0", {"text-anchor": "middle", "font-size": 19, "font-weight": 800, fill: C.green});
+  tx(out, 1135, 370, "The data agrees: it was 19 min slower", {"text-anchor": "middle", "font-size": 17, fill: C.ink});
+  tx(out, 1135, 394, "than her other races.”", {"text-anchor": "middle", "font-size": 17, fill: C.ink});
+  el("path", {d: "M1285,212 L1285,298", stroke: C.green, "stroke-width": 2.5, "marker-end": "url(#ah)"}, out);
+  fadeIn(out, 1500);
+  tx(svg, 720, 480, "The AI proposes; code decides. Rules alone are deterministic, so a session replays exactly from its transcript.", {"text-anchor": "middle", "font-size": 18, fill: C.muted, "font-style": "italic"});
+};
+
+/* ---------- benchmark ---------- */
+hooks[7] = () => {
+  const svg = document.getElementById("benchSvg"); svg.innerHTML = "";
+  el("rect", {x: 0, y: 0, width: 760, height: 480, rx: 16, fill: "#fff", stroke: C.line}, svg);
+  const b = MANIFEST.benchmark, items = [["Fully correct", b.dev.accuracy, b.test.accuracy, `${b.dev.correct}/${b.dev.cases}`, `${b.test.correct}/${b.test.cases}`],
+    ["Race precision", b.dev.race_precision, b.test.race_precision], ["Race recall", b.dev.race_recall, b.test.race_recall]];
+  const y0 = 400, H = 300;
+  for (let v = 0; v <= 1.0001; v += .25){ el("line", {x1: 80, x2: 730, y1: y0 - v * H, y2: y0 - v * H, stroke: C.line}, svg); tx(svg, 70, y0 - v * H + 5, v.toFixed(2), {"text-anchor": "end", "font-size": 13, fill: C.muted}); }
+  items.forEach((it, k) => {
+    const gx = 120 + k * 210;
+    [[it[1], C.navyM, "dev"], [it[2], C.coral, "held-out"]].forEach(([v, col, lab], j) => {
+      const x = gx + j * 82, h = v * H, r = el("rect", {x, y: y0, width: 70, height: 0, rx: 7, fill: col}, svg);
+      r.animate([{y: y0, height: 0}, {y: y0 - h, height: h}], {duration: 800, delay: 200 + k * 200 + j * 120, fill: "forwards", easing: "cubic-bezier(.2,.8,.2,1)"}); r.setAttribute("y", y0 - h); r.setAttribute("height", h);
+      const t = tx(svg, x + 35, y0 - h - 10, (j === 0 && it[3]) ? it[3] : (j === 1 && it[4]) ? it[4] : v.toFixed(2), {"text-anchor": "middle", "font-size": 18, "font-weight": 800, fill: C.ink, opacity: 0}); fadeIn(t, 900 + k * 200);
+    });
+    tx(svg, gx + 76, y0 + 30, it[0], {"text-anchor": "middle", "font-size": 17, "font-weight": 800, fill: C.ink});
+  });
+  el("rect", {x: 480, y: 30, width: 16, height: 16, rx: 3, fill: C.navyM}, svg); tx(svg, 502, 44, "dev (rules written on these)", {"font-size": 14, fill: C.muted});
+  el("rect", {x: 480, y: 54, width: 16, height: 16, rx: 3, fill: C.coral}, svg); tx(svg, 502, 68, "held-out test", {"font-size": 14, fill: C.muted});
+  tx(svg, 30, 40, "PaceSense Live interpreter", {"font-size": 17, "font-weight": 800, fill: C.ink}); tx(svg, 30, 62, "rules only, no AI", {"font-size": 14, fill: C.muted});
+  tx(svg, 380, 460, `${b.dev.cases} dev + ${b.test.cases} held-out sentences · scored by pacesense reproduce`, {"text-anchor": "middle", "font-size": 14, fill: C.muted, "font-style": "italic"});
+};
+
+/* ---------- recency ---------- */
+hooks[8] = () => {
+  const svg = document.getElementById("recSvg"); svg.innerHTML = "";
+  el("rect", {x: 0, y: 0, width: 820, height: 470, rx: 16, fill: "#fff", stroke: C.line}, svg);
+  const r = MANIFEST.recency, keys = ["1.0", "2.0", "3.0", "4.0", "6.0", "8.0"], vals = keys.map(k => r.errors_pct[k]), eq = r.equal_weights_error_pct;
+  const lo = Math.min(...vals, eq) - .03, hi = Math.max(...vals, eq) + .03, X = i => 110 + i * 120, Y = v => 390 - (v - lo) / (hi - lo) * 290;
+  for (let v = Math.ceil(lo * 20) / 20; v <= hi; v += .05){ el("line", {x1: 90, x2: 790, y1: Y(v), y2: Y(v), stroke: C.line}, svg); tx(svg, 80, Y(v) + 5, v.toFixed(2) + "%", {"text-anchor": "end", "font-size": 13, fill: C.muted}); }
+  el("line", {x1: 90, x2: 790, y1: Y(eq), y2: Y(eq), stroke: C.muted, "stroke-width": 2, "stroke-dasharray": "7 6"}, svg);
+  tx(svg, 785, Y(eq) - 9, `equal weights (paper's default) ${eq.toFixed(2)}%`, {"text-anchor": "end", "font-size": 14, fill: C.muted, "font-weight": 700});
+  let d = ""; vals.forEach((v, i) => d += (i ? " L" : "M") + X(i) + "," + Y(v));
+  const p = el("path", {d, fill: "none", stroke: C.coral, "stroke-width": 4}, svg), L = p.getTotalLength(); p.style.strokeDasharray = L; p.animate([{strokeDashoffset: L}, {strokeDashoffset: 0}], {duration: 1200, fill: "forwards"}); p.style.strokeDashoffset = L;
+  vals.forEach((v, i) => { const best = +keys[i] === +r.best_half_life; const c = el("circle", {cx: X(i), cy: Y(v), r: best ? 11 : 7, fill: best ? C.coral : "#fff", stroke: C.coral, "stroke-width": 3, opacity: 0}, svg); fadeIn(c, 300 + i * 150);
+    tx(svg, X(i), 425, keys[i].replace(".0", "") + " yr", {"text-anchor": "middle", "font-size": 15, fill: C.ink, "font-weight": best ? 800 : 500});
+    if (best){ const t = tx(svg, X(i), Y(v) - 22, `best: ${v.toFixed(2)}%`, {"text-anchor": "middle", "font-size": 16, "font-weight": 800, fill: C.coral, opacity: 0}); fadeIn(t, 1300); } });
+  tx(svg, 28, 40, "Mean error vs. held-out best race", {"font-size": 17, "font-weight": 800, fill: C.ink}); tx(svg, 28, 62, "by half-life of the recency profile · lower is better", {"font-size": 14, fill: C.muted});
+  tx(svg, 440, 456, "half-life h (years)", {"text-anchor": "middle", "font-size": 14, fill: C.muted});
+};
+
+/* ---------- power calculator ---------- */
+function invNorm(p){ // Acklam
+  const a = [-39.69683028665376, 220.9460984245205, -275.9285104469687, 138.357751867269, -30.66479806614716, 2.506628277459239],
+        b = [-54.47609879822406, 161.5858368580409, -155.6989798598866, 66.80131188771972, -13.28068155288572],
+        c = [-.007784894002430293, -.3223964580411365, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783],
+        d = [.007784695709041462, .3224671290700398, 2.445134137142996, 3.754408661907416], pl = .02425;
+  let q, r;
+  if (p < pl){ q = Math.sqrt(-2 * Math.log(p)); return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+  if (p > 1 - pl){ q = Math.sqrt(-2 * Math.log(1 - p)); return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+  q = p - .5; r = q * q; return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+}
+function power(){
+  const g = id => parseFloat(document.getElementById(id).value);
+  const p1 = g("pB"), p2 = g("pC"), icc = g("icc"), m = g("m"), pw = g("pw");
+  document.getElementById("pBv").textContent = Math.round(p1 * 100) + "%"; document.getElementById("pCv").textContent = Math.round(p2 * 100) + "%";
+  document.getElementById("iccv").textContent = icc.toFixed(2); document.getElementById("mv").textContent = m; document.getElementById("pwv").textContent = pw.toFixed(2);
+  const out = document.getElementById("nOut"), note = document.getElementById("nNote");
+  if (p2 >= p1){ out.textContent = "–"; note.textContent = "Live must be lower than sliders"; return; }
+  const pb = (p1 + p2) / 2, za = invNorm(.975), zb = invNorm(pw);
+  const n = Math.pow(za * Math.sqrt(2 * pb * (1 - pb)) + zb * Math.sqrt(p1 * (1 - p1) + p2 * (1 - p2)), 2) / Math.pow(p1 - p2, 2);
+  const deff = 1 + (m - 1) * icc, coaches = Math.ceil(n * deff / m);
+  out.textContent = coaches; note.textContent = `${Math.ceil(n)} decisions per arm × design effect ${deff.toFixed(2)} ÷ ${m} runners · ${coaches * 2} coaches for B vs C`;
+}
+["pB", "pC", "icc", "m", "pw"].forEach(id => document.getElementById(id).addEventListener("input", power)); power();
+
+/* ---------- terminal ---------- */
+hooks[11] = () => {
+  const m = MANIFEST, r = m.recency, b = m.benchmark, v = m.validation, h = s => s.slice(0, 12) + "…";
+  const lines = [`<span class="c">$</span> pacesense reproduce --out results`,
+    `1/5 data: 7,977 synthetic runners (seed 20240318)`,
+    `2/5 validation: mean error ${v.mean_error_pct.toFixed(2)}% on ${v.n} runners, range coverage ${Math.round(v.range_coverage_pct)}%`,
+    `3/5 recency: best half-life ${r.best_half_life} years (${r.errors_pct[String(r.best_half_life.toFixed ? r.best_half_life.toFixed(1) : r.best_half_life)].toFixed(2)}% vs ${r.equal_weights_error_pct.toFixed(2)}%)`,
+    `4/5 interpreter: dev ${b.dev.correct}/${b.dev.cases}, held-out ${b.test.correct}/${b.test.cases} (precision ${b.test.race_precision.toFixed(2)})`,
+    `5/5 study: 71 simulated coaches analysed`,
+    ``, `<span class="c">$</span> pacesense reproduce --check results/manifest.json`,
+    `<span class="g">REPRODUCED: all 4 outputs match (seed 20240318).</span>`, ``,
+    `<span class="c"># manifest.json (excerpt)</span>`,
+    `<span class="y">inputs</span>   data ${h(m.inputs.data_sha256)}  lexicon ${h(m.inputs.lexicon_sha256)}`,
+    `<span class="y">outputs</span>  validation.json ${h(m.outputs["validation.json"])}`,
+    `         steer_benchmark.json ${h(m.outputs["steer_benchmark.json"])}`,
+    `<span class="y">env</span>      pacesense ${m.env.pacesense} · Python ${m.env.python}`];
+  const term = document.getElementById("term"); term.innerHTML = "";
+  lines.forEach((l, i) => { const d = document.createElement("div"); d.innerHTML = l || "&nbsp;"; d.style.opacity = 0; term.appendChild(d); d.animate([{opacity: 0}, {opacity: 1}], {duration: 200, delay: 120 + i * 140, fill: "forwards"}); });
+};
+
+/* ---------- plan ---------- */
+hooks[13] = () => {
+  const svg = document.getElementById("ganttSvg"); svg.innerHTML = "";
+  const rows = [["Interpreter, evidence layer, live page, Plan-page box", 0, 3, "done"], ["Reproducibility pipeline, CI, 175 tests", 1, 3, "done"],
+    ["Checked AI reader scored on held-out set", 3, 5, "next"], ["Think-aloud pilot (5–7 coaches, local Whisper)", 4, 7, "next"],
+    ["Update power analysis with pilot rates", 7, 8, "next"], ["Online study: sliders vs PaceSense Live", 8, 12, "later"], ["Analysis with the paper's models; report", 11, 14, "later"]];
+  const X = w => 600 + w * 56, col = {done: C.green, next: C.coral, later: C.navy};
+  for (let w = 0; w <= 14; w += 2){ el("line", {x1: X(w), x2: X(w), y1: 30, y2: 610, stroke: C.line}, svg); tx(svg, X(w), 22, "wk " + w, {"text-anchor": "middle", "font-size": 13, fill: C.muted}); }
+  rows.forEach(([t, a, b, s], i) => { const y = 50 + i * 80;
+    tx(svg, 0, y + 28, t, {"font-size": 21, "font-weight": 600, fill: C.ink});
+    const r = el("rect", {x: X(a), y: y + 6, width: 0, height: 34, rx: 9, fill: col[s]}, svg); r.animate([{width: 0}, {width: X(b) - X(a)}], {duration: 700, delay: 150 + i * 120, fill: "forwards"}); r.setAttribute("width", X(b) - X(a));
+    const lab = tx(svg, X(b) + 10, y + 29, s, {"font-size": 14, "font-weight": 800, fill: col[s], opacity: 0}); fadeIn(lab, 700 + i * 120); });
+  el("line", {x1: X(3), x2: X(3), y1: 30, y2: 610, stroke: C.coral, "stroke-width": 2.5, "stroke-dasharray": "6 5"}, svg); tx(svg, X(3) + 6, 628, "today", {"font-size": 13, "font-weight": 800, fill: C.coral});
+};
+
+const start = Math.max(0, Math.min(slides.length - 1, (parseInt(location.hash.slice(1)) || 1) - 1)); go(start, 1);
+window.__deck = {Steer, Model, D};
+})();
+</script>
+</body>
+</html>
