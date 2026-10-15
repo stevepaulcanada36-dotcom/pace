@@ -22,7 +22,7 @@ from ..coach import CoachService
 from ..data import load_csv, synthetic_runners
 from ..storage import Repository
 from ..study import StudyService
-from . import coach_api, study_api
+from . import coach_api, steer_api, study_api
 from .core import Router, WSGIApp
 
 
@@ -30,17 +30,23 @@ class App:
     """Composes the study and coach route groups over shared model, data and storage."""
 
     def __init__(self, service: StudyService, coach: CoachService | None = None, admin_token: str | None = None,
-                 cors_origin: str | None = None, default_assignment: str = "random") -> None:
+                 cors_origin: str | None = None, default_assignment: str = "random", ai_factory=None) -> None:
         self.service = service
         self.coach = coach or CoachService(service.model, service.runners, service.repo)
         router = Router()
-        router.add("GET", "/", lambda req: {"name": "PaceSense API", "dashboard": "run `pacesense dashboard`",
+        router.add("GET", "/", lambda req: {"name": "PaceSense API", "dashboard": "run `pacesense dashboard`", "live": "/live",
                                             "endpoints": sorted({p.pattern.strip("^$") for _, p, _ in router.routes})})
         router.add("GET", "/health", lambda req: {"status": "ok", "runners": len(service.runners),
                                                   "cases": len(service.model.case_base)})
         study_api.register(router, service, admin_token, default_assignment)
         coach_api.register(router, self.coach)
+        steer_api.register(router, self.coach, ai_factory or self._default_ai)
         self._wsgi = WSGIApp(router, cors_origin)
+
+    def _default_ai(self):
+        """AIService for PaceSense Live's optional AI reader (offline unless an OpenRouter key is configured)."""
+        from ..llm.service import AIService
+        return AIService(self.service.repo)
 
     def __call__(self, environ: dict, start_response: Callable) -> Iterable[bytes]:
         return self._wsgi(environ, start_response)

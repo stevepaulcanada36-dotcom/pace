@@ -6,13 +6,16 @@ page. Both layouts call the same section functions, so they never differ in what
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 
 import pandas as pd
 import streamlit as st
 
 from ... import racewatch
 from ...domain import ValidationError, format_time
+from ...llm.openrouter import LLMError
 from ...planning import PlanSession, change_text, pace_text
+from ...steer import SteeringSession
 from .. import charts, ui
 from ..voice import refine_box, voice_panel
 
@@ -162,12 +165,74 @@ def weights_section(p: PlanSession) -> None:
                 st.slider("How representative?", 0.0, 1.0, value=float(p.weights[i]), step=0.1, key=key,
                           help="0 = not representative, 1 = very representative",
                           on_change=_weight_changed, args=(i, key))
+        _talk_box(p)
         if st.button("Reset to equal weights", key="weights_reset", help=ui.tip("equal")):
             change = p.reset_weights()
             if change is None:
                 st.session_state.setdefault("toasts", []).append("All races already count equally.")
             ui.announce(change)
             st.rerun()
+
+
+# ---- PaceSense Live: talk to the sliders -------------------------------------------------------------
+VERDICT = {"supported": "✅ data agrees", "your_knowledge": "🧠 your knowledge", "against_data": "⚠️ against the data",
+           "undo": "↩️ undone"}
+
+
+def _steer(p: PlanSession) -> SteeringSession:
+    s = st.session_state.get("steer_session")
+    if s is None or s.plan is not p:
+        s = SteeringSession(p)
+        st.session_state["steer_session"] = s
+    return s
+
+
+def _hear(p: PlanSession, text: str, source: str) -> None:
+    turn = _steer(p).hear(text, source)
+    st.session_state.setdefault("toasts", []).append(turn.summary() or " ".join(turn.notes))
+
+
+def _talk_submitted(p: PlanSession) -> None:
+    text = (st.session_state.get("talk_text") or "").strip()
+    if text:
+        _hear(p, text, "typed")
+    st.session_state["talk_text"] = ""
+
+
+def _talk_box(p: PlanSession) -> None:
+    with st.expander("🎙️ Talk to the sliders (PaceSense Live)", expanded=bool(st.session_state.get("steer_session"))):
+        st.caption("Say or type how you see these races, for example “2016 was a hot day and she was injured”, "
+                   "“ignore the first race” or “trust the recent races more”. The sliders move and the data checks "
+                   "each change. Say your own estimate (“I think she can run 3:25”) to see whose view the model takes. "
+                   "For continuous listening, run `pacesense live`.")
+        st.text_input("Tell the model about the races", key="talk_text", on_change=_talk_submitted, args=(p,),
+                      placeholder="2016 was a hot day and she was injured")
+        rec = st.audio_input("…or say it", key=f"talk_rec_{p.runner_id}",
+                             help="Transcribed with the speech to text chosen in Settings (local Whisper by default).")
+        if rec is not None:
+            digest = hashlib.sha1(rec.getvalue()).hexdigest()
+            if st.session_state.get("talk_digest") != digest:
+                st.session_state["talk_digest"] = digest
+                try:
+                    with st.spinner("Transcribing…"):
+                        text = ui.ai().transcribe(rec.getvalue(), "wav").text
+                except LLMError as e:
+                    st.error(f"Could not transcribe the recording: {e}")
+                else:
+                    if text.strip():
+                        _hear(p, text, "voice")
+                        st.rerun()
+        s = st.session_state.get("steer_session")
+        if s is not None and s.plan is p and s.turns:
+            t = s.turns[-1]
+            st.markdown(f"> {t.text}")
+            for a in t.applied:
+                st.caption(f"{VERDICT.get(a.verdict, '')} · **{a.race}** {a.old:.1f} → {a.new:.1f}: {a.evidence}")
+            for n in t.notes:
+                st.caption(n)
+            steer = s.state()["steering"]
+            if steer["index"] is not None:
+                st.caption(f"Steering index {steer['index']:.2f}: {steer['label']}")
 
 
 def _weight_changed(i: int, key: str) -> None:

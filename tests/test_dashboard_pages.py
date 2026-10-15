@@ -104,6 +104,20 @@ class PlanPageTests(PageTest):
         fake.click("step_back"); fake.run(plan.render)
         self.assertEqual(fake.session_state["step"], 4)
 
+    def test_talk_to_the_sliders(self):
+        p = self.demo_plan()
+        year = p.overview["races"][0]["year"]
+        fake.interact("talk_text", f"{year} was a hot day")
+        self.assertEqual(p.weights[0], 0.2)
+        self.assertIn('You said: "hot day"', p.changes[0].text())
+        fake.run(plan.render)
+        self.assertIn(f"{year} was a hot day", fake.texts())
+        fake.interact("talk_text", "I think she can run 2:45")
+        fake.run(plan.render)
+        self.assertIn("Steering index", fake.texts())
+        fake.interact("talk_text", "scratch that")
+        self.assertEqual(p.weights[0], 0.5)
+
     def test_all_controls_layout(self):
         self.s.coach.update_preferences({"experience": "experienced", "view": "full"})
         fake.click("runner_demo"); fake.run(plan.render)

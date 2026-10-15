@@ -26,7 +26,7 @@ pacesense = "pacesense.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"pacesense.resources" = ["*.json"]
+"pacesense.resources" = ["*.json", "*.yaml", "*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

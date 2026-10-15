@@ -61,7 +61,7 @@ class Turn:
 
     def summary(self) -> str:
         if not self.applied:
-            return " ".join(self.notes) or "Nothing to change."
+            return "" if self.notes else "Nothing to change."
         d = round(self.delta_s)
         move = "no change to the target" if d == 0 else f"target {format_time(self.finish_after_s)} ({'+' if d > 0 else '−'}{abs(d) // 60}:{abs(d) % 60:02d})"
         return f"{len(self.applied)} slider{'s' if len(self.applied) > 1 else ''} moved, {move}."

@@ -141,6 +141,29 @@ def cmd_serve(args) -> int:
     return 0
 
 
+def cmd_live(args) -> int:
+    """PaceSense Live: talk to the model in the browser; the sliders follow (needs no extra packages)."""
+    import webbrowser
+    from wsgiref.simple_server import make_server, WSGIServer
+    from socketserver import ThreadingMixIn
+    from .web import App, build_service
+
+    class ThreadingServer(ThreadingMixIn, WSGIServer):
+        daemon_threads = True
+
+    app = App(build_service(args.db, args.data, args.seed))
+    url = f"http://{args.host}:{args.port}/live"
+    with make_server(args.host, args.port, app, server_class=ThreadingServer) as httpd:
+        print(f"PaceSense Live: open {url}  (Chrome or Edge for continuous listening; Ctrl+C to stop)")
+        if not args.no_browser:
+            webbrowser.open(url)
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            pass
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="pacesense", description=__doc__)
     p.add_argument("-v", "--verbose", action="store_true")
@@ -185,6 +208,11 @@ def build_parser() -> argparse.ArgumentParser:
     sv.add_argument("--db", default="study.sqlite3"); sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--port", type=int, default=8000); sv.add_argument("--admin-token")
     sv.add_argument("--cors"); sv.set_defaults(fn=cmd_serve)
+
+    lv = sub.add_parser("live", help="PaceSense Live: steer the model by talking (opens the browser)"); data_opts(lv)
+    lv.add_argument("--db", default="live.sqlite3"); lv.add_argument("--host", default="127.0.0.1")
+    lv.add_argument("--port", type=int, default=8000); lv.add_argument("--no-browser", action="store_true")
+    lv.set_defaults(fn=cmd_live)
     return p
 
 
