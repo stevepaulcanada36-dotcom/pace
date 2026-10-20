@@ -43,9 +43,11 @@ def _settings() -> tuple[float, float, float]:
             float(s.get("wind_pct", WIND_PCT)))
 
 
-def condition_factor(distance_km: float, temp_c: float, wind_kmh: float, plan_finish_s: float) -> float:
-    """Multiplier (>= 1) on the time taken around this point of the race."""
-    start, per_c, wind_pct = _settings()
+def condition_factor(distance_km: float, temp_c: float, wind_kmh: float, plan_finish_s: float,
+                     settings: tuple[float, float, float] | None = None) -> float:
+    """Multiplier (>= 1) on the time taken around this point of the race. Pass `settings` (from _settings())
+    when calling in a loop: reading the config file is far slower than the arithmetic."""
+    start, per_c, wind_pct = settings or _settings()
     heat = max(0.0, temp_c - start) * per_c / 100
     heat *= (0.5 + distance_km / MARATHON_KM) * math.sqrt(max(plan_finish_s, 7200) / 12600)
     v = max(0.0, wind_kmh) / 3.6
@@ -82,7 +84,8 @@ def simulate_race(paces: Sequence[float], low_s: float | None, high_s: float | N
     el = np.array([e for _, e in trace] + [trace[-1][1] + (MARATHON_KM - trace[-1][0]) * p[-1]])
     dt = np.diff(el)
     mid = (ds[:-1] + ds[1:]) / 2
-    f = np.array([condition_factor(m, temp_c, wind_kmh, plan_finish) for m in mid])
+    cfg = _settings()
+    f = np.array([condition_factor(m, temp_c, wind_kmh, plan_finish, cfg) for m in mid])
     sim = np.concatenate([[0.0], np.cumsum(dt * f)])
     lo_k = (low_s / plan_finish) if low_s else 1.0
     hi_k = (high_s / plan_finish) if high_s else 1.0
@@ -103,7 +106,7 @@ def simulate_race(paces: Sequence[float], low_s: float | None, high_s: float | N
                     "inside_range": bool(low_s is not None and high_s is not None and low_s <= finish <= high_s),
                     "first_minute_behind_km": first_behind, "profile": profile, "profile_text":
                     racewatch.PROFILES[profile], "temp_c": temp_c, "wind_kmh": wind_kmh,
-                    "conditions_pct": round(100 * (condition_factor(21.1, temp_c, wind_kmh, plan_finish) - 1), 2)},
+                    "conditions_pct": round(100 * (condition_factor(21.1, temp_c, wind_kmh, plan_finish, cfg) - 1), 2)},
         "assumptions": "Heat and wind effects are stated assumptions (see hud/sim.py), not fitted on data.",
     }
 

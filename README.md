@@ -24,6 +24,58 @@ Everything is Python: the model, the services, the analysis, and a **Streamlit d
 | **Reproducibility** (`repro.py`, `pacesense reproduce`) | One command rebuilds every reported number and writes a manifest of input and output hashes; `--check` proves a re-run matches | PaceSense addition |
 | **AI models per task** (`llm/`, Settings, Model lab) | Chat, field filling and refining use per-task OpenRouter models; speech-to-text defaults to local Whisper and can optionally use OpenRouter | PaceSense addition |
 
+## PaceSense Studio (start here)
+
+The production web app: a clean dashboard for coaches on top of a versioned, validated JSON API.
+
+```bash
+pip install -e ".[studio]"
+pacesense studio                         # http://127.0.0.1:8000  (or: python -m pacesense.studio)
+pacesense studio --data data/races.csv   # your own results (see "Real data" below)
+```
+
+| On screen | What it does |
+|---|---|
+| **Target, likely range, accuracy, whose view** | The prediction and its weighted 20th–80th percentile range; in the demo the runner's best race is hidden, so every change says whether it moved the prediction *closer to what really happened* (Reveal at the end); the steering index shows whether the model is following the data or your own estimate |
+| **Race history** | One row per race: what her own times say about it (typical / slower / faster than her other races), its weight slider, and how many seconds it pulls the target |
+| **Coach notes** | Type or talk (continuous listening in Chrome/Edge): "2016 was a hot day and she was injured", "trust the recent races more", "I think she can run 3:25", "simulate 26 degrees and she starts too fast". Each change gets a card: what moved, whether the data agrees, the new target, and the hidden-race check; react with *makes sense / not sure / disagree* |
+| **Pacing plan · Similar runners · Insights** | Plan pace per 5 km against her past races; for each race, what runners who ran the same time ran next; plan checks and alternative strategies |
+| **Race-day simulator** | Temperature, headwind and pacing mistakes (fast start, late fade) → finish, gap to plan along the course, and whether it stays in the likely range |
+| **Export** | A JSON record of the session that `pacesense.steer.replay` turns back into exactly the same weights |
+
+Keyboard: `/` type a note · `Ctrl+Z` undo · `?` help. Light and dark themes; works on a phone.
+
+**Engineering.** Starlette + Uvicorn (ASGI); Pydantic validates every request (`extra="forbid"`, ranges, formats)
+and generates the OpenAPI document at `/api/v1/openapi.json`; errors are RFC 9457 problem documents carrying a
+request id; sessions live in a bounded store with idle expiry and a lock per session (one worker, many threads);
+`/healthz`, `/readyz` and Prometheus `/metrics` (per-route latency histograms, session gauges); JSON logs with
+`PACESENSE_LOG_FORMAT=json`; strict Content-Security-Policy and no third-party scripts. Every setting is an
+environment variable with a safe default (`.env.example`, `src/pacesense/studio/settings.py`); bad values stop the
+server at start-up with a readable message.
+
+```bash
+docker compose up --build                # or: docker build -t pacesense . && docker run -p 8000:8000 pacesense
+make check                               # lint (ruff) + types (mypy) + tests, as in CI
+```
+
+API (all JSON, under `/api/v1`):
+
+| Method | Path | Body | Returns |
+|---|---|---|---|
+| GET | `/runners?q=` | | runner picker (the demo first) |
+| POST | `/sessions` | `{runner_id: "demo", holdout?}` | 201 `{id, state}` |
+| GET / DELETE | `/sessions/{id}` | | state / 204 |
+| POST | `/sessions/{id}/commands` | `{text, source: typed\|voice}` | `{reply, card, actions, simulation, state}` |
+| PUT | `/sessions/{id}/weights` | `{index, weight 0–1}` | `{card, state}` |
+| POST | `/sessions/{id}/undo` · `/reveal` | | `{card, state}` · state |
+| POST | `/sessions/{id}/estimate` | `{finish: "3:25"}` | as commands |
+| POST | `/sessions/{id}/simulations` | `{temp_c, wind_kmh, profile}` | simulation |
+| POST | `/sessions/{id}/reactions` | `{turn, value: agree\|unsure\|disagree}` | counts |
+| GET | `/sessions/{id}/export` | | replayable transcript + final state |
+
+The earlier interfaces (Streamlit dashboard, PaceSense Live, the 3D command center) still work and share the same
+model and services.
+
 ## Quick start
 
 ```bash
@@ -47,7 +99,7 @@ pacesense simulate --data data/races.csv --coaches 71 --db study.sqlite3   # sim
 pacesense analyze  --db study.sqlite3 --out report.md  # the paper's Section 5 analyses
 ```
 
-## Command center: the 3D, voice-driven workspace
+## Command center (experimental 3D view)
 
 ```bash
 pacesense hud --data data/races.csv          # opens http://127.0.0.1:8000/hud
@@ -520,7 +572,7 @@ keep `pacesense serve` bound to localhost or place any public deployment behind 
 
 ```bash
 pip install -e ".[dev]"
-python -m unittest discover -s tests -t .     # 198 tests
+python -m unittest discover -s tests -t .     # 209 tests
 ```
 
 They cover PaceSense Live (interpreter, evidence statistics, sessions, replay, benchmark floors, the checked AI

@@ -1,9 +1,12 @@
-# Everything needed to run the dashboard and PaceSense Live. Same as: pip install -e ".[dashboard]"
+# Everything needed to run PaceSense Studio, the dashboard and PaceSense Live. Same as: pip install -e ".[studio,dashboard]"
 # For an exact, frozen environment, see "Reproducibility" in README.md (requirements-lock.txt).
 numpy>=1.24
 pandas>=2.0
 scipy>=1.10
 PyYAML>=6.0
+starlette>=0.37
+uvicorn[standard]>=0.29
+pydantic>=2.5
 matplotlib>=3.7
 streamlit>=1.40
 # The AI features call OpenRouter with the Python standard library: no extra package is needed.

@@ -1,0 +1,14 @@
+# docker compose up --build   ->  http://localhost:8000
+services:
+  studio:
+    build: .
+    ports: ["8000:8000"]
+    env_file: [.env.example]
+    environment:
+      PACESENSE_HOST: 0.0.0.0
+    volumes:
+      - pacesense-data:/data
+      # - ./data:/app/data:ro          # then set PACESENSE_DATA=/app/data/races.csv
+    restart: unless-stopped
+volumes:
+  pacesense-data:

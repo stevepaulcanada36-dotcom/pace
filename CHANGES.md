@@ -1,5 +1,17 @@
 # Changes
 
+## 2.5.0: PaceSense Studio, the production web app
+- `pacesense studio`: a clean, light (and dark) dashboard for coaches: prediction summary with the hidden-race
+  accuracy check and steering meter, race table with evidence and pull per race, coach notes with feedback cards
+  and reactions (typed or continuous voice), pacing / similar-runners / insights charts, race-day simulator,
+  replayable export. No 3D, no framework, no build step; works on phones.
+- Backend on Starlette + Uvicorn with Pydantic validation, a versioned API (`/api/v1`), OpenAPI document,
+  RFC 9457 errors with request ids, bounded session store (idle expiry, size cap, per-session locks),
+  health/readiness probes, Prometheus metrics, JSON logs, CSP and security headers, settings from the environment.
+- Slider moves are now kept in the transcript, so `steer.replay` reproduces sessions that mix talking and sliders.
+- Docker image (multi-stage, non-root, health check), docker compose, Makefile, CI jobs for lint, types,
+  a live-server smoke test and the container. 11 new tests (209 in total).
+
 ## 2.4.1: light command center and a version that needs no server
 - The command center now uses a white, light design (navy and teal wireframe; colour only for meaning).
 - `docs/command-center-demo.html` runs the whole command center in any browser with no install: the in-browser

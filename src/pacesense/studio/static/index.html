@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PaceSense Studio</title>
+<meta name="description" content="Steer a case-based marathon prediction by talking to it.">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/static/studio.css?v={{version}}">
+<script src="/static/studio.js?v={{version}}" defer></script>
+</head>
+<body>
+<a class="skip" href="#notes-input">Skip to coach notes</a>
+
+<header class="topbar">
+  <div class="brand">
+    <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8"/><path d="M6 21 L11 15 L15 18 L20 10 L26 14" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span class="brand-name">PaceSense <span>Studio</span></span>
+  </div>
+
+  <button class="runner-btn" id="runner-btn" aria-haspopup="dialog" aria-controls="runner-dialog">
+    <span class="runner-avatar" id="runner-avatar" aria-hidden="true">–</span>
+    <span class="runner-text"><b id="runner-name">Loading…</b><small id="runner-meta"></small></span>
+    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+  </button>
+
+  <span class="mode-pill" id="mode-pill" hidden></span>
+
+  <div class="top-actions">
+    <button class="btn ghost" id="undo-btn" title="Undo the last change (Ctrl+Z)" disabled>
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 4L2 7l3 3M2.5 7H10a4 4 0 010 8H7" fill="none" stroke="currentColor" stroke-width="1.5"/></svg><span>Undo</span></button>
+    <button class="btn ghost" id="export-btn" title="Download a replayable record of this session">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v8m-3-3l3 3 3-3M3 13h10" fill="none" stroke="currentColor" stroke-width="1.5"/></svg><span>Export</span></button>
+    <button class="btn icon ghost" id="theme-btn" title="Switch light / dark" aria-label="Switch light or dark theme">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6L13 13M3 13l1.4-1.4M11.6 4.4L13 3" stroke="currentColor" stroke-width="1.5"/></svg></button>
+    <button class="btn icon ghost" id="help-btn" title="How it works (?)" aria-label="How it works">?</button>
+  </div>
+</header>
+
+<main class="layout" id="main" aria-busy="true">
+  <!-- KPIs -->
+  <section class="kpis" aria-label="Prediction summary">
+    <article class="kpi kpi-target">
+      <h2>Target finish</h2>
+      <div class="kpi-value mono" id="k-target">–:––:––</div>
+      <p class="kpi-sub" id="k-target-sub">&nbsp;</p>
+    </article>
+    <article class="kpi kpi-range">
+      <h2>Likely range <span class="hint" title="Weighted 20th–80th percentile of what similar runners went on to run">i</span></h2>
+      <div class="kpi-value mono small" id="k-range">–</div>
+      <svg class="range-bar" id="k-range-bar" viewBox="0 0 300 34" role="img" aria-label="Likely range"></svg>
+    </article>
+    <article class="kpi kpi-acc" id="kpi-acc">
+      <h2>Accuracy check</h2>
+      <div class="kpi-value small" id="k-acc">–</div>
+      <p class="kpi-sub" id="k-acc-sub">&nbsp;</p>
+    </article>
+    <article class="kpi kpi-steer">
+      <h2>Whose view? <span class="hint" title="0% = where the data put it, 100% = your own estimate">i</span></h2>
+      <div class="kpi-value small" id="k-steer">–</div>
+      <form class="estimate" id="estimate-form" autocomplete="off">
+        <label for="estimate-input" class="sr">Your own estimate</label>
+        <input id="estimate-input" class="mono" placeholder="e.g. 3:25" inputmode="numeric" pattern="\d:\d{2}(:\d{2})?">
+        <button class="btn small" type="submit">Set</button>
+      </form>
+    </article>
+  </section>
+
+  <!-- Races -->
+  <section class="card races" id="panel-races" aria-labelledby="races-h">
+    <header class="card-head">
+      <div><h2 id="races-h">Race history</h2><p class="card-sub" id="races-sub">How much each race counts towards the prediction</p></div>
+      <div class="legend">
+        <span class="chip ok">matches the data</span><span class="chip know">your knowledge</span><span class="chip warn">against the data</span>
+      </div>
+    </header>
+    <div class="table-wrap">
+      <table class="race-table">
+        <thead><tr><th scope="col">Race</th><th scope="col" class="num">Finish</th><th scope="col">What the data says</th>
+          <th scope="col" class="w-col">Weight</th><th scope="col" class="pull-col">Pull on target <span class="hint" title="Seconds this race moves the target: left = faster, right = slower">i</span></th></tr></thead>
+        <tbody id="race-rows"><tr><td colspan="5" class="loading-row">Loading races…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Analysis tabs -->
+  <section class="card analysis" id="panel-analysis" aria-label="Analysis">
+    <header class="card-head tabs-head">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tab-pacing" aria-controls="view-pacing" aria-selected="true">Pacing plan</button>
+        <button role="tab" id="tab-similar" aria-controls="view-similar" aria-selected="false" tabindex="-1">Similar runners</button>
+        <button role="tab" id="tab-insights" aria-controls="view-insights" aria-selected="false" tabindex="-1">Insights</button>
+      </div>
+      <p class="card-sub" id="analysis-sub"></p>
+    </header>
+    <div role="tabpanel" id="view-pacing" aria-labelledby="tab-pacing" class="tabview">
+      <div class="chart" id="pacing-chart"></div>
+      <div class="split-strip mono" id="split-strip"></div>
+    </div>
+    <div role="tabpanel" id="view-similar" aria-labelledby="tab-similar" class="tabview" hidden>
+      <div class="chart" id="similar-chart"></div>
+    </div>
+    <div role="tabpanel" id="view-insights" aria-labelledby="tab-insights" class="tabview" hidden>
+      <ul class="insights" id="insights"></ul>
+      <div class="scenarios" id="scenarios"></div>
+    </div>
+  </section>
+
+  <!-- Simulator -->
+  <section class="card sim" id="panel-sim" aria-labelledby="sim-h">
+    <header class="card-head">
+      <div><h2 id="sim-h">Race-day simulator</h2><p class="card-sub">What heat, wind and pacing mistakes do to the plan</p></div>
+    </header>
+    <div class="sim-body">
+      <form class="sim-controls" id="sim-form">
+        <label class="field"><span>Temperature <output id="temp-out" class="mono">12 °C</output></span>
+          <input type="range" id="sim-temp" min="0" max="35" step="1" value="12"></label>
+        <label class="field"><span>Headwind <output id="wind-out" class="mono">0 km/h</output></span>
+          <input type="range" id="sim-wind" min="0" max="40" step="1" value="0"></label>
+        <fieldset class="segmented" id="sim-profile">
+          <legend>How she runs it</legend>
+          <label><input type="radio" name="profile" value="on_plan" checked><span>On plan</span></label>
+          <label><input type="radio" name="profile" value="fast_start"><span>Fast start</span></label>
+          <label><input type="radio" name="profile" value="late_fade"><span>Late fade</span></label>
+        </fieldset>
+        <div class="presets" aria-label="Presets">
+          <button type="button" class="chip-btn" data-preset="12,0,on_plan">Ideal day</button>
+          <button type="button" class="chip-btn" data-preset="24,0,on_plan">Warm</button>
+          <button type="button" class="chip-btn" data-preset="28,15,fast_start">Hot &amp; windy, too fast</button>
+        </div>
+      </form>
+      <div class="sim-result">
+        <div class="sim-stats" id="sim-stats"><p class="muted">Running the simulation…</p></div>
+        <div class="chart" id="sim-chart"></div>
+        <p class="footnote" id="sim-note"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Coach notes -->
+  <aside class="card notes" id="panel-notes" aria-labelledby="notes-h">
+    <header class="card-head">
+      <div><h2 id="notes-h">Coach notes</h2><p class="card-sub">Say what you know about her races. The weights follow.</p></div>
+      <span class="ai-pill" id="ai-pill" hidden>AI on</span>
+    </header>
+    <ol class="feed" id="feed" aria-live="polite" aria-relevant="additions"></ol>
+    <div class="composer">
+      <div class="suggestions" id="suggestions"></div>
+      <form id="notes-form" class="notes-form" autocomplete="off">
+        <label for="notes-input" class="sr">Tell PaceSense about her races</label>
+        <textarea id="notes-input" rows="2" maxlength="1000" placeholder="e.g. “2016 was a hot day and she was injured”"></textarea>
+        <div class="composer-actions">
+          <button type="button" class="btn icon mic" id="mic-btn" title="Talk (continuous listening)" aria-pressed="false" hidden>
+            <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="1.5" width="5" height="9" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 8a5 5 0 0010 0M8 13v2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
+          <button type="submit" class="btn primary" id="send-btn">Send</button>
+        </div>
+      </form>
+      <p class="composer-hint"><kbd>/</kbd> to type · <kbd>Enter</kbd> to send · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo</p>
+    </div>
+  </aside>
+</main>
+
+<footer class="foot">
+  <span id="foot-data"></span>
+  <span>Model after Muijlwijk et al., IUI ’24 · v{{version}} · <a href="/api/v1/openapi.json">API</a></span>
+</footer>
+
+<!-- Runner picker -->
+<dialog id="runner-dialog" class="dialog" aria-labelledby="runner-dialog-h">
+  <form method="dialog" class="dialog-inner">
+    <header><h2 id="runner-dialog-h">Open a runner</h2><button class="btn icon ghost" value="close" aria-label="Close">✕</button></header>
+    <input type="search" id="runner-search" placeholder="Search by id or name…" aria-label="Search runners">
+    <ul class="runner-list" id="runner-list" role="listbox" aria-label="Runners"></ul>
+    <label class="check"><input type="checkbox" id="holdout-check" checked> Hide the best race to check accuracy</label>
+  </form>
+</dialog>
+
+<!-- Help -->
+<dialog id="help-dialog" class="dialog" aria-labelledby="help-h">
+  <form method="dialog" class="dialog-inner prose">
+    <header><h2 id="help-h">How PaceSense works</h2><button class="btn icon ghost" value="close" aria-label="Close">✕</button></header>
+    <p>PaceSense predicts a marathon finish from <b>runners like her</b>: for each of her recent races it finds similar
+      runners who ran that time and looks at what they ran next (case-based reasoning, as in Muijlwijk et al., IUI ’24).</p>
+    <p><b>Weights</b> say how much each race counts. Move a slider, or just say why a race is unusual:</p>
+    <ul>
+      <li>“2016 was a hot day and she was injured”</li>
+      <li>“trust the recent races more”</li>
+      <li>“ignore Berlin” · “Amsterdam was her best day” · “undo”</li>
+      <li>“I think she can run 3:25” (records your own estimate)</li>
+      <li>“simulate 26 degrees with a 15 km/h headwind and she starts too fast”</li>
+    </ul>
+    <p>Every change gets a card that says whether <b>her own times agree</b>. In the demo her fastest race is hidden, so
+      you can see whether your changes move the prediction <b>closer to what really happened</b>; press Reveal at the end.</p>
+    <p class="muted">Keyboard: <kbd>/</kbd> type a note · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>?</kbd> this help</p>
+  </form>
+</dialog>
+
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+<div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+</body>
+</html>

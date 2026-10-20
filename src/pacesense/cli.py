@@ -172,6 +172,17 @@ def cmd_live(args) -> int:
     return 0
 
 
+def cmd_studio(args) -> int:
+    """PaceSense Studio: the production web app (Starlette + Uvicorn)."""
+    from .studio import main
+    argv = ["--host", args.host, "--port", str(args.port), "--db", args.db]
+    if args.data:
+        argv += ["--data", args.data]
+    if args.no_browser:
+        argv.append("--no-browser")
+    return main(argv)
+
+
 def cmd_import(args) -> int:
     from .importers import write_import
     overrides = dict(x.split("=", 1) for x in (args.map or []))
@@ -265,6 +276,11 @@ def build_parser() -> argparse.ArgumentParser:
     lv.add_argument("--port", type=int, default=8000); lv.add_argument("--no-browser", action="store_true")
     lv.set_defaults(fn=cmd_live)
 
+    st = sub.add_parser("studio", help="PaceSense Studio, the production web app (recommended)")
+    st.add_argument("--data", help="race CSV (default: synthetic demo data)")
+    st.add_argument("--db", default="pacesense.sqlite3"); st.add_argument("--host", default="127.0.0.1")
+    st.add_argument("--port", type=int, default=8000); st.add_argument("--no-browser", action="store_true")
+    st.set_defaults(fn=cmd_studio)
     hd = sub.add_parser("hud", help="the 3D command center (hologram, voice, panels; opens the browser)"); data_opts(hd)
     hd.add_argument("--db", default="hud.sqlite3"); hd.add_argument("--host", default="127.0.0.1")
     hd.add_argument("--port", type=int, default=8000); hd.add_argument("--no-browser", action="store_true")

@@ -219,7 +219,13 @@ class SteeringSession:
 
     def transcript(self) -> list[dict]:
         """Everything said, in order: enough to replay the session exactly (`replay`)."""
-        return [{"n": t.n, "text": t.text, "source": t.source} for t in self.turns]
+        out = []
+        for t in self.turns:
+            row = {"n": t.n, "text": t.text, "source": t.source}
+            if t.source == "manual" and t.applied:          # a slider has no words; keep the move itself
+                row.update(index=t.applied[0].index, weight=t.applied[0].new)
+            out.append(row)
+        return out
 
 
 def replay(plan: PlanSession, transcript: Sequence[dict], **kw) -> SteeringSession:
@@ -229,7 +235,8 @@ def replay(plan: PlanSession, transcript: Sequence[dict], **kw) -> SteeringSessi
         if t["source"] == "undo":
             s.undo(t["text"])
         elif t["source"] == "manual":
-            continue          # manual moves are stored as weights by the caller; not replayable from text
+            if "index" in t and "weight" in t:              # older transcripts did not keep slider moves
+                s.manual(int(t["index"]), float(t["weight"]))
         else:
             s.hear(t["text"], t["source"])
     return s
