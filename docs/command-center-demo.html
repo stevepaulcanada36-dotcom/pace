@@ -1,0 +1,1090 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PaceSense Command Center</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: one working screen; the runner stands in the middle of a white field, panels sit at the edges like
+   instruments on a bench. Light only, by request: every colour is set explicitly below. */
+:root{
+  --bg:#F6F8FB; --surface:#FFFFFF; --line:#DCE3EE; --line-soft:#E9EEF5; --ink:#14213D; --muted:#5B6B82;
+  --accent:#0E7C9B; --accent-soft:#E3F3F7; --navy:#1F3A8A;
+  --good:#1F8A5B; --good-soft:#E5F4EC; --know:#2F6FB3; --know-soft:#E8F0FA; --warn:#A8690F; --warn-soft:#FBF1DE;
+  --hot:#D64550; --hot-soft:#FBE8EA;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font:14px/1.45 var(--sans)}
+#bg{position:fixed;inset:0;z-index:0;background:
+  radial-gradient(900px 600px at 50% 58%,#FFFFFF 0%,rgba(255,255,255,0) 70%),
+  linear-gradient(var(--line-soft) 1px,transparent 1px) 0 0/48px 48px,
+  linear-gradient(90deg,var(--line-soft) 1px,transparent 1px) 0 0/48px 48px,var(--bg)}
+.aura{position:absolute;border-radius:50%;filter:blur(90px);opacity:.5;animation:drift 40s ease-in-out infinite alternate}
+.aura.a{width:520px;height:520px;left:10%;top:14%;background:#E3F3F7}
+.aura.b{width:460px;height:460px;right:8%;top:42%;background:#EAF0FB;animation-duration:48s}
+.aura.c{width:380px;height:380px;left:40%;bottom:-8%;background:#F3EEFA;animation-duration:56s}
+@keyframes drift{to{transform:translate(50px,-30px) scale(1.1)}}
+body.calm .aura{animation:none}
+#holo{position:fixed;inset:0;z-index:1;width:100%;height:100%;cursor:grab;touch-action:none}
+#holo:active{cursor:grabbing}
+header{position:fixed;top:0;left:0;right:0;z-index:20;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:10px max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));
+  background:rgba(246,248,251,.92);border-bottom:1px solid var(--line);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.brand{font-weight:700;letter-spacing:.16em;font-size:12px;color:var(--navy);white-space:nowrap}
+.brand b{color:var(--accent)}
+#who{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:34vw}
+#who strong{color:var(--ink)}
+.spacer{flex:1}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:none;color:var(--muted);font:600 12px var(--sans);padding:7px 12px;cursor:pointer}
+.seg button.on{background:var(--navy);color:#FFFFFF}
+.btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:9px;padding:7px 11px;font:600 12px var(--sans);cursor:pointer}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.on{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.panel{position:fixed;z-index:10;width:330px;background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  box-shadow:0 1px 2px rgba(20,33,61,.05),0 8px 24px rgba(20,33,61,.07);transition:box-shadow .4s}
+.panel.hidden{display:none}
+.panel.pulse{box-shadow:0 0 0 2px var(--accent),0 8px 28px rgba(14,124,155,.25)}
+.ph{display:flex;align-items:center;gap:8px;padding:10px 12px 6px 14px;cursor:move;user-select:none}
+.ph h3{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--navy);flex:1;font-weight:700}
+.ph .x{border:0;background:none;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:2px 5px;border-radius:6px}
+.ph .x:hover{color:var(--ink);background:var(--line-soft)}
+.pb{padding:4px 14px 14px;max-height:52vh;overflow:auto}
+.pb::-webkit-scrollbar{width:6px}.pb::-webkit-scrollbar-thumb{background:var(--line);border-radius:6px}
+.big{font-family:var(--mono);font-size:42px;font-weight:600;color:var(--ink);line-height:1.05;font-variant-numeric:tabular-nums}
+.sub{color:var(--muted);font-size:13px}
+.chip{display:inline-block;font-size:11px;font-weight:600;border-radius:999px;padding:2px 8px}
+.c-slow{background:var(--hot-soft);color:var(--hot)} .c-fast{background:var(--good-soft);color:var(--good)} .c-typ{background:var(--know-soft);color:var(--know)}
+.race{padding:8px 0;border-top:1px solid var(--line-soft)}
+.race:first-child{border-top:0}
+.race.moved{animation:flash 1.4s}
+@keyframes flash{0%,100%{background:transparent}30%{background:var(--accent-soft)}}
+.rt{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.rt b{font-family:var(--mono);font-weight:600}
+.srow{display:grid;grid-template-columns:1fr 34px;gap:8px;align-items:center;margin-top:4px}
+input[type=range]{width:100%;accent-color:var(--accent);height:20px;background:transparent}
+.w{font-family:var(--mono);color:var(--accent);text-align:right;font-weight:600}
+.pull{position:relative;height:5px;border-radius:99px;background:var(--line-soft);margin-top:5px}
+.pull i{position:absolute;top:0;height:5px;border-radius:99px}
+.pull:after{content:"";position:absolute;left:50%;top:-3px;width:1px;height:11px;background:var(--muted);opacity:.6}
+.pl{font-size:11px;color:var(--muted);margin-top:2px}
+.range{position:relative;height:42px;margin-top:10px}
+.range .bar{position:absolute;top:16px;height:8px;border-radius:99px;background:#C9E6EE}
+.range .mk{position:absolute;top:9px;width:3px;height:22px;border-radius:2px;transform:translateX(-1px)}
+.range .lb{position:absolute;font-size:10px;transform:translateX(-50%);white-space:nowrap;font-family:var(--mono)}
+.meter{position:relative;height:10px;border-radius:99px;margin:16px 0 6px;background:linear-gradient(90deg,#CDEBDC,#D6E4F6 45%,#F4DFB8 85%,#F5C9CD)}
+.meter .pin{position:absolute;top:-6px;width:4px;height:22px;background:var(--ink);border-radius:2px;transition:left .7s}
+.kv{display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line-soft);font-size:13px}
+.kv b{font-family:var(--mono);font-weight:600;font-variant-numeric:tabular-nums}
+.card{border:1px solid var(--line);border-radius:11px;padding:10px 12px;margin-bottom:10px;background:var(--surface)}
+.card .said{font-weight:600}
+.it{font-size:13px;margin-top:6px;padding:6px 8px;border-radius:8px;line-height:1.4}
+.it b{font-family:var(--mono);font-weight:600}
+.v-supported{background:var(--good-soft)} .v-your_knowledge{background:var(--know-soft)} .v-against_data{background:var(--warn-soft)} .v-undo,.v-no_change{background:var(--line-soft)}
+.tag{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-right:6px}
+.v-supported .tag{color:var(--good)} .v-your_knowledge .tag{color:var(--know)} .v-against_data .tag{color:var(--warn)} .v-undo .tag{color:var(--navy)}
+.note{font-size:12px;color:var(--muted);margin-top:4px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.sug{border:1px solid var(--line);background:var(--surface);color:var(--accent);border-radius:999px;padding:4px 10px;font:600 12px var(--sans);cursor:pointer}
+.sug:hover{background:var(--accent-soft);border-color:var(--accent)}
+.react{display:flex;gap:6px;margin-top:8px}
+.react button{flex:1;border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:8px;padding:4px;font:600 11px var(--sans);cursor:pointer}
+.react button.on{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+.acc{font-size:12px;margin-top:6px;font-weight:600}
+.acc.up{color:var(--good)} .acc.down{color:var(--warn)}
+#cmd{position:fixed;z-index:25;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);width:min(760px,calc(100vw - 32px))}
+#reply{margin:0 0 10px;padding:10px 14px;border-radius:12px;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 24px rgba(20,33,61,.08);
+  font-size:14px;line-height:1.5;display:none;max-height:28vh;overflow:auto}
+#reply.show{display:block}
+#reply .who{font-size:10px;letter-spacing:.14em;color:var(--accent);font-weight:700;margin-bottom:2px}
+#caption{text-align:center;min-height:22px;color:var(--navy);font-size:15px;margin-bottom:8px}
+#caption .interim{opacity:.6;font-style:italic}
+.bar{display:flex;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:8px;box-shadow:0 8px 24px rgba(20,33,61,.08)}
+#mic{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--accent-soft);color:var(--accent);font-size:19px;cursor:pointer;flex:none;position:relative}
+#mic.on{background:var(--hot);color:#FFFFFF;border-color:var(--hot)}
+#mic.on:after{content:"";position:absolute;inset:-6px;border-radius:50%;border:2px solid var(--hot);animation:ring 1.5s infinite}
+@keyframes ring{0%{opacity:.8;transform:scale(.9)}100%{opacity:0;transform:scale(1.3)}}
+#q{flex:1;min-width:0;background:transparent;border:0;outline:none;color:var(--ink);font:15px var(--sans);padding:8px 4px}
+#q::placeholder{color:var(--muted)}
+#sugBar{margin-top:8px;justify-content:center}
+.sim-ctl{display:grid;grid-template-columns:76px 1fr 54px;gap:8px;align-items:center;margin:6px 0;font-size:13px}
+.sim-ctl b{font-family:var(--mono);text-align:right;color:var(--accent);font-weight:600}
+select{background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:5px 8px;font:13px var(--sans)}
+#simRead{font-family:var(--mono);font-size:12px;margin-top:6px;min-height:38px;color:var(--ink)}
+#help{position:fixed;inset:0;z-index:40;background:rgba(20,33,61,.35);display:none;align-items:center;justify-content:center;padding:20px}
+#help.open{display:flex}
+#help .box{max-width:860px;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:24px 26px;max-height:88vh;overflow:auto;box-shadow:0 20px 60px rgba(20,33,61,.2)}
+#help h2{font-size:13px;letter-spacing:.14em;color:var(--navy);margin-bottom:12px}
+#help .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px}
+#help h4{font-size:11px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px}
+#help li{list-style:none;font-size:13px;margin:4px 0;color:var(--ink)}
+#help li:before{content:"“";color:var(--accent)} #help li:after{content:"”";color:var(--accent)}
+#menu{position:fixed;z-index:30;top:56px;right:16px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:none;box-shadow:0 12px 32px rgba(20,33,61,.12)}
+#menu.open{display:block}
+#menu label{display:flex;gap:8px;align-items:center;font-size:13px;padding:4px 0;cursor:pointer}
+#toast{position:fixed;z-index:50;left:50%;top:64px;transform:translateX(-50%);background:var(--ink);color:#FFFFFF;padding:8px 14px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;max-width:90vw}
+#toast.show{opacity:1}
+@media (max-width: 900px){
+  html,body{overflow:auto}
+  #holo{position:relative;height:46vh;display:block}
+  .panel{position:static!important;width:auto!important;margin:12px 16px}
+  .ph{cursor:default}
+  #panels{padding-bottom:190px}
+  #who{max-width:100%;order:3;flex-basis:100%}
+  .brand{font-size:11px} .lbl{display:none} .spacer{display:none}
+  #reply{max-height:18vh}
+  header{position:sticky;top:env(safe-area-inset-top,0px)}
+}
+@media (prefers-reduced-motion: reduce){.aura{animation:none}}
+</style>
+</head>
+<body>
+<div id="bg"><div class="aura a"></div><div class="aura b"></div><div class="aura c"></div></div>
+<header>
+  <div class="brand">PACESENSE <b>//</b> COMMAND CENTER</div>
+  <div id="who">Loading…</div>
+  <div class="spacer"></div>
+  <div class="seg" id="persp" role="group" aria-label="Perspective">
+    <button data-p="coach" class="on">Coach</button><button data-p="runner">Runner</button><button data-p="researcher">Researcher</button>
+  </div>
+  <button class="btn" id="bPanels" title="Show or hide panels">▦ <span class="lbl">Panels</span></button>
+  <button class="btn" id="bCalm" title="Calm mode: less motion">☾ <span class="lbl">Calm</span></button>
+  <button class="btn" id="bSpeak" title="Read replies aloud">🔈 <span class="lbl">Speak</span></button>
+  <button class="btn" id="bDemo" title="Open a new demo runner">↻ <span class="lbl">Demo</span></button>
+  <button class="btn" id="bHelp" title="What can I say?">?</button>
+</header>
+<canvas id="holo" aria-label="Holographic runner: drag to rotate"></canvas>
+
+<div id="panels">
+<section class="panel" data-panel="races"><div class="ph"><h3>Past races · weights</h3><button class="x" title="Hide">×</button></div>
+  <div class="pb" id="pRaces"></div></section>
+
+<section class="panel" data-panel="prediction"><div class="ph"><h3>Prediction</h3><button class="x" title="Hide">×</button></div>
+  <div class="pb"><div class="big" id="fin">–</div><div class="sub" id="finDelta">&nbsp;</div>
+    <div class="range" id="rng"></div><div class="sub" style="font-size:11px">Bar: 8 in 10 similar runners finished here · <span style="color:var(--navy)">▮</span> model <span style="color:var(--hot)">▮</span> your estimate <span style="color:var(--good)">▮</span> real result</div>
+    <div id="hold" style="margin-top:10px"></div></div></section>
+
+<section class="panel" data-panel="steering"><div class="ph"><h3>Whose view is the model taking?</h3><button class="x" title="Hide">×</button></div>
+  <div class="pb"><div class="meter"><div class="pin" id="pin"></div></div>
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted)"><span>0 · the data</span><span>1 · your estimate</span></div>
+    <div id="steerLbl" style="margin-top:8px;font-size:13px"></div>
+    <div class="kv"><span>Steering index</span><b id="sIdx">–</b></div>
+    <div class="kv"><span>Changes with a reason</span><b id="sWhy">–</b></div>
+    <div class="kv"><span>Your reactions</span><b id="sReact">–</b></div></div></section>
+
+<section class="panel" data-panel="feedback"><div class="ph"><h3>Feedback loop</h3><button class="x" title="Hide">×</button></div>
+  <div class="pb" id="pFeed"><div class="sub">Every change you make appears here: what moved, what the data says, and whether it brought the prediction closer.</div></div></section>
+
+<section class="panel" data-panel="pacing"><div class="ph"><h3>Pacing plan</h3><button class="x" title="Hide">×</button></div>
+  <div class="pb"><svg id="paceSvg" viewBox="0 0 300 150" width="100%" height="150"></svg><div class="sub" id="paceNote"></div></div></section>
+
+<section class="panel" data-panel="similar"><div class="ph"><h3>Runners like her</h3><button class="x" title="Hide">×</button></div>
+  <div class="pb"><div class="sub" style="margin-bottom:6px">Each dot: a runner who ran a race like hers, placed at the time that runner's later best implies for her.</div><svg id="simSvg" viewBox="0 0 300 200" width="100%" height="200"></svg></div></section>
+
+<section class="panel" data-panel="simulator"><div class="ph"><h3>Race-day simulator</h3><button class="x" title="Hide">×</button></div>
+  <div class="pb">
+    <div class="sim-ctl"><span>Heat</span><input type="range" id="tC" min="-5" max="35" step="1" value="12"><b id="tCv">12°C</b></div>
+    <div class="sim-ctl"><span>Headwind</span><input type="range" id="wK" min="0" max="40" step="1" value="0"><b id="wKv">0</b></div>
+    <div class="sim-ctl"><span>Runner</span><select id="prof"><option value="on_plan">runs the plan</option><option value="fast_start">starts too fast</option><option value="late_fade">fades late</option></select><button class="btn" id="play">▶ Run</button></div>
+    <svg id="simChart" viewBox="0 0 300 130" width="100%" height="130" style="margin-top:6px"></svg>
+    <div id="simRead" class="sub"></div>
+    <div class="sub" style="font-size:11px">Heat and wind effects are stated assumptions (hud/sim.py), not fitted on data. Band: the likely range.</div>
+  </div></section>
+
+<section class="panel" data-panel="log"><div class="ph"><h3>Change log</h3><button class="x" title="Hide">×</button></div>
+  <div class="pb" id="pLog"><div class="sub">No changes yet.</div></div></section>
+
+<section class="panel" data-panel="record"><div class="ph"><h3>Track record</h3><button class="x" title="Hide">×</button></div>
+  <div class="pb" id="pRec"></div></section>
+
+<section class="panel" data-panel="chat"><div class="ph"><h3>Conversation</h3><button class="x" title="Hide">×</button></div>
+  <div class="pb" id="pChat"><div class="sub">Everything you said and every answer.</div></div></section>
+</div>
+
+<div id="cmd">
+  <div id="reply"><div class="who">PACESENSE</div><div id="replyText"></div></div>
+  <div id="caption"></div>
+  <div class="bar">
+    <button id="mic" title="Talk (M)">🎙</button>
+    <input id="q" placeholder="Say or type: “2014 was a hot day and she was injured” · “simulate 25 degrees” · “runner view”" autocomplete="off" aria-label="Command">
+    <button class="btn" id="send">Send</button>
+  </div>
+  <div class="chips" id="sugBar"></div>
+</div>
+
+<div id="menu"></div>
+<div id="help"><div class="box">
+  <h2>WHAT CAN I SAY?</h2>
+  <div class="cols">
+    <div><h4>About her races</h4><ul><li>2014 was a hot day and she was injured</li><li>ignore the first race</li><li>trust the recent races more</li><li>set Rotterdam 2013 to 0.8</li><li>I think she can run 3:30</li><li>scratch that</li></ul></div>
+    <div><h4>The screen</h4><ul><li>show the simulator</li><li>hide the change log</li><li>switch to runner view</li><li>calm mode</li><li>reset the layout</li><li>new demo runner</li></ul></div>
+    <div><h4>Race day</h4><ul><li>simulate 27 degrees</li><li>what if she starts too fast</li><li>simulate a hot day with a 20 km/h headwind</li><li>reveal</li></ul></div>
+    <div><h4>Questions</h4><ul><li>why is the likely range so wide?</li><li>which race pulls the prediction most?</li><li>is my plan realistic?</li><li>explain the likely range</li></ul></div>
+  </div>
+  <p class="sub" style="margin-top:14px">Keyboard: <b>/</b> type a command · <b>M</b> microphone · drag the hologram to turn it · drag a panel by its title. Chrome and Edge listen continuously (they send audio to their own speech service); typing works everywhere.</p>
+  <button class="btn" style="margin-top:14px" id="helpClose">Close</button>
+</div></div>
+<div id="toast"></div>
+
+<script>
+const LEX = {"version":1,"effects":{"exclude":{"set":0.0},"full":{"set":1.0},"down_strong":{"shift":-0.3},"down":{"shift":-0.2},"up":{"shift":0.2},"up_strong":{"shift":0.3}},"phrases":{"exclude":{"verb":["ignore","disregard","throw out","leave out","exclude","drop","forget about","don't use","do not use","get rid of","take out","remove"],"describe":["doesn't count","does not count","shouldn't count","should not count","not representative at all","means nothing","irrelevant","a dnf","dnf","did not finish","didn't finish","walked most of it","a fun run","fun run","a training run","training run","paced a friend","was pacing","pacer for"]},"full":{"verb":["give full weight to","full weight on","rely entirely on","only trust","only use"],"describe":["exactly how she runs now","exactly how he runs now","exactly where she is now","exactly where he is now","the benchmark","her benchmark","his benchmark"]},"down_strong":{"verb":["downweight","down weight","lower","reduce","count less","trust less","less weight on","less weight for","weight down","discount"],"describe":["injured","injury","an injury","sick","ill","the flu","flu","covid","hot day","very hot","heat","heatwave","hit the wall","hitting the wall","blew up","cramped","cramps","cramping","not representative","unrepresentative","a disaster","disaster","a bad race","bad race","terrible","awful","stomach problems","stomach issues","fell","a fall","off day","an off day","overtrained","undertrained","barely trained","no training","jet lag","jetlagged","pregnant","postpartum","coming back from","comeback race","after surgery"]},"down":{"verb":["count a bit less","trust a bit less"],"describe":["windy","wind","rain","rainy","the rain","humid","humidity","cold","freezing","a bit off","not great","not her best","not his best","slow","slower","struggled","tired","long ago","a long time ago","long time ago","ages ago","outdated","old race","a while ago","years ago","before she changed","before he changed","started too fast","went out too fast","faded","crowded","bad pacing","poor pacing","busy at work","stressful","stress"]},"up":{"verb":["count more","trust more","more weight on","more weight for","weight up","upweight","up weight","raise","increase","boost","focus on","use more"],"describe":["a good race","good race","solid","strong","fit","in shape","in good shape","well trained","trained well","well prepared","typical","normal race","representative","realistic","consistent","even pacing","paced well","negative split","good conditions","cool day","recent","current form","how she runs now","how he runs now"]},"up_strong":{"verb":["count much more","trust much more","mostly use","mostly trust","rely on"],"describe":["her best race","his best race","best race","best ever","personal best","a pb","pb","peak","her peak","his peak","great race","a great race","perfect race","perfect conditions","ideal conditions","most representative","very representative","really representative","exactly her level","exactly his level","breakthrough"]}},"modifiers":{"soften":{"factor":0.5,"words":["a bit","a little","slightly","somewhat","kind of","kinda","sort of","maybe","a tad","partly","little"]},"intensify":{"factor":1.5,"words":["very","really","totally","completely","a lot","much","extremely","way","hugely","seriously","badly","massively"]}},"negations":["not","wasn't","isn't","wasnt","isnt","never","no","didn't","didnt","don't","dont","doesn't","doesnt","without","hardly"],"references":{"most_recent":["last race","latest race","most recent race","most recent","last marathon","latest marathon","the last one","her last","his last","newest race","this year's race","the recent one"],"previous":["second last","second to last","second-to-last","race before last","previous race","the one before","one before that","before that"],"oldest":["first race","oldest race","earliest race","first marathon","the first one","oldest","earliest","her first","his first","debut"],"recent_group":["recent races","recent ones","last two races","last two","latest races","newer races","newest races","recent marathons"],"older_group":["older races","old races","earlier races","older ones","early races","old ones","older marathons","everything before","the rest"],"all":["all races","all the races","every race","all of them","all her races","all his races","everything"],"pronoun":["that race","that one","that marathon","this race","this one","it","there","she was","he was","she had","he had","she ran"]},"commands":{"reset":["reset","start over","equal weights","back to equal","default weights","clear everything","clear the weights","back to the model"],"undo":["undo","scratch that","cancel that","never mind","go back","revert"],"recency":["trust recent races more","recent races matter more","recent races count more","more weight on recent","weight recent races","newer races count more","focus on recent","recent form","current form matters","older races count less","older races matter less","she has improved","he has improved","she's improved","he's improved","getting faster"]},"estimate_cues":["i think","i reckon","my guess","i'd say","i would say","i expect","i believe","my estimate","my target","she can run","he can run","she could run","he could run","she'll run","he'll run","aim for","target is","target of","capable of","can do"],"recency":{"half_life_years":4.0,"floor":0.2}};
+const DEMO = {"runner":{"name":"Demo runner (F, 61)","gender":"F","age":61},"races":[{"event":"Amsterdam","year":2009,"finish_s":13580.0,"finish":"3:46:20","pred_s":12894.647600179254,"cases":[12825.2,13249.80243149903,13376.100598379297,12441.222015131536,12661.169265689945,12901.21979929961,12821.018570997445,12276.033739125314,13050.569196592764,13359.14892680565,12673.905158229481,12940.855529363384,12416.939080282198,13237.244319224026,13136.328123849225],"cw":[0.10391052045012754,0.08053558454706633,0.07269748907801364,0.06921582696015569,0.06587536429590868,0.06468038037059146,0.06291881217786169,0.06206458006704561,0.06119263251907083,0.06016094520781725,0.06001522854872375,0.05964927866497672,0.05948721783130994,0.059276675502546776,0.05831946377878398],"n":15,"profile":[0.983958509022114,0.9887938890753859,0.9922387957607193,0.996800612962225,1.0026573721303123,1.0048306354441583,1.009876689716901,1.0127281306140117,1.0184860256814838]},{"event":"Amsterdam","year":2010,"finish_s":14637.4,"finish":"4:03:57","pred_s":13371.674228105241,"cases":[12825.2,12852.346367682532,13103.016758757796,13686.234299301736,11446.34851910882,13456.70176907163,13549.334809664997,13050.839527325226,14215.2939625317,13672.015155721172,14217.024812559375,14276.092534072595,14282.869919857523,14089.001984113409,12998.929945777192],"cw":[0.14505630254344323,0.06927528088997757,0.06843160173951658,0.06580387804142132,0.06490476253199498,0.062088063655927846,0.059784250131248745,0.0595612023197577,0.05930162386873544,0.05921762100429683,0.05858216504795219,0.05751106049962457,0.05719657358903922,0.05675073182834033,0.056534882308723534],"n":15,"profile":[0.9827532708537488,0.9903381007233177,0.991453230059358,0.9940251002497111,1.0018607740157934,1.0070540256737543,1.0079878131677555,1.0163049228984964,1.018730665963704]},{"event":"Rotterdam","year":2013,"finish_s":13848.4,"finish":"3:50:48","pred_s":13029.726196475009,"cases":[12825.2,12991.315941442255,12847.387845048892,12784.811904418757,13344.44471741995,12961.0508453061,13599.233901337526,13172.107212653016,13129.055981003265,13079.522767953962,12689.208046142754,13752.225700789673,12500.04983897931,12909.623915150989,12981.303719776364],"cw":[0.10523396078987807,0.06865124076872302,0.06820761552744543,0.06730934448283821,0.0667564342235264,0.06589756716954044,0.06495018271501231,0.0632853478210973,0.06323167610849675,0.06225486838784527,0.06222706053697801,0.06209862545154107,0.0612051757450829,0.05990138655507467,0.058789513716920185],"n":15,"profile":[0.9789476836114707,0.9884673262956283,0.9888227236014133,0.9952881303211398,0.9999292963892037,1.0080730198966026,1.0121935198880312,1.0191871819059641,1.0207086972449806]},{"event":"Rotterdam","year":2014,"finish_s":13430.9,"finish":"3:43:51","pred_s":12845.194844043283,"cases":[12825.2,13181.107439339454,12799.197111231702,13300.904179271292,12294.522883842548,12652.236258158626,12749.24830278647,13387.478116506883,12889.569061163784,12365.621770833333,12852.865068784251,12736.897584085835,12624.139841880786,13127.449418665004,12815.650297714417],"cw":[0.11107199639479445,0.0768879988227974,0.07264596852887056,0.06975477500388354,0.06712055660336916,0.06285818615962983,0.06234894319391455,0.062296634704467564,0.06216965226091437,0.060898633183134696,0.06075089770697652,0.0585271771729871,0.05833440377120639,0.057181314048978214,0.05715286244407576],"n":15,"profile":[0.9836067447960409,0.9871054806401671,0.9907152631356712,0.9960038154727829,1.000715877136287,1.0059556685753703,1.0100338700386915,1.0167198121480165,1.0208279454600753]}],"truth_s":12825.2,"truth_label":"Rotterdam 2015","noise":[9.841226859860595e-06,0.002389964300067759,-0.0021931028428977405,-0.007124734710058193,-0.0036373662813737806,-0.007933172439971698,0.00048114882077950787,0.010721721964436269,-0.003937652148410637,-0.0049637991985595235,0.003918736401481586,0.002855096065280486,0.0008433139919831885,-0.007443744357665637,-0.00023401457970618792,0.005562425555666302,-0.010753716378280655,-0.0036609260883217454,-0.015209781918406754,-0.01031630191827981,-0.014733880302333859,-0.00188072904859745,-0.010139571851549626,0.0021701148705736122,0.0012540086929938013,-0.0014954475570396351,-0.020134077686564104,-0.004309543166773093,-0.00038800756320857586,0.0009064718880264605,-0.012241086124043149,-0.0038220262082714453,-0.007828152624453116,-0.006470697915404795,0.00848718898708863,-0.006460277402655172,-0.0002601736395641648,0.0070751189390653915,-0.004668803461946416,-0.000893615596673277,0.0008837131459958447,0.0005102541940404957,-0.009800446611341548],"on_plan_s":15,"slipping":0.02};
+</script>
+<script>
+/* Browser port of src/pacesense/steer/intent.py (same lexicon, same rules). Needs a global LEX (the lexicon as JSON).
+   Checked against the Python interpreter on every benchmark sentence by tests (see scripts/build_hud_demo.py). */
+const Steer = (() => {
+  const TEENS = {ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19};
+  const POINT = {zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9};
+  const NUMW = {zero:0,nothing:0,none:0,half:.5,full:1,one:1,max:1,maximum:1,minimum:0};
+  const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const cache = new Map();
+  const re = p => { if (!cache.has(p)) cache.set(p, new RegExp("(?<![\\w'])" + esc(p).replace(/ /g, "\\s+") + "(?![\\w'])", "g")); const r = cache.get(p); r.lastIndex = 0; return r; };
+  const cues = [];
+  for (const [effect, g] of Object.entries(LEX.phrases)) for (const kind of ["verb","describe"]) for (const p of (g[kind] || [])) cues.push({phrase: String(p).toLowerCase(), effect, verb: kind === "verb"});
+  cues.push({phrase:"less", effect:"down", verb:false}, {phrase:"more", effect:"up", verb:false});
+  cues.sort((a, b) => b.phrase.length - a.phrase.length);
+  const byPhrase = Object.fromEntries(cues.map(c => [c.phrase, c]));
+  const soften = LEX.modifiers.soften, intensify = LEX.modifiers.intensify;
+
+  function normalise(t){
+    t = t.toLowerCase().replace(/’/g, "'").replace(/–/g, "-");
+    t = t.replace(/\btwenty (ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen)\b/g, (m, a) => String(2000 + TEENS[a]));
+    t = t.replace(/\btwenty twenty(?: (one|two|three|four|five|six|seven|eight|nine))?\b/g, (m, a) => String(2020 + (a ? POINT[a] : 0)));
+    t = t.replace(/\btwo thousand (?:and )?(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen)\b/g, (m, a) => String(2000 + (POINT[a] ?? TEENS[a])));
+    t = t.replace(/\bpoint (zero|one|two|three|four|five|six|seven|eight|nine)\b/g, (m, a) => "0." + POINT[a]);
+    t = t.replace(/\b'(\d\d)\b/g, (m, a) => "20" + a);
+    return t.replace(/\s+/g, " ").trim();
+  }
+  const overlaps = (s, e, taken) => taken.some(([ts, te]) => s < te && ts < e);
+  function findAll(text, phrases, taken){
+    const out = [];
+    for (const p of [...new Set(phrases)].sort((a, b) => b.length - a.length)){
+      for (const m of text.matchAll(re(p))){ const s = m.index, e = s + m[0].length; if (overlaps(s, e, taken)) continue; taken.push([s, e]); out.push([s, e, p]); }
+    }
+    return out.sort((a, b) => a[0] - b[0]);
+  }
+  const wordsBefore = (text, pos, n) => (text.slice(0, pos).match(/[\w']+/g) || []).slice(-n);
+  function hasBefore(text, pos, phrases, n){ const w = wordsBefore(text, pos, n).join(" "); for (const p of [...phrases].sort((a, b) => b.length - a.length)) if (re(p).test(w)) return p; return null; }
+  const stripArticles = t => t.replace(/\b(?:the|her|his|their|a|an)\s+/g, "");
+  function spanIn(text, phrase){ const pat = "(?<![\\w'])" + phrase.split(" ").map(esc).join("\\s+(?:(?:the|her|his|their|a|an)\\s+)?") + "(?![\\w'])"; const m = new RegExp(pat).exec(text); return m ? [m.index, m.index + m[0].length] : null; }
+  const sentences = t => t.split(/(?<!\d)[.,](?!\d)|[;!?]+|\s+\bbut\b\s+|\s+\bhowever\b\s+|\s+\bwhereas\b\s+|\s+\balthough\b\s+/).map(s => (s || "").trim()).filter(Boolean);
+  function order(races){ return races.map((r, i) => i).sort((a, b) => ((races[b].year || 0) - (races[a].year || 0)) || (b - a)); }
+  function references(clause, races, taken, unknown){
+    const refs = [], newest = order(races);
+    const groups = {most_recent: newest.slice(0, 1), previous: newest.slice(1, 2), oldest: newest.slice(-1), recent_group: newest.slice(0, 2),
+      older_group: newest.length <= 3 ? newest.slice(1) : newest.slice(2), all: races.map((r, i) => i)};
+    const events = [...new Set(races.map(r => String(r.event || "").toLowerCase()).filter(Boolean))].sort((a, b) => b.length - a.length);
+    for (const ev of events){
+      for (const m of clause.matchAll(new RegExp("(?<![\\w'])" + esc(ev) + "(?:\\s+(?:in\\s+)?((?:19|20)\\d\\d))?(?![\\w'])", "g"))){
+        const s = m.index, e = s + m[0].length; if (overlaps(s, e, taken)) continue;
+        const year = m[1] ? +m[1] : null, idx = races.map((r, i) => i).filter(i => String(races[i].event).toLowerCase() === ev && (year === null || races[i].year === year));
+        taken.push([s, e]); if (idx.length) refs.push({s, e, races: idx, pronoun: false}); else unknown.push(m[0]);
+      }
+    }
+    for (const m of clause.matchAll(/(?<![\w.])((?:19|20)\d\d)(?![\w.])/g)){
+      const s = m.index, e = s + m[0].length; if (overlaps(s, e, taken)) continue; taken.push([s, e]);
+      const idx = races.map((r, i) => i).filter(i => races[i].year === +m[1]);
+      if (idx.length) refs.push({s, e, races: idx, pronoun: false}); else unknown.push(m[1]);
+    }
+    for (const [key, phrases] of Object.entries(LEX.references)){ if (key === "pronoun") continue;
+      for (const [s, e] of findAll(clause, phrases, taken)) if (groups[key] && groups[key].length) refs.push({s, e, races: groups[key], pronoun: false}); }
+    for (const [s, e] of findAll(clause, LEX.references.pronoun || [], taken)) refs.push({s, e, races: [], pronoun: true});
+    return refs.sort((a, b) => a.s - b.s);
+  }
+  const VALUE = "(0?\\.\\d+|1\\.0+|0|1|zero|nothing|none|half|full|one|max|maximum|minimum)";
+  function explicitSets(clause, refs, taken){
+    const out = [];
+    if (!/\b(set|put|make|give|change|move|weight|weigh|slider|to|at)\b/.test(clause)) return out;
+    const r = new RegExp("(?:\\b(?:to|at|of|=|weight|weighted)\\s+(?:a\\s+)?(?:weight\\s+(?:of\\s+)?)?)" + VALUE + "(?![\\w:])", "g");
+    for (const m of clause.matchAll(r)){
+      const vs = m.index + m[0].length - m[1].length, ve = m.index + m[0].length; if (overlaps(vs, ve, taken)) continue;
+      let v = m[1] in NUMW ? NUMW[m[1]] : parseFloat(m[1]); if (!(v >= 0 && v <= 1)) continue;
+      taken.push([m.index, ve]);
+      const before = refs.filter(x => x.e <= m.index), target = before.length ? before[before.length - 1] : (refs[0] || null);
+      out.push([target, Math.round(v * 10) / 10, m[0].trim()]);
+    }
+    return out;
+  }
+  const TIME = /(\d{1,2}:\d{2}(?::\d{2})?|\d\s*h(?:ours?|rs?)?\s*(?:and\s*)?\d{1,2}\s*(?:m(?:in(?:ute)?s?)?)?(?:\s*\d{1,2}\s*s(?:ec(?:ond)?s?)?)?|(?:sub|under)\s*\d(?::\d{2})?)/;
+  function parseTime(raw){
+    raw = raw.replace(/^(?:sub|under)\s*/, "");
+    let m = raw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/); if (m) return +m[1] * 3600 + +m[2] * 60 + (+m[3] || 0);
+    m = raw.match(/^(\d)\s*h(?:ours?|rs?)?\s*(?:and\s*)?(\d{1,2})?/); if (m) return +m[1] * 3600 + (+m[2] || 0) * 60;
+    m = raw.match(/^(\d)$/); if (m) return +m[1] * 3600;
+    return null;
+  }
+  function estimate(text){
+    for (const cue of LEX.estimate_cues) for (const m of text.matchAll(re(cue))){
+      const from = m.index + m[0].length, tail = text.slice(from, from + 40), tm = TIME.exec(tail); if (!tm) continue;
+      const s = parseTime(tm[1]); if (s && s >= 7200 && s <= 25200) return [s, [from + tm.index, from + tm.index + tm[0].length]];
+    }
+    return [null, null];
+  }
+  function interpret(text, races, context){
+    const norm = normalise(text), out = {text, actions: [], estimate: null, unresolved: [], unknown: [], context};
+    if (!norm) return out;
+    const bare = stripArticles(norm);
+    for (const kind of ["undo", "reset"]){ const hit = findAll(bare, LEX.commands[kind] || [], []); if (hit.length){ out.actions.push({kind, races: [], value: null, cue: hit[0][2], conf: 1}); return out; } }
+    const [est, estSpan] = estimate(norm); out.estimate = est;
+    const rec = findAll(bare, LEX.commands.recency || [], []);
+    const recSpans = rec.map(r => spanIn(norm, r[2])).filter(Boolean);
+    if (rec.length) out.actions.push({kind: "recency", races: races.map((r, i) => i), value: null, cue: rec[0][2], conf: 1});
+    let ctx = context;
+    for (const clause of sentences(norm)){
+      const offset = norm.indexOf(clause), taken = [];
+      for (const sp of recSpans.concat(estSpan ? [estSpan] : [])) if (sp[0] >= offset && sp[1] <= offset + clause.length + 1) taken.push([sp[0] - offset, sp[1] - offset]);
+      const unknown = [], refs = references(clause, races, taken, unknown); out.unknown.push(...unknown);
+      const resolved = [];
+      for (const r of refs){ if (r.pronoun){ const prior = resolved.filter(x => !x.pronoun); const idx = prior.length ? prior[prior.length - 1].races : (ctx != null ? [ctx] : []); if (idx.length) resolved.push({...r, races: idx}); } else resolved.push(r); }
+      const named = resolved.filter(r => r.races.length);
+      for (const [target, value, cue] of explicitSets(clause, named, taken)){
+        const idx = target ? target.races : (ctx != null ? [ctx] : []);
+        if (idx.length){ out.actions.push({kind: "set", races: idx, value, cue, conf: 1}); ctx = idx[idx.length - 1]; } else out.unresolved.push(cue);
+      }
+      const hits = findAll(clause, cues.map(c => c.phrase), taken);
+      for (const [s, e, phrase] of hits){
+        const cue = byPhrase[phrase], spec = LEX.effects[cue.effect];
+        const neg = hasBefore(clause, s, LEX.negations, 3);
+        let mod = 1; if (hasBefore(clause, s, soften.words, 3)) mod = soften.factor; else if (hasBefore(clause, s, intensify.words, 2)) mod = intensify.factor;
+        const before = named.filter(r => r.e <= s), after = named.filter(r => r.s >= e);
+        const target = cue.verb ? (after[0] || before[before.length - 1] || null) : (before[before.length - 1] || after[0] || null);
+        let idx, conf = .8;
+        if (!target){ if (ctx == null){ out.unresolved.push(phrase); continue; } idx = [ctx]; conf = .6; } else { idx = target.races; if (target.pronoun) conf = .6; }
+        const label = neg ? neg + " " + phrase : phrase;
+        if ("set" in spec && !neg) out.actions.push({kind: "set", races: idx, value: spec.set, cue: label, conf});
+        else { let d = "shift" in spec ? spec.shift : (spec.set === 0 ? -.3 : .3); if (neg) d = -.5 * d; out.actions.push({kind: "shift", races: idx, value: Math.round(d * mod * 100) / 100, cue: label, conf}); }
+        if (idx.length === 1) ctx = idx[0];
+      }
+      if (named.length && !hits.length){ const last = named[named.length - 1]; if (last.races.length === 1) ctx = last.races[0]; }
+    }
+    out.context = ctx; out.actions = merge(out.actions); return out;
+  }
+  function merge(actions){
+    const singles = new Map(), keep = [];
+    for (const a of actions){ if (a.kind === "set" || a.kind === "shift"){ for (const i of a.races){ if (!singles.has(i)) singles.set(i, []); singles.get(i).push(a); } } else keep.push(a); }
+    for (const [i, acts] of singles){
+      const sets = acts.filter(a => a.kind === "set");
+      if (sets.length){ const a = sets[sets.length - 1]; keep.push({kind: "set", races: [i], value: a.value, cue: a.cue, conf: a.conf}); }
+      else { const tot = Math.max(-1, Math.min(1, acts.reduce((x, a) => x + a.value, 0))); keep.push({kind: "shift", races: [i], value: Math.round(tot * 100) / 100, cue: [...new Set(acts.map(a => a.cue))].join(" + "), conf: Math.min(...acts.map(a => a.conf))}); }
+    }
+    const ord = {undo: 0, reset: 1, recency: 2, set: 3, shift: 3};
+    return keep.sort((a, b) => (ord[a.kind] - ord[b.kind]) || ((a.races[0] ?? -1) - (b.races[0] ?? -1)));
+  }
+  function round1(x){ // Python round(x, 1): half to even on the decimal representation
+    const y = x * 10, f = Math.floor(y), d = y - f;
+    if (Math.abs(d - .5) < 1e-9) return (f % 2 === 0 ? f : f + 1) / 10;
+    return Math.round(y) / 10;
+  }
+  function recencyWeights(years, h, floor){ const latest = Math.max(...years); return years.map(y => round1(Math.min(1, Math.max(floor, Math.pow(2, -(latest - y) / h))))); }
+  return {interpret, recencyWeights, round1};
+})();
+
+</script>
+<script>
+/* PaceSense command center, running entirely in the browser (no server).
+   A port of src/pacesense/hud/session.py, steer/session.py, steer/evidence.py, hud/commands.py and hud/sim.py
+   for one embedded demo runner. Needs globals: LEX (lexicon), DEMO (runner data exported from Python), Steer
+   (steer_interpreter.js). scripts/build_hud_demo.py builds the page and checks its numbers against Python. */
+window.PACESENSE_LOCAL = (() => {
+"use strict";
+const KM = [5, 5, 5, 5, 5, 5, 5, 5, 2.195], MARATHON = 42.195, LABELS = ["0-5", "5-10", "10-15", "15-20", "20-25", "25-30", "30-35", "35-40", "40-42.2"];
+const fmt = s => { s = Math.round(s); return `${Math.floor(s / 3600)}:${String(Math.floor(s % 3600 / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
+const dur = s => { const r = Math.round(Math.abs(s)); return r >= 3600 ? fmt(r) : `${Math.floor(r / 60)}:${String(r % 60).padStart(2, "0")}`; };
+const signed = s => { const r = Math.round(Math.abs(s)); return `${s > 0 ? "+" : "−"}${Math.floor(r / 60)}:${String(r % 60).padStart(2, "0")}`; };
+const median = a => { const s = [...a].sort((x, y) => x - y), n = s.length; return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };
+const R = DEMO.races, N = R.length;
+
+/* ---------- model (MarathonModel.combine) ---------- */
+function combine(w){
+  const sw = w.reduce((a, b) => a + b, 0);
+  const finish = R.reduce((a, r, i) => a + w[i] * r.pred_s, 0) / sw;
+  let pw = 0; const prof = new Array(9).fill(0);
+  R.forEach((r, i) => { if (r.profile && w[i] > 0){ pw += w[i]; r.profile.forEach((v, k) => prof[k] += w[i] * v); } });
+  const profile = pw > 0 ? prof.map(v => v / pw) : new Array(9).fill(1);
+  const vals = [], wts = [];
+  R.forEach((r, i) => { if (w[i] > 0) r.cases.forEach((v, k) => { vals.push(v); wts.push(r.cw[k] * w[i] / sw); }); });
+  const ord = vals.map((v, i) => i).sort((a, b) => vals[a] - vals[b]), v = ord.map(i => vals[i]), ww = ord.map(i => wts[i]);
+  let c = 0; const cum = ww.map(x => (c += x) - .5 * x), tot = ww.reduce((a, b) => a + b, 0);
+  const q = p => { const t = p * tot; if (t <= cum[0]) return v[0];
+    for (let i = 1; i < cum.length; i++) if (t <= cum[i]) return v[i - 1] + (v[i] - v[i - 1]) * (t - cum[i - 1]) / (cum[i] - cum[i - 1]);
+    return v[v.length - 1]; };
+  return {finish, low: q(.2), high: q(.8), paces: profile.map(p => p * finish / MARATHON), n: R.reduce((a, r, i) => a + (w[i] > 0 ? r.n : 0), 0)};
+}
+
+/* ---------- evidence (steer/evidence.py) ---------- */
+const EV = R.map((r, i) => { const o = R.filter((_, j) => j !== i).map(x => x.finish_s), med = median(o),
+  mad = median(o.map(x => Math.abs(x - med))) * 1.4826, z = (r.finish_s - med) / Math.max(mad, .02 * med);
+  return {z, med, direction: Math.abs(z) < 1 ? 0 : (z > 0 ? 1 : -1),
+          label: Math.abs(z) < 1 ? "typical for this runner" : z > 0 ? "slower than this runner's other races" : "faster than this runner's other races"}; });
+const mins = s => { const m = Math.abs(s) / 60; return m >= 1.5 ? `${Math.round(m)} min` : `${Math.round(Math.abs(s))} s`; };
+function checkChange(i, old, nw){
+  const name = raceName(i), ev = EV[i];
+  if (Steer.round1(nw - old) === 0) return ["no_change", "No change."];
+  const lowering = nw < old, gap = mins(R[i].finish_s - ev.med);
+  if (ev.direction === 0) return ["your_knowledge", `The times do not single out ${name} (within the usual spread of this runner's races), so this change rests on what you know about it.`];
+  const slow = ev.direction > 0;
+  if (lowering === slow) return ["supported", `The data agrees: ${name} was ${gap} ${slow ? "slower" : "faster"} than this runner's other races.`];
+  return ["against_data", lowering ? `${name} was one of this runner's faster races (${gap} faster than the others); counting it less makes the target slower.`
+                                   : `${name} was one of this runner's slower races (${gap} slower than the others); counting it more makes the target slower.`];
+}
+function influence(w){
+  const sw = w.reduce((a, b) => a + b, 0), f = R.reduce((a, r, i) => a + w[i] * r.pred_s, 0) / sw;
+  return R.map((r, i) => ({pull_s: w[i] * (r.pred_s - f) / sw}));
+}
+function steering(initial, now, est){
+  if (est == null) return {index: null, coach_estimate_s: null, label: "Say your own estimate (\"I think she can run 3:25\") to see whose view the model is moving towards."};
+  const gap = est - initial; if (Math.abs(gap) < 60) return {index: null, coach_estimate_s: est, label: "Your estimate and the model's agreed from the start."};
+  const a = (now - initial) / gap;
+  const label = Math.abs(a) < .15 ? "The model is where the data put it." : a < 0 ? "The model has moved away from your estimate."
+    : a < .85 ? `The model has moved ${Math.round(a * 100)}% of the way towards your estimate.`
+    : a <= 1.15 ? "The model now matches your own estimate. Is that the data, or the sliders agreeing with you?" : "The model has been pushed beyond your own estimate.";
+  return {index: Math.round(a * 1000) / 1000, coach_estimate_s: est, label};
+}
+
+/* ---------- the session (steer/session.py + hud/session.py) ---------- */
+const S = {w: new Array(N).fill(.5), ctx: null, est: null, turns: [], undo: [], log: [], moves: 0, reasoned: 0, revealed: false, reactions: []};
+const initial = combine(new Array(N).fill(.5));
+const raceName = i => `${R[i].event} ${R[i].year}`;
+function setW(turn, i, nw, cue, reasoned, sayUnchanged){
+  nw = Steer.round1(Math.min(1, Math.max(0, nw))); const old = S.w[i];
+  if (nw === old){ if (sayUnchanged){ const what = old === 0 ? "counts for nothing" : old === 1 ? "counts fully" : `is at ${old.toFixed(1)}`;
+    turn.notes.push(`${raceName(i)} already ${what} (heard "${cue}").`); } return; }
+  const trial = S.w.slice(); trial[i] = nw;
+  if (trial.every(x => x <= 0)){ turn.notes.push(`${raceName(i)} left at ${old.toFixed(1)}: give at least one race with a prediction a weight above 0.`); return; }
+  const before = combine(S.w).finish; S.w[i] = nw; const after = combine(S.w).finish;
+  const [verdict, evidence] = cue === "undo" ? ["undo", "Back to the value before the last change."] : checkChange(i, old, nw);
+  turn.applied.push({index: i, race: raceName(i), old, new: nw, cue, reasoned, verdict, evidence});
+  if (cue !== "undo"){ S.moves++; if (reasoned) S.reasoned++; }
+  const d = after - before, eff = Math.round(d) ? `Model ${dur(d)} ${d < 0 ? "faster" : "slower"} (${fmt(after)}), your plan ${dur(d)} ${d < 0 ? "faster" : "slower"} (${fmt(after)}).` : "No change to the finish times.";
+  const said = cue === "slider" ? "Set by hand." : cue === "undo" ? "Undone." : `You said: "${cue}".`;
+  S.log.unshift(`${raceName(i)} weight changed from ${old.toFixed(1)} to ${nw.toFixed(1)}. ${eff} ${said}`);
+}
+function begin(text, source){ S.undo.push(S.w.slice()); return {n: S.turns.length + 1, text, said: text, source, applied: [], notes: [], finish_before_s: combine(S.w).finish, estimate_s: null, interpreter: "rules"}; }
+function end(turn){ turn.finish_after_s = combine(S.w).finish; turn.delta_s = turn.finish_after_s - turn.finish_before_s; if (!turn.applied.length) S.undo.pop(); S.turns.push(turn); return turn; }
+function undo(text){
+  const turn = {n: S.turns.length + 1, text, said: text, source: "undo", applied: [], notes: [], finish_before_s: combine(S.w).finish, estimate_s: null};
+  if (!S.undo.length) turn.notes.push("Nothing to undo."); else S.undo.pop().forEach((w, i) => setW(turn, i, w, "undo", true));
+  turn.finish_after_s = combine(S.w).finish; turn.delta_s = turn.finish_after_s - turn.finish_before_s; S.turns.push(turn); return turn;
+}
+function hear(text, source){
+  const it = Steer.interpret(text, R, S.ctx); S.ctx = it.context;
+  if (it.actions.some(a => a.kind === "undo")) return undo(text);
+  const turn = begin(text, source);
+  if (it.estimate != null){ S.est = turn.estimate_s = it.estimate; turn.notes.push(`Your estimate: ${fmt(it.estimate)}.`); }
+  for (const a of it.actions){
+    if (a.kind === "reset") R.forEach((_, i) => setW(turn, i, .5, a.cue, true));
+    else if (a.kind === "recency"){ Steer.recencyWeights(R.map(r => r.year), LEX.recency.half_life_years, LEX.recency.floor)
+      .forEach((w, i) => { if (S.w[i] < .5 && w > S.w[i]) return; setW(turn, i, w, a.cue, true); }); }
+    else if (a.kind === "set") a.races.forEach(i => setW(turn, i, a.value, a.cue, !/^(to|at|of|=|weight|weighted)\b/.test(a.cue), true));
+    else if (a.kind === "shift") a.races.forEach(i => setW(turn, i, S.w[i] + a.value, a.cue, true, true));
+  }
+  it.unknown.forEach(u => turn.notes.push(`This runner has no race '${u}' among these races.`));
+  it.unresolved.forEach(u => turn.notes.push(`Heard "${u}" but not which race it is about. Name the race or the year.`));
+  if (!it.actions.length && it.estimate == null && !it.unknown.length && !it.unresolved.length) turn.notes.push("Heard you, but nothing in that changes a race weight.");
+  return end(turn);
+}
+function manual(i, w){ const turn = begin(`${raceName(i)} slider`, "manual"); setW(turn, i, w, "slider", false); return end(turn); }
+const errPct = f => 100 * Math.abs(f - DEMO.truth_s) / DEMO.truth_s;
+
+function state(){
+  const m = combine(S.w), inf = influence(S.w);
+  const verdict = m.finish < m.low ? "ambitious" : m.finish > m.high ? "cautious" : "realistic";
+  return {
+    runner: {id: "demo", name: DEMO.runner.name}, mode: "demo",
+    races: R.map((r, i) => ({index: i, event: r.event, year: r.year, finish_s: r.finish_s, finish: r.finish, weight: S.w[i], prediction_s: r.pred_s,
+                             evidence: {z: EV[i].z, label: EV[i].label, direction: EV[i].direction}, influence: inf[i]})),
+    prediction: {finish_s: m.finish, finish: fmt(m.finish), low_s: m.low, high_s: m.high, initial_s: initial.finish, initial: fmt(initial.finish), n_cases: m.n},
+    steering: steering(initial.finish, m.finish, S.est),
+    reasoned_share: S.moves ? S.reasoned / S.moves : null,
+    change_log: S.log.slice(0, 20),
+    plan: {paces: m.paces, labels: LABELS, finish_s: m.paces.reduce((a, p, k) => a + p * KM[k], 0), check: {verdict}},
+    similar: R.map((r, i) => ({race_index: i, n: r.n, finishes_s: [...r.cases].sort((a, b) => a - b), median_s: median(r.cases)})),
+    holdout: {label: DEMO.truth_label, revealed: S.revealed, truth_s: S.revealed ? DEMO.truth_s : null,
+              error_pct: S.revealed ? errPct(m.finish) : null, equal_weights_error_pct: S.revealed ? errPct(initial.finish) : null},
+    reactions: reactions(), ai: false, local: true,
+  };
+}
+const reactions = () => ({n: S.reactions.length, agree: S.reactions.filter(r => r.value === "agree").length,
+  unsure: S.reactions.filter(r => r.value === "unsure").length, disagree: S.reactions.filter(r => r.value === "disagree").length});
+
+/* ---------- feedback loop (hud/session.py) ---------- */
+const VW = {supported: "the data agrees", your_knowledge: "this rests on your knowledge", against_data: "this goes against the data", undo: "undone", no_change: "no change"};
+function card(turn){
+  const st = state(), pr = st.prediction, items = turn.applied.map(a => ({race: a.race, old: a.old, new: a.new, cue: a.cue, verdict: a.verdict, verdict_text: VW[a.verdict], evidence: a.evidence}));
+  const c = {n: turn.n, said: turn.said || turn.text, items, notes: turn.notes, target: pr.finish, target_delta: items.length ? signed(turn.finish_after_s - turn.finish_before_s) : null,
+             range: [fmt(pr.low_s), fmt(pr.high_s)], steering: st.steering, suggestions: []};
+  if (items.length){ const b = errPct(turn.finish_before_s), a = errPct(turn.finish_after_s);
+    c.accuracy = {closer: a < b - 1e-9, same: Math.abs(a - b) < 1e-9, before_pct: b, after_pct: a, equal_weights_pct: errPct(initial.finish),
+                  text: a < b - 1e-9 ? "closer to her real result" : a > b + 1e-9 ? "further from her real result" : "no closer to her real result"}; }
+  const v = new Set(items.map(i => i.verdict));
+  if (v.has("against_data")) c.suggestions.push("undo", "Why does the data disagree?");
+  if (v.has("your_knowledge")) c.suggestions.push("show similar runners", "Explain the likely range");
+  if (v.has("supported")) c.suggestions.push("simulate a hot day");
+  if (st.steering.index != null && st.steering.index > .85) c.suggestions.unshift("Is that the data, or me?");
+  if (!items.length && !turn.notes.length) c.suggestions.push("2010 was a hot day", "trust the recent races more");
+  c.suggestions = [...new Set(c.suggestions)].slice(0, 4);
+  return c;
+}
+function cardText(c){
+  if (!c.items.length) return c.notes.join(" ") || "Nothing changed.";
+  const parts = c.items.map(i => `${i.race} ${i.old.toFixed(1)} → ${i.new.toFixed(1)}: ${i.verdict_text}.`);
+  parts.push(`Target ${c.target} (${c.target_delta}).`);
+  if (c.accuracy) parts.push(S.revealed ? `That is ${c.accuracy.text} (${c.accuracy.after_pct.toFixed(2)}% off).` : `That moved the prediction ${c.accuracy.text.split(" to ")[0]}.`);
+  return parts.join(" ");
+}
+
+/* ---------- one command bar (hud/commands.py) ---------- */
+const PANELS = {races: ["races", "sliders", "weights", "past races"], prediction: ["prediction", "target", "forecast", "likely range", "range"],
+  pacing: ["pacing", "pace plan", "splits", "pace band"], similar: ["similar runners", "neighbours", "neighbors", "similar", "lookalikes"],
+  simulator: ["simulator", "simulation", "race day", "race-day", "course"], feedback: ["feedback", "evidence", "checks", "data checks"],
+  steering: ["steering", "steering meter", "whose view", "meter"], chat: ["chat", "conversation", "assistant"], log: ["change log", "log", "history of changes"],
+  record: ["track record", "results", "outcomes"]};
+const alts = ws => [...ws].sort((a, b) => b.length - a.length).map(w => w.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&")).join("|");
+const PANEL_RE = new RegExp(`\\b(show|open|bring up|display|hide|close|remove|minimi[sz]e|focus on|zoom (?:in )?on|pin)\\s+(?:me\\s+)?(?:the\\s+|my\\s+|her\\s+|his\\s+)?(${alts(Object.values(PANELS).flat())})(?:\\s+panel)?\\b`, "gi");
+const PW = ["coach", "runner", "athlete", "researcher", "research", "study"];
+const PERSP_RE = new RegExp(`\\b(?:switch|change|go)\\s+(?:to\\s+)?(?:the\\s+)?(${alts(PW)})\\s+(?:view|mode|perspective)\\b|\\b(${alts(PW)})\\s+(?:view|mode|perspective)\\b`, "i");
+const SIM_RE = /\b(simulate|simulation|run the race|play the race|replay the race|race[- ]day|what if)\b/i;
+const TEMP_RE = /(-?\d{1,2})\s*(?:°\s*c|degrees(?:\s+celsius)?|celsius|c\b)/i;
+const WIND_RE = /(\d{1,2})\s*(?:km\/?h|kph|kilometres per hour|kilometers per hour)\s*(?:head)?wind|(?:head)?wind\s*(?:of\s*)?(\d{1,2})\s*(?:km\/?h|kph)?/i;
+const CALM_RE = /\b(calm mode|focus mode|quiet mode|stop (?:rotating|spinning|moving)|pause the hologram|less motion|reduce motion)\b/i;
+const SPIN_RE = /\b(start (?:rotating|spinning)|rotate (?:her|him|the (?:body|hologram|runner))|resume)\b/i;
+const LAYOUT_RE = /\b(reset (?:the )?layout|tidy (?:up )?(?:the )?(?:screen|panels)|arrange (?:the )?panels)\b/i;
+const REVEAL_RE = /\b(reveal|show me the (?:real|actual|true) (?:best|result)|how (?:close|accurate) (?:am i|was i|is it))\b/i;
+const DEMO_RE = /\b(demo runner|new demo|another runner|next runner)\b/i;
+function uiCommands(text){
+  const actions = [], said = []; let rest = text;
+  for (const m of text.matchAll(PANEL_RE)){ const verb = m[1].toLowerCase(), word = m[2].toLowerCase(), panel = Object.keys(PANELS).find(k => PANELS[k].includes(word));
+    const kind = ["hide", "close", "remove", "minimise", "minimize"].includes(verb) ? "close" : "focus"; actions.push({type: kind, panel});
+    said.push(`${kind === "close" ? "hid" : "opened"} ${panel}`); rest = rest.replace(m[0], " "); }
+  const pm = text.match(PERSP_RE);
+  if (pm){ const w = (pm[1] || pm[2]).toLowerCase(), p = ["coach"].includes(w) ? "coach" : ["runner", "athlete"].includes(w) ? "runner" : "researcher";
+    actions.push({type: "perspective", value: p}); said.push(`switched to the ${p} view`); rest = rest.replace(pm[0], " "); }
+  if (SIM_RE.test(text)){ const t = text.match(TEMP_RE), w = text.match(WIND_RE);
+    const temp = t ? +t[1] : /\b(hot|heat|warm|humid)\b/i.test(text) ? 27 : /\b(cold|freezing)\b/i.test(text) ? 5 : 12;
+    const wind = w ? +(w[1] || w[2]) : /\bwindy|strong wind/i.test(text) ? 25 : 0;
+    const prof = /fast start|goes out fast|starts too fast|start fast|too fast/i.test(text) ? "fast_start" : /fade|fades|late fade|hits the wall|hit the wall|blows up/i.test(text) ? "late_fade" : "on_plan";
+    actions.push({type: "simulate", temp_c: temp, wind_kmh: wind, profile: prof});
+    said.push(`simulated the race at ${temp} °C` + (wind ? `, ${wind} km/h headwind` : "") + (prof === "on_plan" ? "" : `, ${prof.replace("_", " ")}`)); rest = ""; }
+  if (CALM_RE.test(text)){ actions.push({type: "calm", value: true}); said.push("calm mode on"); rest = rest.replace(CALM_RE, " "); }
+  else if (SPIN_RE.test(text)){ actions.push({type: "calm", value: false}); said.push("motion back on"); rest = rest.replace(SPIN_RE, " "); }
+  if (DEMO_RE.test(text)){ actions.push({type: "runner", id: "demo"}); said.push("restarted the demo"); rest = rest.replace(DEMO_RE, " "); }
+  if (LAYOUT_RE.test(text)){ actions.push({type: "layout", value: "reset"}); said.push("tidied the panels"); rest = rest.replace(LAYOUT_RE, " "); }
+  if (REVEAL_RE.test(text)){ actions.push({type: "reveal"}); said.push("revealed the hidden best race"); rest = rest.replace(REVEAL_RE, " "); }
+  rest = rest.replace(/\b(and|then|also|please|can you|could you)\b/gi, " ").replace(/\s+/g, " ").trim();
+  return {actions, said, rest};
+}
+function ask(q){
+  const t = q.toLowerCase(), st = state(), pr = st.prediction;
+  if (/why.*disagree|against the data/.test(t)) return "The check compares each race with her other races. Lowering one of her faster races, or raising a slower one, moves the target the opposite way to what the times suggest. It may still be right if you know something the times cannot show; if not, say “undo”.";
+  if (/data,? or me|is that the data/.test(t)) return `The steering index compares how far the model has moved with the gap between the model and your own estimate. ${st.steering.label}`;
+  if (/range|wide|uncertain|sure/.test(t)) return `The likely range is ${fmt(pr.low_s)} to ${fmt(pr.high_s)}: the 20th to 80th percentile of what ${pr.n_cases} similar runners went on to run, weighted by your race weights. About 8 in 10 runners like her finished inside it. It narrows when the races you trust point to similar runners.`;
+  if (/pull|which race|influen|matter/.test(t)){ const i = st.races.reduce((b, r, k) => Math.abs(r.influence.pull_s) > Math.abs(st.races[b].influence.pull_s) ? k : b, 0), r = st.races[i];
+    return `${r.event} ${r.year} pulls the prediction most: ${dur(Math.abs(r.influence.pull_s))} ${r.influence.pull_s > 0 ? "slower" : "faster"} at weight ${r.weight.toFixed(1)}. Its own prediction is ${fmt(r.prediction_s)}.`; }
+  if (/realistic|my plan|ambitious|cautious/.test(t)) return `The plan finishes in ${fmt(st.plan.finish_s)}, inside the likely range (${fmt(pr.low_s)}–${fmt(pr.high_s)}), so it is ${st.plan.check.verdict}.`;
+  if (/similar|like her|neighbo/.test(t)) return `For each race, the model finds the ${R[0].n} runners whose earlier race looked most like hers and reuses how much they improved at their best. Their implied times for her are the dots in “Runners like her”.`;
+  if (/predict|target|time|how fast/.test(t)) return `The model's target is ${pr.finish} (likely ${fmt(pr.low_s)}–${fmt(pr.high_s)}). With equal weights it was ${pr.initial}.`;
+  return "This demo runs in your browser without the AI assistant, so I answer a few questions: the likely range, which race pulls the prediction most, whether the plan is realistic, similar runners. Talk about her races to move the sliders, or ask for the simulator.";
+}
+
+/* ---------- simulator (hud/sim.py + racewatch) ---------- */
+function paceAt(p, d){ let acc = 0; for (let k = 0; k < 9; k++){ acc += KM[k]; if (d < acc || k === 8) return p[k]; } return p[8]; }
+function targetElapsed(p, d){ let t = 0, acc = 0; for (let k = 0; k < 9; k++){ const seg = Math.min(KM[k], Math.max(0, d - acc)); t += seg * p[k]; acc += KM[k]; } return t; }
+function factor(d, temp, wind, plan){ const heat = Math.max(0, temp - 11) * .30 / 100 * (.5 + d / MARATHON) * Math.sqrt(Math.max(plan, 7200) / 12600);
+  const v = Math.max(0, wind) / 3.6; return 1 + heat + .05 / 100 * v * v * .5; }
+function status(p, d, el){
+  const plan = p.reduce((a, x, k) => a + x * KM[k], 0), target = targetElapsed(p, d), delta = el - target, remKm = MARATHON - d, proj = el + plan - target;
+  const req = remKm > 1e-9 ? (plan - el) / remKm : NaN, tp = paceAt(p, d), pace = s => `${Math.floor(Math.round(s) / 60)}:${String(Math.round(s) % 60).padStart(2, "0")}/km`;
+  if (d >= MARATHON - 1e-9) return ["done", `Finished in ${fmt(el)}. Plan was ${fmt(plan)} (${Math.round(delta) ? `${dur(delta)} ${delta < 0 ? "faster" : "slower"}` : "on the dot"}).`];
+  if (d < .05 && el < 30) return ["start", `Start at ${pace(tp)}. Target finish ${fmt(plan)}.`];
+  if (Math.abs(delta) <= DEMO.on_plan_s) return ["on", `On plan. Hold ${pace(tp)}.`];
+  if (delta < 0) return ["ahead", d < 30 ? `${dur(delta)} ahead of plan. Settle back to ${pace(tp)}.` : `${dur(delta)} ahead with ${remKm.toFixed(1)} km to go. Hold ${pace(tp)}.`];
+  if (remKm > 1e-9 && req < tp * (1 - DEMO.slipping)) return ["slipping", `${dur(delta)} behind. Plan pace from here finishes in about ${fmt(proj)}; ${pace(req)} needed for ${fmt(plan)}.`];
+  return ["behind", `${dur(delta)} behind plan. ${pace(req)} from here finishes on time.`];
+}
+function simulate(temp, wind, profile){
+  if (!(temp >= -10 && temp <= 40)) throw new Error("temperature must be between -10 and 40 °C");
+  if (!(wind >= 0 && wind <= 60)) throw new Error("headwind must be between 0 and 60 km/h");
+  const m = combine(S.w), p = m.paces, plan = p.reduce((a, x, k) => a + x * KM[k], 0);
+  const ds = []; for (let i = 0; i * .1 < MARATHON - 1e-9; i++) ds.push(Math.round(i * .1 * 1000) / 1000); ds.push(MARATHON);
+  const el = [0]; let t = 0;
+  for (let i = 0; i < ds.length - 1; i++){ const a = ds[i], b = ds[i + 1]; let f = 1 + DEMO.noise[Math.floor(a)];
+    if (profile === "fast_start") f *= a < 10 ? .97 : a >= 30 ? 1.05 : 1; else if (profile === "late_fade") f *= a >= 30 ? 1.06 : 1;
+    t += paceAt(p, (a + b) / 2) * f * (b - a); el.push(t); }
+  const sim = [0]; for (let i = 0; i < ds.length - 1; i++) sim.push(sim[i] + (el[i + 1] - el[i]) * factor((ds[i] + ds[i + 1]) / 2, temp, wind, plan));
+  const interp = d => { for (let i = 1; i < ds.length; i++) if (d <= ds[i]) return sim[i - 1] + (sim[i] - sim[i - 1]) * (d - ds[i - 1]) / (ds[i] - ds[i - 1]); return sim[sim.length - 1]; };
+  const lo = m.low / plan, hi = m.high / plan, frames = [];
+  const kms = []; for (let k = 0; k < MARATHON - 1e-9; k += .5) kms.push(k); kms.push(MARATHON);
+  for (const km of kms){ const s = interp(km), pl = targetElapsed(p, km), [level, cue] = status(p, km, s);
+    let j = ds.findIndex(d => d > km) - 1; if (j < 0 || j >= ds.length - 1) j = ds.length - 2;
+    const pace = (sim[j + 1] - sim[j]) / Math.max(ds[j + 1] - ds[j], 1e-9);
+    frames.push({km: Math.round(km * 1000) / 1000, plan_s: pl, sim_s: s, low_s: pl * lo, high_s: pl * hi, delta_s: s - pl, pace_s: pace, level, cue}); }
+  const fin = frames[frames.length - 1].sim_s, fb = frames.find(f => f.delta_s > 60);
+  return {frames, summary: {plan_finish_s: plan, sim_finish_s: fin, delta_s: fin - plan, low_s: m.low, high_s: m.high, inside_range: m.low <= fin && fin <= m.high,
+    first_minute_behind_km: fb ? fb.km : null, profile, temp_c: temp, wind_kmh: wind,
+    conditions_pct: Math.round(100 * (factor(21.1, temp, wind, plan) - 1) * 100) / 100}, assumptions: "Heat and wind effects are stated assumptions, not fitted on data."};
+}
+
+/* ---------- routing (web/hud_api.py) ---------- */
+function command(text){
+  const {actions, said, rest} = uiCommands(text), used = actions.length ? ["ui"] : [];
+  let reply = "", turn = null, sim = null, steered = false;
+  if (rest && rest.length > 2){
+    const it = Steer.interpret(rest, R, S.ctx), strong = it.actions.filter(a => ["reset", "undo", "recency"].includes(a.kind) || a.conf >= .8);
+    if (strong.length || it.estimate != null || (it.actions.length && !actions.length)){
+      const t = hear(rest, "typed");
+      if (t.applied.length || t.estimate_s != null || t.source === "undo" || t.notes.length){ turn = {...t, said: text}; actions.push({type: "refresh"}); used.push("steer"); steered = true; }
+    }
+  }
+  const c = turn ? card(turn) : null;
+  if (steered) reply = cardText(c);
+  else if (rest && rest.length > 2 && !(actions.length && rest.split(" ").length < 3)){ reply = ask(rest); used.push("assistant"); }
+  if (said.length) reply = (`Done: ${said.join(", ")}.` + (reply ? " " + reply : "")).trim();
+  if (!reply) reply = "I heard you, but nothing in that changes a race or the screen. Try “2010 was a hot day”, “simulate a hot day”, “switch to runner view” or ask a question.";
+  for (const a of actions){ if (a.type === "reveal") S.revealed = true; if (a.type === "simulate") sim = simulate(a.temp_c, a.wind_kmh, a.profile);
+    if (a.type === "runner") reset(); }
+  return {reply, actions, turn, card: c, used, steps: [], simulation: sim, state: state()};
+}
+function reset(){ Object.assign(S, {w: new Array(N).fill(.5), ctx: null, est: null, turns: [], undo: [], log: [], moves: 0, reasoned: 0, revealed: false, reactions: []}); }
+
+return async function local(method, path, body = {}){
+  await new Promise(r => setTimeout(r, 30));
+  if (path === "/api/hud/sessions" && method === "POST"){ reset(); return {id: "local-demo-session", state: state()}; }
+  if (path === "/api/hud/track-record") return {n: 0};
+  const m = path.match(/^\/api\/hud\/sessions\/[^/]+(\/\w+)?$/); if (!m) throw new Error("not available in the browser demo");
+  const what = m[1] || "";
+  if (!what) return state();
+  if (what === "/command"){ if (!body.text || !String(body.text).trim()) throw new Error("text is required"); return command(String(body.text)); }
+  if (what === "/weights"){ const t = manual(body.index, body.weight); return {turn: t, card: card(t), state: state()}; }
+  if (what === "/simulate") return simulate(+body.temp_c, +body.wind_kmh, body.profile || "on_plan");
+  if (what === "/reveal"){ S.revealed = true; return state(); }
+  if (what === "/react"){ if (!["agree", "unsure", "disagree"].includes(body.value)) throw new Error("value must be agree, unsure or disagree");
+    S.reactions.push({turn: body.turn, value: body.value}); return reactions(); }
+  throw new Error("not available in the browser demo");
+};
+})();
+
+</script>
+<script>
+(() => {
+"use strict";
+const $ = id => document.getElementById(id);
+const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = s => { if (s == null || !isFinite(s)) return "–"; s = Math.round(s); return `${Math.floor(s/3600)}:${String(Math.floor(s%3600/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`; };
+const fmtD = s => { const r = Math.round(Math.abs(s)); return `${s < 0 ? "−" : "+"}${Math.floor(r/60)}:${String(r%60).padStart(2,"0")}`; };
+const mmss = s => { s = Math.round(s); return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`; };
+const store = { get(k, d){ try { const v = localStorage.getItem("pacesense.hud." + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+                set(k, v){ try { localStorage.setItem("pacesense.hud." + k, JSON.stringify(v)); } catch {} } };
+function toast(m){ const t = $("toast"); t.textContent = m; t.classList.add("show"); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("show"), 2800); }
+async function api(method, path, body){
+  if (window.PACESENSE_LOCAL) return window.PACESENSE_LOCAL(method, path, body);
+  const r = await fetch(path, {method, headers: {"Content-Type": "application/json"}, body: body ? JSON.stringify(body) : undefined});
+  const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`); return d;
+}
+let sid = null, S = null, busy = Promise.resolve();
+const queue = fn => (busy = busy.then(fn).catch(e => toast(e.message)));
+
+/* ================= holographic runner (canvas, own 3D projection: no libraries) ================= */
+const H = { cv: $("holo"), yaw: .6, auto: true, drag: null, t: 0, cadence: 1, heat: 0, legs: 0, chest: 0, calm: false,
+            ring: [], marker: null, dpr: Math.min(2, window.devicePixelRatio || 1) };
+const ctx = H.cv.getContext("2d");
+function resize(){ const r = H.cv.getBoundingClientRect(); H.cv.width = r.width * H.dpr; H.cv.height = r.height * H.dpr; }
+addEventListener("resize", () => { resize(); if (typeof applyView === "function") applyView(persp, false); }); resize();
+H.cv.addEventListener("pointerdown", e => { H.drag = {x: e.clientX, yaw: H.yaw}; H.cv.setPointerCapture(e.pointerId); });
+H.cv.addEventListener("pointermove", e => { if (H.drag) H.yaw = H.drag.yaw + (e.clientX - H.drag.x) * .008; });
+H.cv.addEventListener("pointerup", () => { H.drag = null; });
+const PITCH = .32;   // camera looks down a little, so the pacing orbit reads as a ring
+const rot = (p, a) => { const x = p[0] * Math.cos(a) + p[2] * Math.sin(a), z = -p[0] * Math.sin(a) + p[2] * Math.cos(a), y = p[1] - 1;
+  return [x, y * Math.cos(PITCH) - z * Math.sin(PITCH) + 1, y * Math.sin(PITCH) + z * Math.cos(PITCH)]; };
+function view(){ const w = H.cv.width, h = H.cv.height, mobile = innerWidth <= 900;
+  return {cx: w * (.5 + (H.shift || 0)), cy: h * (mobile ? .80 : .66), s: Math.min(w, h) * (mobile ? .36 : .26), cam: 6.2}; }
+function proj(p, V){ const q = rot(p, H.yaw), z = V.cam - q[2], k = V.cam / z; return [V.cx + q[0] * V.s * k, V.cy - q[1] * V.s * k, z, k]; }
+function pose(t){
+  // running gait: phase drives hips, knees, arms; bounce and lean
+  const ph = t * Math.PI * 2, sw = Math.sin(ph), sw2 = Math.sin(ph + Math.PI), amp = H.calm ? .25 : 1;
+  const lean = .12 * amp, bounce = Math.abs(Math.cos(ph)) * .05 * amp;
+  const P = {}; const pel = [0, 1.0 + bounce, 0]; P.pelvis = pel;
+  const up = (a, len, ang) => [a[0] + Math.sin(ang) * len * 0, a[1] + Math.cos(ang) * len, a[2] + Math.sin(ang) * len];
+  P.chest = [0, pel[1] + .55, lean * .55]; P.neck = [0, pel[1] + .75, lean * .8]; P.head = [0, pel[1] + .93, lean * .95];
+  for (const [side, x, s] of [["L", -.13, sw], ["R", .13, sw2]]){
+    const hip = [x, pel[1] - .02, 0], th = s * .62 * amp;                        // thigh swing
+    const knee = [x, hip[1] - .46 * Math.cos(th), hip[2] + .46 * Math.sin(th)];
+    const kneeFlex = (Math.max(0, -Math.cos(ph + (side === "L" ? 0 : Math.PI))) * 1.5 + .25) * amp;
+    const sh = th - kneeFlex;
+    const ankle = [x, knee[1] - .45 * Math.cos(sh), knee[2] + .45 * Math.sin(sh)];
+    const toe = [x, ankle[1] - .04, ankle[2] + .14];
+    P["hip" + side] = hip; P["knee" + side] = knee; P["ankle" + side] = ankle; P["toe" + side] = toe;
+    const shoulder = [x * 1.55, pel[1] + .6, lean * .6], arm = -s * .55 * amp;
+    const elbow = [shoulder[0] * 1.05, shoulder[1] - .27 * Math.cos(arm), shoulder[2] + .27 * Math.sin(arm)];
+    const fa = arm + 1.35;
+    const wrist = [shoulder[0] * .95, elbow[1] - .24 * Math.cos(fa) * .6, elbow[2] + .24 * Math.sin(fa)];
+    P["sh" + side] = shoulder; P["el" + side] = elbow; P["wr" + side] = wrist;
+  }
+  return P;
+}
+const BONES = [ ["pelvis","chest",.15,"torso"],["chest","neck",.12,"torso"],["hipL","kneeL",.075,"leg"],["kneeL","ankleL",.06,"leg"],["ankleL","toeL",.035,"leg"],
+  ["hipR","kneeR",.075,"leg"],["kneeR","ankleR",.06,"leg"],["ankleR","toeR",.035,"leg"],["shL","elL",.05,"arm"],["elL","wrL",.042,"arm"],["shR","elR",.05,"arm"],["elR","wrR",.042,"arm"],
+  ["shL","shR",.04,"torso"],["hipL","hipR",.06,"torso"] ];
+function partColor(part, alpha){
+  // navy-teal wireframe; heat and injury pull towards coral, a strong race towards green
+  const heat = Math.min(1, H.heat), legs = part === "leg" ? H.legs : 0, chest = part === "torso" ? H.chest : 0;
+  const mix = (a, b, t) => a + (b - a) * t, warm = Math.min(1, heat * .7 + legs);
+  let r = mix(14, 214, warm), g = mix(92, 69, warm), b = mix(140, 80, warm);
+  if (chest > 0){ r = mix(r, 31, chest); g = mix(g, 138, chest); b = mix(b, 91, chest); }
+  return `rgba(${r|0},${g|0},${b|0},${Math.min(1, alpha * 1.25)})`;
+}
+function capsule(a, b, r, part, V){
+  const ax = [b[0]-a[0], b[1]-a[1], b[2]-a[2]], L = Math.hypot(...ax) || 1, d = ax.map(v => v / L);
+  const tmp = Math.abs(d[1]) < .9 ? [0, 1, 0] : [1, 0, 0];
+  const u = [d[1]*tmp[2]-d[2]*tmp[1], d[2]*tmp[0]-d[0]*tmp[2], d[0]*tmp[1]-d[1]*tmp[0]], ul = Math.hypot(...u); u.forEach((v, i) => u[i] = v / ul);
+  const v2 = [d[1]*u[2]-d[2]*u[1], d[2]*u[0]-d[0]*u[2], d[0]*u[1]-d[1]*u[0]];
+  const rings = 4, seg = 12, pts = [];
+  for (let i = 0; i <= rings; i++){
+    const t = i / rings, c = [a[0]+ax[0]*t, a[1]+ax[1]*t, a[2]+ax[2]*t], rr = r * (1 - .25 * Math.abs(t - .5));
+    const ring = []; for (let k = 0; k < seg; k++){ const th = k / seg * Math.PI * 2;
+      ring.push(proj([c[0]+(u[0]*Math.cos(th)+v2[0]*Math.sin(th))*rr, c[1]+(u[1]*Math.cos(th)+v2[1]*Math.sin(th))*rr, c[2]+(u[2]*Math.cos(th)+v2[2]*Math.sin(th))*rr], V)); }
+    pts.push(ring);
+  }
+  ctx.lineWidth = 1 * H.dpr;
+  pts.forEach((ring, i) => { const z = ring[0][2]; ctx.strokeStyle = partColor(part, .25 + .35 * (6.8 - z) / 1.6); ctx.beginPath();
+    ring.forEach((p, k) => k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath(); ctx.stroke(); });
+  for (let k = 0; k < seg; k += 3){ ctx.strokeStyle = partColor(part, .35); ctx.beginPath(); pts.forEach((ring, i) => i ? ctx.lineTo(ring[k][0], ring[k][1]) : ctx.moveTo(ring[k][0], ring[k][1])); ctx.stroke(); }
+}
+function sphere(c, r, V){
+  for (let i = 1; i < 6; i++){ const lat = -Math.PI / 2 + i * Math.PI / 6, y = c[1] + Math.sin(lat) * r, rr = Math.cos(lat) * r;
+    ctx.strokeStyle = partColor("head", .55); ctx.beginPath();
+    for (let k = 0; k <= 14; k++){ const th = k / 14 * Math.PI * 2, p = proj([c[0] + Math.cos(th) * rr, y, c[2] + Math.sin(th) * rr], V); k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); } ctx.stroke(); }
+  for (let m = 0; m < 4; m++){ const lon = m / 4 * Math.PI; ctx.beginPath();
+    for (let k = 0; k <= 16; k++){ const a = k / 16 * Math.PI * 2, p = proj([c[0] + Math.cos(a) * Math.cos(lon) * r, c[1] + Math.sin(a) * r, c[2] + Math.cos(a) * Math.sin(lon) * r], V); k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); } ctx.stroke(); }
+}
+function circle(y, r, V, style, dash, rotOff = 0){
+  ctx.strokeStyle = style; ctx.setLineDash(dash || []); ctx.beginPath();
+  for (let k = 0; k <= 64; k++){ const th = k / 64 * Math.PI * 2 + rotOff, p = proj([Math.cos(th) * r, y, Math.sin(th) * r], V); k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); }
+  ctx.stroke(); ctx.setLineDash([]);
+}
+function drawRing(V){
+  // the pacing plan as an orbit: 9 sections, warmer = slower than her average plan pace
+  const R = 1.25, segs = H.ring; if (!segs.length) return;
+  const tot = segs.reduce((a, s) => a + s.km, 0); let acc = -Math.PI / 2;
+  segs.forEach((s, i) => {
+    const span = s.km / tot * Math.PI * 2, warm = Math.max(-1, Math.min(1, s.rel * 25));
+    const col = warm > 0 ? `rgba(${(14 + 200 * warm)|0},${(124 - 55 * warm)|0},${(155 - 75 * warm)|0},.95)` : `rgba(${(14 + 17 * -warm)|0},${(124 + 14 * -warm)|0},${(155 - 64 * -warm)|0},.95)`;
+    ctx.strokeStyle = col; ctx.lineWidth = (3 + Math.abs(warm) * 3) * H.dpr; ctx.beginPath();
+    for (let k = 0; k <= 16; k++){ const th = acc + .02 + (span - .04) * k / 16, p = proj([Math.cos(th) * R, 0, Math.sin(th) * R], V); k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); }
+    ctx.stroke();
+    const mid = acc + span / 2, lp = proj([Math.cos(mid) * (R + .2), 0, Math.sin(mid) * (R + .2)], V);
+    ctx.fillStyle = "rgba(91,107,130,.95)"; ctx.font = `${11 * H.dpr}px "IBM Plex Mono",ui-monospace,monospace`; ctx.textAlign = "center"; ctx.fillText(s.label, lp[0], lp[1] + 4 * H.dpr);
+    acc += span;
+  });
+  ctx.lineWidth = 1 * H.dpr;
+  if (H.marker != null){ const th = -Math.PI / 2 + H.marker * Math.PI * 2, p = proj([Math.cos(th) * R, 0, Math.sin(th) * R], V);
+    ctx.fillStyle = "#D64550"; ctx.shadowColor = "rgba(214,69,80,.5)"; ctx.shadowBlur = 14 * H.dpr; ctx.beginPath(); ctx.arc(p[0], p[1], 6 * H.dpr, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0; }
+}
+let last = performance.now();
+function frame(now){
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  const reduce = H.calm || matchMedia("(prefers-reduced-motion: reduce)").matches;
+  H.t += dt * (reduce ? .35 : 1.35) * H.cadence;
+  if (H.auto && !H.drag) H.yaw += dt * (reduce ? .04 : .16);
+  H.legs = Math.max(0, H.legs - dt * .35); H.chest = Math.max(0, H.chest - dt * .35);
+  const V = view(); ctx.clearRect(0, 0, H.cv.width, H.cv.height);
+  // platform
+  circle(0, .95, V, "rgba(31,58,138,.28)"); circle(0, .7, V, "rgba(14,124,155,.30)", [4 * H.dpr, 6 * H.dpr], H.t * .2);
+  circle(0, 1.55, V, "rgba(31,58,138,.12)"); drawRing(V);
+  for (let k = 0; k < 24; k++){ const th = k / 24 * Math.PI * 2 + H.t * .05, a = proj([Math.cos(th) * 1.5, 0, Math.sin(th) * 1.5], V), b = proj([Math.cos(th) * 1.6, 0, Math.sin(th) * 1.6], V);
+    ctx.strokeStyle = "rgba(31,58,138,.22)"; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
+  // body
+  const P = pose(H.t * .9);
+  BONES.forEach(([a, b, r, part]) => capsule(P[a], P[b], r, part, V));
+  sphere(P.head, .11, V);
+  // scan line
+  const sy = .1 + ((H.t * .25) % 1) * 1.95, l = proj([-.6, sy, 0], V), rr = proj([.6, sy, 0], V);
+  const g = ctx.createLinearGradient(l[0], 0, rr[0], 0); g.addColorStop(0, "rgba(14,124,155,0)"); g.addColorStop(.5, "rgba(14,124,155,.45)"); g.addColorStop(1, "rgba(14,124,155,0)");
+  ctx.strokeStyle = g; ctx.lineWidth = 2 * H.dpr; ctx.beginPath(); ctx.moveTo(l[0], l[1]); ctx.lineTo(rr[0], rr[1]); ctx.stroke(); ctx.lineWidth = 1 * H.dpr;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+function bodyReacts(card){ // the hologram reacts to what was said
+  if (!card) return; const said = (card.said || "").toLowerCase();
+  if (/injur|cramp|fell|hit the wall|pain|sick|ill|flu/.test(said)) H.legs = 1;
+  if (/hot|heat|humid|warm/.test(said)) H.heat = Math.min(1, H.heat + .5);
+  if (/best|great|perfect|peak|strong|fit/.test(said)) H.chest = 1;
+  if (/scratch|undo|reset/.test(said)) { H.heat = 0; }
+}
+
+/* ================= panels: layout, perspectives, dragging ================= */
+const PANELS = [...document.querySelectorAll(".panel")].reduce((m, el) => (m[el.dataset.panel] = el, m), {});
+const TITLES = {races: "Past races", prediction: "Prediction", steering: "Steering meter", feedback: "Feedback loop", pacing: "Pacing plan",
+                similar: "Runners like her", simulator: "Simulator", log: "Change log", record: "Track record", chat: "Conversation"};
+// [x, y, cap]: x < 0 counts from the right; y "auto" stacks under the previous panel in that column;
+// cap = largest share of the window height the panel may take (the last panel in a column fills the rest)
+const VIEWS = {
+  coach: {races: [18, 64, .48], simulator: [18, "auto"], prediction: [-348, 64, .44], steering: [-348, "auto", .27], feedback: [-348, "auto"]},
+  runner: {prediction: [18, 64, .42], pacing: [18, "auto"], simulator: [-348, 64]},
+  researcher: {races: [18, 64, .5], similar: [18, "auto"], prediction: [-700, 64, .4], record: [-700, "auto"],
+               steering: [-348, 64, .34], feedback: [-348, "auto"]},
+};
+let persp = store.get("persp", "coach");
+function layoutFor(p){ return store.get("layout." + p, null) || VIEWS[p]; }
+function place(name, pos){ const el = PANELS[name]; if (!el || !pos) return; let [x, y] = pos;
+  if (x < 0) x = innerWidth + x; x = Math.max(4, Math.min(innerWidth - 120, x)); y = Math.max(48, Math.min(innerHeight - 120, y === "auto" ? 64 : y));
+  el.style.left = x + "px"; el.style.top = y + "px"; }
+function fitHeight(el){ if (innerWidth <= 900) { el.querySelector(".pb").style.maxHeight = ""; return; }
+  el.querySelector(".pb").style.maxHeight = Math.max(120, innerHeight - (parseInt(el.style.top) || 64) - 64) + "px"; }
+function stack(lay){
+  // place panels column by column; "auto" goes under the previous one; caps keep columns on screen
+  const cols = {};
+  for (const [name, pos] of Object.entries(lay)){ const key = String(pos[0]); (cols[key] = cols[key] || []).push([name, pos]); }
+  for (const list of Object.values(cols)){
+    let y = 64;
+    list.forEach(([name, pos], k) => { const el = PANELS[name]; if (!el) return;
+      const top = pos[1] === "auto" ? y : pos[1]; const last = k === list.length - 1;
+      place(name, [pos[0], top]);
+      const pb = el.querySelector(".pb");
+      if (innerWidth > 900){ const room = innerHeight - top - 64;
+        pb.style.maxHeight = Math.max(110, last ? room : Math.min(room, innerHeight * (pos[2] || .4) - 48)) + "px"; }
+      y = top + el.offsetHeight + 10; });
+  }
+}
+function applyView(p, save = true){
+  persp = p; if (save) store.set("persp", p);
+  document.querySelectorAll("#persp button").forEach(b => b.classList.toggle("on", b.dataset.p === p));
+  const lay = layoutFor(p);
+  for (const name in PANELS) PANELS[name].classList.toggle("hidden", !(name in lay));
+  stack(lay); H.shift = p === "researcher" && innerWidth > 1200 ? -.12 : 0;
+  renderMenu(); if (S) render(S, null);
+}
+function saveLayout(){ const lay = {}; for (const name in PANELS){ const el = PANELS[name]; if (!el.classList.contains("hidden")) lay[name] = [parseInt(el.style.left) || 20, parseInt(el.style.top) || 70, .9]; } store.set("layout." + persp, lay); }
+function showPanel(name, focus = true){ const el = PANELS[name]; if (!el) return; el.classList.remove("hidden");
+  if (!el.style.left) place(name, [innerWidth / 2 - 165, 90]);
+  el.style.zIndex = 12 + (++showPanel.z % 50); if (focus){ el.classList.add("pulse"); setTimeout(() => el.classList.remove("pulse"), 1400); } saveLayout(); renderMenu(); }
+showPanel.z = 0;
+function hidePanel(name){ PANELS[name]?.classList.add("hidden"); saveLayout(); renderMenu(); }
+for (const [name, el] of Object.entries(PANELS)){
+  el.querySelector(".x").onclick = () => hidePanel(name);
+  const h = el.querySelector(".ph");
+  h.addEventListener("pointerdown", e => { if (innerWidth <= 900 || e.target.closest("button")) return; const r = el.getBoundingClientRect(), ox = e.clientX - r.left, oy = e.clientY - r.top;
+    el.style.zIndex = 12 + (++showPanel.z % 50); h.setPointerCapture(e.pointerId);
+    const mv = ev => { el.style.left = Math.max(0, ev.clientX - ox) + "px"; el.style.top = Math.max(44, ev.clientY - oy) + "px"; };
+    const up = () => { h.removeEventListener("pointermove", mv); h.removeEventListener("pointerup", up); fitHeight(el); saveLayout(); };
+    h.addEventListener("pointermove", mv); h.addEventListener("pointerup", up); });
+}
+function renderMenu(){ const m = $("menu"); m.innerHTML = `<div class="sub" style="margin-bottom:6px">Panels in the ${persp} view</div>` +
+  Object.keys(PANELS).map(n => `<label><input type="checkbox" data-n="${n}" ${PANELS[n].classList.contains("hidden") ? "" : "checked"}> ${TITLES[n]}</label>`).join("") +
+  `<button class="btn" id="layReset" style="margin-top:8px;width:100%">Reset this view</button>`;
+  m.querySelectorAll("input").forEach(i => i.onchange = () => i.checked ? showPanel(i.dataset.n) : hidePanel(i.dataset.n));
+  $("layReset").onclick = () => { store.set("layout." + persp, null); applyView(persp); }; }
+document.querySelectorAll("#persp button").forEach(b => b.onclick = () => applyView(b.dataset.p));
+$("bPanels").onclick = () => $("menu").classList.toggle("open");
+$("bHelp").onclick = () => $("help").classList.add("open"); $("helpClose").onclick = () => $("help").classList.remove("open");
+function setCalm(v){ H.calm = v; document.body.classList.toggle("calm", v); $("bCalm").classList.toggle("on", v); store.set("calm", v); }
+$("bCalm").onclick = () => setCalm(!H.calm); setCalm(store.get("calm", matchMedia("(prefers-reduced-motion: reduce)").matches));
+let speakOn = store.get("speak", false); const setSpeak = v => { speakOn = v; $("bSpeak").classList.toggle("on", v); store.set("speak", v); }; setSpeak(speakOn);
+$("bSpeak").onclick = () => setSpeak(!speakOn);
+
+/* ================= rendering the state ================= */
+const VTAG = {supported: "data agrees", your_knowledge: "your knowledge", against_data: "against the data", undo: "undone", no_change: ""};
+function render(st, turn){
+  S = st; const moved = new Set((turn?.applied || []).map(a => a.index));
+  const name = st.runner.name.replace(" (best race hidden)", "");
+  $("who").innerHTML = `<strong>${esc(name)}</strong> · ${st.mode === "demo" ? "her best race is hidden" : "runner"} · ${st.local ? "browser demo, synthetic runner" : st.ai ? "AI on" : "offline rules"}`;
+  // races
+  const box = $("pRaces"); if (box.dataset.rid !== st.runner.id){ box.dataset.rid = st.runner.id;
+    box.innerHTML = st.races.map(r => `<div class="race" id="r${r.index}"><div class="rt"><span>${esc(r.event)} ${r.year} <span class="chip" id="c${r.index}"></span></span><b>${esc(r.finish)}</b></div>
+      <div class="srow"><input type="range" min="0" max="1" step="0.1" id="s${r.index}" aria-label="${esc(r.event)} ${r.year} weight"><span class="w" id="w${r.index}"></span></div>
+      <div class="pull"><i id="pu${r.index}"></i></div><div class="pl" id="pl${r.index}"></div></div>`).join("") +
+      `<div class="chips"><button class="sug" data-cmd="trust the recent races more">recent races count more</button><button class="sug" data-cmd="reset">equal weights</button><button class="sug" data-cmd="scratch that">undo</button></div>`;
+    st.races.forEach(r => $("s" + r.index).addEventListener("change", e => queue(async () => {
+      const d = await api("POST", `/api/hud/sessions/${sid}/weights`, {index: r.index, weight: parseFloat(e.target.value)}); addCard(d.card); render(d.state, d.turn); })));
+    shown.clear();
+  }
+  const maxPull = Math.max(60, ...st.races.map(r => Math.abs(r.influence.pull_s)));
+  st.races.forEach(r => { const ev = r.evidence, c = $("c" + r.index);
+    c.className = "chip " + (ev.direction > 0 ? "c-slow" : ev.direction < 0 ? "c-fast" : "c-typ"); c.textContent = ev.direction > 0 ? "slower than her others" : ev.direction < 0 ? "faster than her others" : "typical";
+    tween(r.index, r.weight); const p = r.influence.pull_s, w = Math.min(50, 50 * Math.abs(p) / maxPull), bar = $("pu" + r.index);
+    bar.style.left = (p >= 0 ? 50 : 50 - w) + "%"; bar.style.width = w + "%"; bar.style.background = p >= 0 ? "var(--hot)" : "var(--good)";
+    $("pl" + r.index).textContent = r.prediction_s == null ? "no similar runners" : Math.abs(p) < 5 ? "barely moves the prediction" : `pulls the prediction ${mmss(Math.abs(p))} ${p > 0 ? "slower" : "faster"}`;
+    if (moved.has(r.index)){ const el = $("r" + r.index); el.classList.remove("moved"); void el.offsetWidth; el.classList.add("moved"); } });
+  // prediction
+  const pr = st.prediction; $("fin").textContent = pr.finish;
+  const d = pr.finish_s - pr.initial_s; $("finDelta").textContent = Math.abs(d) < 1 ? "same as the model with equal weights" : `${fmtD(d)} vs equal weights (${pr.initial})`;
+  drawRange(pr, st.steering.coach_estimate_s, st.holdout?.truth_s);
+  const hb = $("hold");
+  if (st.holdout){ hb.innerHTML = st.holdout.revealed
+      ? `<div class="kv"><span>Her real best (${esc(st.holdout.label)})</span><b style="color:var(--good)">${fmt(st.holdout.truth_s)}</b></div>
+         <div class="kv"><span>Error now</span><b>${st.holdout.error_pct.toFixed(2)}%</b></div><div class="kv"><span>Equal weights</span><b>${st.holdout.equal_weights_error_pct.toFixed(2)}%</b></div>`
+      : `<div class="sub">Her best race (${esc(st.holdout.label)}) is hidden from the model, as in the paper's accuracy test. Each change tells you if it moved the prediction closer.</div><button class="btn" id="revealBtn" style="margin-top:8px">Reveal her real best</button>`;
+    $("revealBtn") && ($("revealBtn").onclick = () => send("reveal", "typed")); }
+  else hb.innerHTML = "";
+  // steering
+  const si = st.steering.index; $("pin").style.left = (si == null ? 0 : Math.max(0, Math.min(1.25, si)) / 1.25 * 100) + "%"; $("pin").style.opacity = si == null ? .25 : 1;
+  $("steerLbl").textContent = st.steering.label; $("sIdx").textContent = si == null ? "–" : si.toFixed(2);
+  $("sWhy").textContent = st.reasoned_share == null ? "–" : Math.round(st.reasoned_share * 100) + "%";
+  const rx = st.reactions; $("sReact").textContent = rx.n ? `👍 ${rx.agree} · 🤔 ${rx.unsure} · 👎 ${rx.disagree}` : "–";
+  // pacing, similar, log, hologram ring
+  drawPacing(st); drawSimilar(st);
+  $("pLog").innerHTML = st.change_log.length ? st.change_log.map(t => `<div class="note" style="padding:5px 0;border-top:1px solid #E9EEF5">${esc(t)}</div>`).join("") : `<div class="sub">No changes yet.</div>`;
+  const pa = st.plan.paces, avg = pa.reduce((a, b) => a + b, 0) / pa.length, km = [5, 5, 5, 5, 5, 5, 5, 5, 2.195];
+  H.ring = pa.map((p, i) => ({km: km[i], rel: (p - avg) / avg, label: ["5", "10", "15", "20", "25", "30", "35", "40", "42"][i]}));
+  H.cadence = Math.max(.7, Math.min(1.4, 300 / avg));
+  if (!store.get("layout." + persp, null)) stack(VIEWS[persp]);
+}
+const shown = new Map();
+function tween(i, target){ const sl = $("s" + i), from = shown.has(i) ? shown.get(i) : target, t0 = performance.now(); shown.set(i, target); $("w" + i).textContent = target.toFixed(1);
+  if (from === target){ sl.value = target; return; }
+  (function step(now){ const p = Math.min(1, (now - t0) / 700), e = 1 - Math.pow(1 - p, 3); sl.value = from + (target - from) * e; if (p < 1) requestAnimationFrame(step); })(t0); }
+function drawRange(pr, est, truth){
+  const el = $("rng"), vals = [pr.low_s, pr.high_s, pr.finish_s, est, truth].filter(v => v != null && isFinite(v)); if (!vals.length){ el.innerHTML = ""; return; }
+  const lo = Math.min(...vals) - 150, hi = Math.max(...vals) + 150, x = v => ((v - lo) / (hi - lo) * 100).toFixed(2) + "%";
+  let h = pr.low_s != null ? `<div class="bar" style="left:${x(pr.low_s)};width:calc(${x(pr.high_s)} - ${x(pr.low_s)})"></div><div class="lb" style="left:${x(pr.low_s)};top:30px;color:var(--muted)">${fmt(pr.low_s)}</div><div class="lb" style="left:${x(pr.high_s)};top:30px;color:var(--muted)">${fmt(pr.high_s)}</div>` : "";
+  h += `<div class="mk" style="left:${x(pr.finish_s)};background:var(--navy)"></div>`;
+  if (est != null) h += `<div class="mk" style="left:${x(est)};background:var(--hot)"></div><div class="lb" style="left:${x(est)};top:-4px;color:var(--hot)">you ${fmt(est)}</div>`;
+  if (truth != null) h += `<div class="mk" style="left:${x(truth)};background:var(--good)"></div><div class="lb" style="left:${x(truth)};top:-4px;color:var(--good)">real ${fmt(truth)}</div>`;
+  el.innerHTML = h;
+}
+function svgEl(svg, tag, a){ const e = document.createElementNS("http://www.w3.org/2000/svg", tag); for (const k in a) e.setAttribute(k, a[k]); svg.appendChild(e); return e; }
+function svgTx(svg, x, y, s, a = {}){ const t = svgEl(svg, "text", Object.assign({x, y, fill: "#5B6B82", "font-size": 10, "font-family": "IBM Plex Mono,ui-monospace,monospace"}, a)); t.textContent = s; return t; }
+function drawPacing(st){
+  const svg = $("paceSvg"); svg.innerHTML = ""; const km = [5, 5, 5, 5, 5, 5, 5, 5, 2.195], p = st.plan.paces, secs = p.map((v, i) => v * km[i]), per5 = p.map(v => v * 5);
+  const mn = Math.min(...per5) - 20, mx = Math.max(...per5) + 6;
+  per5.forEach((v, i) => { const x = 6 + i * 32.5, h = (v - mn) / (mx - mn) * 96 + 6, y = 128 - h;
+    svgEl(svg, "rect", {x, y, width: 24, height: h, rx: 4, fill: i < 8 ? "#0E7C9B" : "#9CCFDC"});
+    svgTx(svg, x + 12, y - 4, mmss(secs[i]), {"text-anchor": "middle", fill: "#14213D", "font-size": 9});
+    svgTx(svg, x + 12, 142, st.plan.labels[i].split("-")[1], {"text-anchor": "middle"}); });
+  $("paceNote").textContent = `Plan ${fmt(st.plan.finish_s)} · time per 5 km` + (st.plan.check?.verdict ? ` · ${st.plan.check.verdict}` : "");
+}
+function drawSimilar(st){
+  const svg = $("simSvg"); svg.innerHTML = ""; const rows = st.similar.map((s, i) => s && {s, r: st.races[i]}).filter(Boolean); if (!rows.length) return;
+  const all = rows.flatMap(x => x.s.finishes_s), lo = Math.min(...all) - 60, hi = Math.max(...all) + 60, X = v => 86 + (v - lo) / (hi - lo) * 204;
+  const rh = Math.min(34, 170 / rows.length);
+  rows.forEach(({s, r}, k) => { const y = 14 + k * rh, w = st.races[r.index].weight;
+    svgTx(svg, 0, y + 4, `${r.event.slice(0, 9)} ${String(r.year).slice(2)}`, {fill: w > 0 ? "#14213D" : "#9AA8BA"}); svgTx(svg, 0, y + 15, `weight ${w.toFixed(1)}`, {"font-size": 8});
+    svgEl(svg, "line", {x1: 86, x2: 290, y1: y, y2: y, stroke: "#E9EEF5"});
+    s.finishes_s.forEach(v => svgEl(svg, "circle", {cx: X(v), cy: y, r: 2.6, fill: `rgba(14,124,155,${.2 + .7 * w})`}));
+    svgEl(svg, "line", {x1: X(s.median_s), x2: X(s.median_s), y1: y - 7, y2: y + 7, stroke: "#14213D", "stroke-width": 1.5}); });
+  const fy = 14 + rows.length * rh; svgEl(svg, "line", {x1: X(st.prediction.finish_s), x2: X(st.prediction.finish_s), y1: 4, y2: fy - 10, stroke: "#1F3A8A", "stroke-dasharray": "3 3"});
+  svgTx(svg, X(st.prediction.finish_s), fy, "prediction " + fmt(st.prediction.finish_s), {"text-anchor": "middle", fill: "#1F3A8A"});
+  svgTx(svg, 86, fy + 12, fmt(lo + 60)); svgTx(svg, 290, fy + 12, fmt(hi - 60), {"text-anchor": "end"});
+}
+function addCard(card, reply){
+  if (!card) return; const feed = $("pFeed"); if (feed.querySelector(".sub")) feed.innerHTML = "";
+  const div = document.createElement("div"); div.className = "card";
+  const acc = card.accuracy ? `<div class="acc ${card.accuracy.closer ? "up" : card.accuracy.same ? "" : "down"}">${card.accuracy.closer ? "▲" : card.accuracy.same ? "■" : "▼"} ${esc(card.accuracy.text)}${S?.holdout?.revealed ? ` (${card.accuracy.after_pct.toFixed(2)}% off)` : ""}</div>` : "";
+  div.innerHTML = `<div class="said">“${esc(card.said)}”</div>` +
+    card.items.map(i => `<div class="it v-${i.verdict}"><span class="tag">${VTAG[i.verdict] || ""}</span>${esc(i.race)} <b>${i.old.toFixed(1)} → ${i.new.toFixed(1)}</b><div class="note">${esc(i.evidence)}</div></div>`).join("") +
+    card.notes.map(n => `<div class="note">${esc(n)}</div>`).join("") +
+    (card.items.length ? `<div class="note"><b style="color:#14213D">Target ${esc(card.target)} (${esc(card.target_delta)})</b>${card.range ? ` · likely ${esc(card.range[0])}–${esc(card.range[1])}` : ""}</div>` : "") + acc +
+    (card.suggestions.length ? `<div class="chips">${card.suggestions.map(s => `<button class="sug" data-cmd="${esc(s)}">${esc(s)}</button>`).join("")}</div>` : "") +
+    (card.items.length ? `<div class="react"><button data-v="agree">Makes sense</button><button data-v="unsure">Not sure</button><button data-v="disagree">Disagree</button></div>` : "");
+  div.querySelectorAll(".react button").forEach(b => b.onclick = () => queue(async () => {
+    const r = await api("POST", `/api/hud/sessions/${sid}/react`, {turn: card.n, value: b.dataset.v});
+    div.querySelectorAll(".react button").forEach(x => x.classList.toggle("on", x === b));
+    $("sReact").textContent = `👍 ${r.agree} · 🤔 ${r.unsure} · 👎 ${r.disagree}`;
+    if (b.dataset.v !== "agree") showPanel("chat", false); }));
+  feed.prepend(div); while (feed.children.length > 12) feed.lastChild.remove();
+  setSuggestions(card.suggestions);
+}
+function chat(who, text, extra = ""){ const c = $("pChat"); if (c.querySelector(".sub")) c.innerHTML = "";
+  const d = document.createElement("div"); d.className = "card"; d.innerHTML = `<div class="tag" style="color:${who === "you" ? "var(--muted)" : "var(--accent)"}">${who}</div><div style="white-space:pre-wrap">${esc(text)}</div>${extra}`;
+  c.prepend(d); while (c.children.length > 30) c.lastChild.remove(); }
+function setSuggestions(list){ const def = ["show the simulator", "trust the recent races more", "which race pulls the prediction most?", "switch to runner view"];
+  $("sugBar").innerHTML = (list && list.length ? list : def).slice(0, 4).map(s => `<button class="sug" data-cmd="${esc(s)}">${esc(s)}</button>`).join(""); }
+document.addEventListener("click", e => { const b = e.target.closest(".sug"); if (b && b.dataset.cmd) send(b.dataset.cmd, "typed"); });
+
+/* ================= commands ================= */
+function showReply(text){ const r = $("reply"); $("replyText").innerHTML = esc(text).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\n/g, "<br>"); r.classList.add("show");
+  clearTimeout(showReply.h); showReply.h = setTimeout(() => r.classList.remove("show"), Math.max(7000, text.length * 70)); if (speakOn) say(text); }
+function send(text, source){ text = (text || "").trim(); if (!text || !sid) return; caption(text, false); chat("you", text);
+  return queue(async () => {
+    const d = await api("POST", `/api/hud/sessions/${sid}/command`, {text, source});
+    await doActions(d.actions || [], d);
+    if (d.card){ addCard(d.card); bodyReacts(d.card); }
+    render(d.state, d.turn);
+    showReply(d.reply); chat("pacesense", d.reply, d.steps?.length ? `<div class="note">calculated with: ${d.steps.map(s => esc(s.function)).join(", ")}</div>` : "");
+  }); }
+async function doActions(actions, d){
+  for (const a of actions){
+    if (a.type === "focus") showPanel(a.panel);
+    else if (a.type === "close") hidePanel(a.panel);
+    else if (a.type === "perspective") applyView(a.value);
+    else if (a.type === "calm") setCalm(a.value);
+    else if (a.type === "layout"){ store.set("layout." + persp, null); applyView(persp); }
+    else if (a.type === "runner") await openRunner(a.id === "demo" ? "demo" : a.id);
+    else if (a.type === "simulate"){ showPanel("simulator"); $("tC").value = a.temp_c; $("wK").value = a.wind_kmh; $("prof").value = a.profile; simLabels(); if (d.simulation) playSim(d.simulation); }
+    else if (a.type === "reveal") showPanel("prediction");
+  }
+}
+$("q").addEventListener("keydown", e => { if (e.key === "Enter"){ const v = $("q").value; $("q").value = ""; send(v, "typed"); } });
+$("send").onclick = () => { const v = $("q").value; $("q").value = ""; send(v, "typed"); };
+document.addEventListener("keydown", e => { if (document.activeElement.tagName === "INPUT") return;
+  if (e.key === "/"){ e.preventDefault(); $("q").focus(); } else if (e.key === "m" || e.key === "M") toggleMic(); else if (e.key === "Escape"){ $("help").classList.remove("open"); $("menu").classList.remove("open"); } });
+function caption(t, interim){ $("caption").innerHTML = interim ? `<span class="interim">${esc(t)}</span>` : esc(t); clearTimeout(caption.h); if (!interim) caption.h = setTimeout(() => $("caption").innerHTML = "", 5000); }
+
+/* ================= voice: continuous listening + spoken replies ================= */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition; let rec = null, listening = false, speaking = false;
+function toggleMic(){
+  if (listening){ listening = false; rec && (rec.onend = null, rec.stop()); $("mic").classList.remove("on"); toast("Stopped listening"); return; }
+  if (!SR){ toast("No speech recognition in this browser: use Chrome or Edge, or type."); return; }
+  rec = new SR(); rec.continuous = true; rec.interimResults = true; rec.lang = navigator.language?.startsWith("en") ? navigator.language : "en-US";
+  rec.onresult = e => { let interim = ""; for (let i = e.resultIndex; i < e.results.length; i++){ const r = e.results[i]; if (r.isFinal){ const t = r[0].transcript.trim(); if (t) send(t, "voice"); } else interim += r[0].transcript; } if (interim) caption(interim, true); };
+  rec.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed"){ listening = false; $("mic").classList.remove("on");
+    toast(S?.local ? "The microphone is not available on this page. Type instead; voice works in the app on your computer (pacesense hud)." : "Allow the microphone for this page, then try again."); } };
+  rec.onend = () => { if (listening && !speaking) try { rec.start(); } catch {} };
+  rec.start(); listening = true; $("mic").classList.add("on"); toast("Listening continuously. Just talk.");
+}
+$("mic").onclick = toggleMic;
+function say(text){ if (!("speechSynthesis" in window)) return; const u = new SpeechSynthesisUtterance(text.replace(/\*\*/g, "").slice(0, 400)); u.rate = 1.02; u.pitch = .95;
+  speaking = true; if (rec && listening) try { rec.stop(); } catch {}
+  u.onend = u.onerror = () => { speaking = false; if (rec && listening) try { rec.start(); } catch {} }; speechSynthesis.cancel(); speechSynthesis.speak(u); }
+
+/* ================= simulator ================= */
+function simLabels(){ $("tCv").textContent = $("tC").value + "°C"; $("wKv").textContent = $("wK").value; }
+["tC", "wK"].forEach(id => $(id).addEventListener("input", simLabels)); simLabels();
+$("play").onclick = () => queue(async () => playSim(await api("POST", `/api/hud/sessions/${sid}/simulate`, {temp_c: +$("tC").value, wind_kmh: +$("wK").value, profile: $("prof").value})));
+let simRun = 0;
+function playSim(sim){
+  const run = ++simRun, fr = sim.frames, svg = $("simChart"); svg.innerHTML = "";
+  const ds = fr.map(f => f.delta_s), lo = fr.map(f => f.low_s - f.plan_s), hi = fr.map(f => f.high_s - f.plan_s);
+  const ymin = Math.min(-60, ...ds, ...lo), ymax = Math.max(60, ...ds, ...hi), X = km => 26 + km / 42.195 * 268, Y = v => 8 + (ymax - v) / (ymax - ymin) * 104;
+  let band = fr.map(f => `${X(f.km)},${Y(f.high_s - f.plan_s)}`).join(" ") + " " + [...fr].reverse().map(f => `${X(f.km)},${Y(f.low_s - f.plan_s)}`).join(" ");
+  svgEl(svg, "polygon", {points: band, fill: "rgba(14,124,155,.14)"});
+  svgEl(svg, "line", {x1: 26, x2: 294, y1: Y(0), y2: Y(0), stroke: "#9AA8BA", "stroke-dasharray": "3 3"});
+  svgTx(svg, 0, Y(0) + 3, "plan"); svgTx(svg, 0, 12, "+" + mmss(ymax)); svgTx(svg, 0, 116, "−" + mmss(Math.abs(ymin)));
+  [0, 10, 21.1, 30, 42.2].forEach(k => svgTx(svg, X(k), 128, k + "", {"text-anchor": "middle"}));
+  const path = svgEl(svg, "polyline", {points: "", fill: "none", stroke: "#D64550", "stroke-width": 2});
+  const dot = svgEl(svg, "circle", {r: 3.5, fill: "#D64550"});
+  const s = sim.summary; let i = 0; const pts = [];
+  H.heat = Math.max(0, Math.min(1, (s.temp_c - 11) / 18));
+  (function step(){ if (run !== simRun) return; const f = fr[i]; pts.push(`${X(f.km)},${Y(f.delta_s)}`); path.setAttribute("points", pts.join(" "));
+    dot.setAttribute("cx", X(f.km)); dot.setAttribute("cy", Y(f.delta_s)); H.marker = f.km / 42.195; H.cadence = Math.max(.6, Math.min(1.5, 300 / f.pace_s)); H.legs = Math.max(H.legs, Math.min(1, f.delta_s / 600));
+    $("simRead").innerHTML = `${f.km.toFixed(1)} km · ${fmt(f.sim_s)} · <span style="color:${f.delta_s > 15 ? "var(--hot)" : f.delta_s < -15 ? "var(--good)" : "var(--accent)"}">${fmtD(f.delta_s)}</span><br>${esc(f.cue)}`;
+    if (++i < fr.length) setTimeout(step, H.calm ? 90 : 45);
+    else { H.marker = null; $("simRead").innerHTML += `<br><b style="color:#14213D">Finish ${fmt(s.sim_finish_s)} (${fmtD(s.delta_s)} vs plan)</b>${s.inside_range ? " · inside the likely range" : " · outside the likely range"}${s.conditions_pct ? ` · conditions cost about ${s.conditions_pct}%` : ""}`; } })();
+}
+
+/* ================= start ================= */
+async function openRunner(id){
+  const d = await api("POST", "/api/hud/sessions", {runner_id: id || "demo"}); sid = d.id; $("pFeed").innerHTML = `<div class="sub">Every change you make appears here: what moved, what the data says, and whether it brought the prediction closer.</div>`;
+  $("pRaces").dataset.rid = ""; H.heat = 0; render(d.state, null); setSuggestions();
+  const slow = d.state.races.find(r => r.evidence.direction > 0);
+  showReply(`Planning for ${d.state.runner.name.replace(" (best race hidden)", "")}. ` + (d.state.mode === "demo" ? "Her best race is hidden: talk about her races and I'll tell you if the prediction gets closer. " : "") +
+            (slow ? `Try: “${slow.year} was a hot day and she was injured”.` : "Tell me about her races."));
+}
+$("bDemo").onclick = () => queue(() => openRunner("demo"));
+async function loadRecord(){ try { const r = await api("GET", "/api/hud/track-record");
+  $("pRec").innerHTML = r.n ? `<div class="kv"><span>Plans with a recorded result</span><b>${r.n}</b></div><div class="kv"><span>Your plans' error</span><b>${r.plan_error_pct.toFixed(2)}%</b></div><div class="kv"><span>Model with your weights</span><b>${r.model_with_weights_error_pct.toFixed(2)}%</b></div><div class="kv"><span>Model on its own</span><b>${r.model_default_error_pct.toFixed(2)}%</b></div><div class="kv"><span>Your plan beat the model</span><b>${r.plan_better_than_model} of ${r.n}</b></div>`
+    : `<div class="sub">The long feedback loop: save plans in the dashboard and record each race result afterwards. This panel then shows whether your adjustments beat the model over time.</div>`; } catch {} }
+applyView(persp, false); loadRecord();
+queue(() => openRunner("demo"));
+window.__hud = {H, state: () => S, send};
+})();
+</script>
+</body>
+</html>

@@ -53,6 +53,10 @@ pacesense analyze  --db study.sqlite3 --out report.md  # the paper's Section 5 a
 pacesense hud --data data/races.csv          # opens http://127.0.0.1:8000/hud
 ```
 
+No install needed to look around: open `docs/command-center-demo.html` in Chrome or Edge. It runs the same demo
+in the browser (typing, panels, views, simulator, feedback loop; voice and the AI assistant need the app). Rebuild it
+with `python scripts/build_hud_demo.py` after changing the interface.
+
 A holographic runner turns slowly in the middle of the screen, running at the pace of the current plan; the ring
 around her is the pacing plan (warmer sections are slower). Drag her to look around. Glass panels sit around her:
 past races and their weights, the prediction and likely range, the steering meter, the feedback loop, the pacing
@@ -516,7 +520,7 @@ keep `pacesense serve` bound to localhost or place any public deployment behind 
 
 ```bash
 pip install -e ".[dev]"
-python -m unittest discover -s tests -t .     # 195 tests
+python -m unittest discover -s tests -t .     # 198 tests
 ```
 
 They cover PaceSense Live (interpreter, evidence statistics, sessions, replay, benchmark floors, the checked AI

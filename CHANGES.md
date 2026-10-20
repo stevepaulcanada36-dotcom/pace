@@ -1,5 +1,11 @@
 # Changes
 
+## 2.4.1: light command center and a version that needs no server
+- The command center now uses a white, light design (navy and teal wireframe; colour only for meaning).
+- `docs/command-center-demo.html` runs the whole command center in any browser with no install: the in-browser
+  engine (`resources/hud_local.js`) is a port of the Python session and matches it to 4 decimals on weights,
+  target, likely range, pacing, influence and the simulator. Rebuild with `python scripts/build_hud_demo.py`.
+
 ## 2.4.0: command center, real data, tuning
 
 **Command center** (`pacesense hud`, `src/pacesense/hud/`, `resources/hud.html`)
