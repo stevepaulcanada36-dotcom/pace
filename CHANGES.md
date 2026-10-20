@@ -1,5 +1,26 @@
 # Changes
 
+## 2.4.0: command center, real data, tuning
+
+**Command center** (`pacesense hud`, `src/pacesense/hud/`, `resources/hud.html`)
+- A holographic runner (drawn on a canvas with PaceSense's own 3D projection: no libraries, works offline) runs at
+  the plan's pace inside a ring that shows the pacing plan; drag to rotate; calm background and ☾ calm mode.
+- One command bar for voice (continuous in Chrome/Edge) or typing: race talk moves the sliders, interface commands
+  change the screen ("show the simulator", "runner view"), questions go to the assistant. Replies can be spoken.
+- Panels you can drag, hide and pin; Coach / Runner / Researcher views, each remembering its own layout.
+- Feedback loop: a card for every change (what moved, what the data says, effect on target and range, next steps,
+  "makes sense / not sure / disagree"); demo mode hides the runner's best race so each change says whether it moved
+  the prediction closer to her real result; track record for saved plans with results.
+- Race-day simulator: heat, headwind and runner behaviour, with the likely-range band; assumptions in config.
+
+**Real data and tuning**
+- `pacesense import`: Kaggle-style results files (Boston 2015-2017 recognised; others by column names or `--map`),
+  linking the same runner across years by name, gender and birth year; a saved import report.
+- `pacesense tune`: held-out grid search over the model's settings; `--write` saves only settings that beat the
+  defaults; every command reads them from `model:` in `config/pacesense.yaml`.
+
+Tests: 175 → 195.
+
 ## 2.3.0: PaceSense Live (proposal) and reproducibility
 
 **PaceSense Live: steer the model by talking** (`src/pacesense/steer/`)

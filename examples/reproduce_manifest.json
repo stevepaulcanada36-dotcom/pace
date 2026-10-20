@@ -1,10 +1,10 @@
 {
   "command": "pacesense reproduce",
   "environment": {
-    "git_commit": "16cfb6430975fdac008a19db5c1450707b447859",
+    "git_commit": "b74e47c9308032840047b70ffb88321779fa2e16-dirty",
     "implementation": "CPython",
     "machine": "x86_64",
-    "pacesense": "2.3.0",
+    "pacesense": "2.4.0",
     "packages": {
       "PyYAML": "6.0.3",
       "faster-whisper": null,
@@ -14,21 +14,30 @@
       "scipy": "1.18.1",
       "streamlit": null
     },
-    "platform": "Linux-6.18.44-fc-v114-x86_64-with-glibc2.39",
+    "platform": "Linux-6.18.44-fc-v139-x86_64-with-glibc2.39",
     "python": "3.13.16"
   },
   "inputs": {
     "benchmark_sha256": "4199ce00410335a684e5899363441162acd7ec082a81bed7e2b20ffcdc3bbf7f",
-    "config_sha256": "120eeaa82cdd30be7f4e27b8245bcc68c7b41e0bdbfd4c634338202f414dc606",
+    "config_sha256": "d0aae57d288ede9a5ce335fc885363f680b46b91b8b10b858f7651cbb9b713cc",
     "data_sha256": "933673202c078bb8163da358def9586a334bc10568079f4717322f1492854841",
     "lexicon_sha256": "8027f0dfd5b3027c6b7ee615a33ac9ed20a925889dfd533859fbf63baf154841",
     "questionnaire_sha256": "85fe7d344f9a303e38102e5da9e0b4bdc7e5362c3c7824f8dc259184aab072fa"
   },
   "manifest_version": 1,
+  "model_settings": {
+    "default_age": 40,
+    "k": 15,
+    "missing_profile_distance": 0.02,
+    "time_window": 0.05,
+    "w_age": 0.2,
+    "w_profile": 0.5,
+    "w_time": 1.0
+  },
   "not_compared": {
-    "created_at": "2026-10-15T12:22:36-0400",
+    "created_at": "2026-10-19T21:24:58-0400",
     "note": "study.sqlite3 holds random session ids and clock times, so it is not hashed; its analysis (study_report.md) is.",
-    "seconds": 9.1
+    "seconds": 9.4
   },
   "outputs": {
     "recency_fit.json": "dbb59cc2a5d03de6d9e16cf6a1a191ab645fd62c29126a756e7e7a9e2479a248",

@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PaceSense Command Center</title>
+<style>
+:root{
+  --bg0:#050B18; --bg1:#0A1830; --holo:#62E3FF; --holo2:#9AF0FF; --holo-dim:rgba(98,227,255,.35);
+  --glass:rgba(12,28,52,.58); --glass-b:rgba(120,210,255,.22); --text:#E4F3FF; --muted:#8EA9C4;
+  --good:#6EE7A8; --know:#8FB8FF; --warn:#F5C46B; --hot:#FF7A85; --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:var(--bg0);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Inter,sans-serif}
+/* calm background: slow aurora behind everything */
+#bg{position:fixed;inset:0;z-index:0;background:radial-gradient(1200px 700px at 50% 55%,#0E2546 0%,var(--bg1) 45%,var(--bg0) 100%)}
+.aura{position:absolute;border-radius:50%;filter:blur(80px);opacity:.28;animation:drift 38s ease-in-out infinite alternate}
+.aura.a{width:620px;height:620px;left:8%;top:12%;background:#1B4F8A}
+.aura.b{width:520px;height:520px;right:6%;top:40%;background:#145E6E;animation-duration:46s}
+.aura.c{width:440px;height:440px;left:38%;bottom:-10%;background:#2A2F7A;animation-duration:54s}
+@keyframes drift{to{transform:translate(60px,-40px) scale(1.12)}}
+body.calm .aura{animation:none}
+#holo{position:fixed;inset:0;z-index:1;width:100%;height:100%;cursor:grab;touch-action:none}
+#holo:active{cursor:grabbing}
+/* top bar */
+header{position:fixed;top:0;left:0;right:0;z-index:20;display:flex;align-items:center;gap:10px;padding:10px 18px;
+  background:linear-gradient(180deg,rgba(5,11,24,.92),rgba(5,11,24,0));flex-wrap:wrap}
+.brand{font-weight:800;letter-spacing:.22em;font-size:13px;color:var(--holo2);white-space:nowrap}
+.brand b{color:#fff}
+#who{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:34vw}
+#who strong{color:var(--text)}
+.spacer{flex:1}
+.seg{display:inline-flex;border:1px solid var(--glass-b);border-radius:10px;overflow:hidden;background:rgba(8,20,40,.6)}
+.seg button{border:0;background:none;color:var(--muted);font:600 12px system-ui;padding:7px 12px;cursor:pointer;letter-spacing:.04em}
+.seg button.on{background:rgba(98,227,255,.16);color:var(--holo2)}
+.btn{border:1px solid var(--glass-b);background:rgba(8,20,40,.6);color:var(--text);border-radius:10px;padding:7px 11px;font:600 12px system-ui;cursor:pointer}
+.btn:hover{border-color:var(--holo-dim);color:var(--holo2)}
+.btn.on{background:rgba(98,227,255,.16);color:var(--holo2)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
+/* panels */
+.panel{position:fixed;z-index:10;width:330px;background:var(--glass);border:1px solid var(--glass-b);border-radius:16px;
+  backdrop-filter:blur(14px) saturate(140%);-webkit-backdrop-filter:blur(14px) saturate(140%);
+  box-shadow:0 10px 40px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.04);transition:box-shadow .4s,opacity .3s,transform .3s}
+.panel.hidden{display:none}
+.panel.pulse{box-shadow:0 0 0 2px var(--holo),0 0 40px rgba(98,227,255,.45)}
+.ph{display:flex;align-items:center;gap:8px;padding:10px 12px 6px 14px;cursor:move;user-select:none}
+.ph h3{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--holo2);flex:1}
+.ph .x{border:0;background:none;color:var(--muted);cursor:pointer;font-size:15px;line-height:1;padding:2px 4px}
+.ph .x:hover{color:#fff}
+.pb{padding:4px 14px 14px;max-height:52vh;overflow:auto}
+.pb::-webkit-scrollbar{width:6px}.pb::-webkit-scrollbar-thumb{background:var(--glass-b);border-radius:6px}
+.big{font-family:var(--mono);font-size:44px;font-weight:700;color:#fff;line-height:1.05;text-shadow:0 0 18px rgba(98,227,255,.35)}
+.sub{color:var(--muted);font-size:13px}
+.chip{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;padding:2px 8px;letter-spacing:.02em}
+.c-slow{background:rgba(255,122,133,.16);color:var(--hot)} .c-fast{background:rgba(110,231,168,.14);color:var(--good)} .c-typ{background:rgba(143,184,255,.14);color:var(--know)}
+.race{padding:8px 0;border-top:1px solid rgba(120,210,255,.1)}
+.race:first-child{border-top:0}
+.race.moved{animation:flash 1.4s}
+@keyframes flash{0%,100%{background:transparent}30%{background:rgba(98,227,255,.12)}}
+.rt{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.rt b{font-family:var(--mono)}
+.srow{display:grid;grid-template-columns:1fr 34px;gap:8px;align-items:center;margin-top:4px}
+input[type=range]{width:100%;accent-color:var(--holo);height:20px;background:transparent}
+.w{font-family:var(--mono);color:var(--holo2);text-align:right;font-weight:700}
+.pull{position:relative;height:5px;border-radius:99px;background:rgba(120,210,255,.1);margin-top:5px}
+.pull i{position:absolute;top:0;height:5px;border-radius:99px}
+.pull:after{content:"";position:absolute;left:50%;top:-3px;width:1px;height:11px;background:var(--muted);opacity:.5}
+.pl{font-size:11px;color:var(--muted);margin-top:2px}
+.range{position:relative;height:42px;margin-top:10px}
+.range .bar{position:absolute;top:16px;height:8px;border-radius:99px;background:rgba(98,227,255,.25)}
+.range .mk{position:absolute;top:9px;width:3px;height:22px;border-radius:2px;transform:translateX(-1px)}
+.range .lb{position:absolute;font-size:10px;transform:translateX(-50%);white-space:nowrap;font-family:var(--mono)}
+.meter{position:relative;height:10px;border-radius:99px;margin:16px 0 6px;background:linear-gradient(90deg,rgba(110,231,168,.35),rgba(143,184,255,.35) 45%,rgba(245,196,107,.45) 85%,rgba(255,122,133,.5))}
+.meter .pin{position:absolute;top:-6px;width:4px;height:22px;background:#fff;border-radius:2px;transition:left .7s;box-shadow:0 0 10px #fff}
+.kv{display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid rgba(120,210,255,.1);font-size:13px}
+.kv b{font-family:var(--mono)}
+.card{border:1px solid rgba(120,210,255,.16);border-radius:12px;padding:10px 12px;margin-bottom:10px;background:rgba(5,14,30,.45)}
+.card .said{font-weight:700}
+.it{font-size:13px;margin-top:6px;padding:6px 8px;border-radius:8px;line-height:1.4}
+.it b{font-family:var(--mono)}
+.v-supported{background:rgba(110,231,168,.1)} .v-your_knowledge{background:rgba(143,184,255,.1)} .v-against_data{background:rgba(245,196,107,.12)} .v-undo,.v-no_change{background:rgba(120,210,255,.06)}
+.tag{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin-right:6px}
+.v-supported .tag{color:var(--good)} .v-your_knowledge .tag{color:var(--know)} .v-against_data .tag{color:var(--warn)} .v-undo .tag{color:var(--holo2)}
+.note{font-size:12px;color:var(--muted);margin-top:4px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.sug{border:1px solid var(--glass-b);background:rgba(98,227,255,.07);color:var(--holo2);border-radius:999px;padding:4px 10px;font:600 12px system-ui;cursor:pointer}
+.sug:hover{background:rgba(98,227,255,.18)}
+.react{display:flex;gap:6px;margin-top:8px}
+.react button{flex:1;border:1px solid rgba(120,210,255,.18);background:none;color:var(--muted);border-radius:8px;padding:4px;font:600 11px system-ui;cursor:pointer}
+.react button.on{color:#fff;border-color:var(--holo);background:rgba(98,227,255,.14)}
+.acc{font-size:12px;margin-top:6px;font-weight:700}
+.acc.up{color:var(--good)} .acc.down{color:var(--warn)}
+/* command bar */
+#cmd{position:fixed;z-index:25;left:50%;bottom:22px;transform:translateX(-50%);width:min(760px,calc(100vw - 32px))}
+#reply{margin:0 0 10px;padding:10px 14px;border-radius:12px;background:rgba(5,14,30,.72);border:1px solid var(--glass-b);
+  font-size:14px;line-height:1.5;display:none;max-height:28vh;overflow:auto}
+#reply.show{display:block}
+#reply .who{font-size:10px;letter-spacing:.16em;color:var(--holo2);font-weight:800;margin-bottom:2px}
+#caption{text-align:center;min-height:22px;color:var(--holo2);font-size:15px;margin-bottom:8px;text-shadow:0 0 12px rgba(98,227,255,.5)}
+#caption .interim{opacity:.7;font-style:italic}
+.bar{display:flex;gap:8px;align-items:center;background:rgba(8,20,40,.78);border:1px solid var(--glass-b);border-radius:16px;padding:8px;
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 0 30px rgba(98,227,255,.08)}
+#mic{width:44px;height:44px;border-radius:50%;border:1px solid var(--holo-dim);background:rgba(98,227,255,.1);color:var(--holo2);font-size:19px;cursor:pointer;flex:none;position:relative}
+#mic.on{background:rgba(255,122,133,.22);color:#fff;border-color:var(--hot)}
+#mic.on:after{content:"";position:absolute;inset:-6px;border-radius:50%;border:2px solid var(--hot);animation:ring 1.5s infinite}
+@keyframes ring{0%{opacity:.8;transform:scale(.9)}100%{opacity:0;transform:scale(1.3)}}
+#q{flex:1;min-width:0;background:transparent;border:0;outline:none;color:var(--text);font-size:15px;padding:8px 4px}
+#q::placeholder{color:var(--muted)}
+#sugBar{margin-top:8px;justify-content:center}
+/* simulator */
+.sim-ctl{display:grid;grid-template-columns:76px 1fr 54px;gap:8px;align-items:center;margin:6px 0;font-size:13px}
+.sim-ctl b{font-family:var(--mono);text-align:right;color:var(--holo2)}
+select{background:rgba(5,14,30,.7);color:var(--text);border:1px solid var(--glass-b);border-radius:8px;padding:5px 8px;font:13px system-ui}
+#simRead{font-family:var(--mono);font-size:13px;margin-top:6px;min-height:38px}
+/* overlay */
+#help{position:fixed;inset:0;z-index:40;background:rgba(3,8,18,.86);display:none;align-items:center;justify-content:center;padding:20px}
+#help.open{display:flex}
+#help .box{max-width:860px;width:100%;background:var(--glass);border:1px solid var(--glass-b);border-radius:18px;padding:24px 26px;max-height:88vh;overflow:auto}
+#help h2{font-size:14px;letter-spacing:.18em;color:var(--holo2);margin-bottom:12px}
+#help .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px}
+#help h4{font-size:12px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px}
+#help li{list-style:none;font-size:13px;margin:4px 0;color:var(--text)}
+#help li:before{content:"“";color:var(--holo2)} #help li:after{content:"”";color:var(--holo2)}
+#menu{position:fixed;z-index:30;top:52px;right:18px;background:var(--glass);border:1px solid var(--glass-b);border-radius:12px;padding:10px 12px;display:none;backdrop-filter:blur(14px)}
+#menu.open{display:block}
+#menu label{display:flex;gap:8px;align-items:center;font-size:13px;padding:4px 0;cursor:pointer}
+#toast{position:fixed;z-index:50;left:50%;top:64px;transform:translateX(-50%);background:rgba(5,14,30,.9);border:1px solid var(--glass-b);padding:8px 14px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none}
+#toast.show{opacity:1}
+/* phones: panels stack under the hologram */
+@media (max-width: 900px){
+  html,body{overflow:auto}
+  #holo{position:relative;height:46vh;display:block}
+  .panel{position:static!important;width:auto!important;margin:12px 16px}
+  .ph{cursor:default}
+  #panels{padding-bottom:170px}
+  #who{max-width:100%;order:3;flex-basis:100%}
+  .brand{font-size:11px} .lbl{display:none} .spacer{display:none}
+  #reply{max-height:18vh}
+  header{position:sticky;background:rgba(5,11,24,.95)}
+}
+@media (prefers-reduced-motion: reduce){.aura{animation:none}}
+</style>
+</head>
+<body>
+<div id="bg"><div class="aura a"></div><div class="aura b"></div><div class="aura c"></div></div>
+<header>
+  <div class="brand">PACESENSE <b>//</b> COMMAND CENTER</div>
+  <div id="who">Loading…</div>
+  <div class="spacer"></div>
+  <div class="seg" id="persp" role="group" aria-label="Perspective">
+    <button data-p="coach" class="on">Coach</button><button data-p="runner">Runner</button><button data-p="researcher">Researcher</button>
+  </div>
+  <button class="btn" id="bPanels" title="Show or hide panels">▦ <span class="lbl">Panels</span></button>
+  <button class="btn" id="bCalm" title="Calm mode: less motion">☾ <span class="lbl">Calm</span></button>
+  <button class="btn" id="bSpeak" title="Read replies aloud">🔈 <span class="lbl">Speak</span></button>
+  <button class="btn" id="bDemo" title="Open a new demo runner">↻ <span class="lbl">Demo</span></button>
+  <button class="btn" id="bHelp" title="What can I say?">?</button>
+</header>
+<canvas id="holo" aria-label="Holographic runner: drag to rotate"></canvas>
+
+<div id="panels">
+<section class="panel" data-panel="races"><div class="ph"><h3>Past races · weights</h3><button class="x" title="Hide">×</button></div>
+  <div class="pb" id="pRaces"></div></section>
+
+<section class="panel" data-panel="prediction"><div class="ph"><h3>Prediction</h3><button class="x" title="Hide">×</button></div>
+  <div class="pb"><div class="big" id="fin">–</div><div class="sub" id="finDelta">&nbsp;</div>
+    <div class="range" id="rng"></div><div class="sub" style="font-size:11px">Bar: 8 in 10 similar runners finished here · <span style="color:var(--holo2)">▮</span> model <span style="color:var(--hot)">▮</span> your estimate <span style="color:var(--good)">▮</span> real result</div>
+    <div id="hold" style="margin-top:10px"></div></div></section>
+
+<section class="panel" data-panel="steering"><div class="ph"><h3>Whose view is the model taking?</h3><button class="x" title="Hide">×</button></div>
+  <div class="pb"><div class="meter"><div class="pin" id="pin"></div></div>
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted)"><span>0 · the data</span><span>1 · your estimate</span></div>
+    <div id="steerLbl" style="margin-top:8px;font-size:13px"></div>
+    <div class="kv"><span>Steering index</span><b id="sIdx">–</b></div>
+    <div class="kv"><span>Changes with a reason</span><b id="sWhy">–</b></div>
+    <div class="kv"><span>Your reactions</span><b id="sReact">–</b></div></div></section>
+
+<section class="panel" data-panel="feedback"><div class="ph"><h3>Feedback loop</h3><button class="x" title="Hide">×</button></div>
+  <div class="pb" id="pFeed"><div class="sub">Every change you make appears here: what moved, what the data says, and whether it brought the prediction closer.</div></div></section>
+
+<section class="panel" data-panel="pacing"><div class="ph"><h3>Pacing plan</h3><button class="x" title="Hide">×</button></div>
+  <div class="pb"><svg id="paceSvg" viewBox="0 0 300 150" width="100%" height="150"></svg><div class="sub" id="paceNote"></div></div></section>
+
+<section class="panel" data-panel="similar"><div class="ph"><h3>Runners like her</h3><button class="x" title="Hide">×</button></div>
+  <div class="pb"><div class="sub" style="margin-bottom:6px">Each dot: a runner who ran a race like hers, placed at the time that runner's later best implies for her.</div><svg id="simSvg" viewBox="0 0 300 200" width="100%" height="200"></svg></div></section>
+
+<section class="panel" data-panel="simulator"><div class="ph"><h3>Race-day simulator</h3><button class="x" title="Hide">×</button></div>
+  <div class="pb">
+    <div class="sim-ctl"><span>Heat</span><input type="range" id="tC" min="-5" max="35" step="1" value="12"><b id="tCv">12°C</b></div>
+    <div class="sim-ctl"><span>Headwind</span><input type="range" id="wK" min="0" max="40" step="1" value="0"><b id="wKv">0</b></div>
+    <div class="sim-ctl"><span>Runner</span><select id="prof"><option value="on_plan">runs the plan</option><option value="fast_start">starts too fast</option><option value="late_fade">fades late</option></select><button class="btn" id="play">▶ Run</button></div>
+    <svg id="simChart" viewBox="0 0 300 130" width="100%" height="130" style="margin-top:6px"></svg>
+    <div id="simRead" class="sub"></div>
+    <div class="sub" style="font-size:11px">Heat and wind effects are stated assumptions (hud/sim.py), not fitted on data. Band: the likely range.</div>
+  </div></section>
+
+<section class="panel" data-panel="log"><div class="ph"><h3>Change log</h3><button class="x" title="Hide">×</button></div>
+  <div class="pb" id="pLog"><div class="sub">No changes yet.</div></div></section>
+
+<section class="panel" data-panel="record"><div class="ph"><h3>Track record</h3><button class="x" title="Hide">×</button></div>
+  <div class="pb" id="pRec"></div></section>
+
+<section class="panel" data-panel="chat"><div class="ph"><h3>Conversation</h3><button class="x" title="Hide">×</button></div>
+  <div class="pb" id="pChat"><div class="sub">Everything you said and every answer.</div></div></section>
+</div>
+
+<div id="cmd">
+  <div id="reply"><div class="who">PACESENSE</div><div id="replyText"></div></div>
+  <div id="caption"></div>
+  <div class="bar">
+    <button id="mic" title="Talk (M)">🎙</button>
+    <input id="q" placeholder="Say or type: “2014 was a hot day and she was injured” · “simulate 25 degrees” · “runner view”" autocomplete="off" aria-label="Command">
+    <button class="btn" id="send">Send</button>
+  </div>
+  <div class="chips" id="sugBar"></div>
+</div>
+
+<div id="menu"></div>
+<div id="help"><div class="box">
+  <h2>WHAT CAN I SAY?</h2>
+  <div class="cols">
+    <div><h4>About her races</h4><ul><li>2014 was a hot day and she was injured</li><li>ignore the first race</li><li>trust the recent races more</li><li>set Rotterdam 2013 to 0.8</li><li>I think she can run 3:30</li><li>scratch that</li></ul></div>
+    <div><h4>The screen</h4><ul><li>show the simulator</li><li>hide the change log</li><li>switch to runner view</li><li>calm mode</li><li>reset the layout</li><li>new demo runner</li></ul></div>
+    <div><h4>Race day</h4><ul><li>simulate 27 degrees</li><li>what if she starts too fast</li><li>simulate a hot day with a 20 km/h headwind</li><li>reveal</li></ul></div>
+    <div><h4>Questions</h4><ul><li>why is the likely range so wide?</li><li>which race pulls the prediction most?</li><li>is my plan realistic?</li><li>explain the likely range</li></ul></div>
+  </div>
+  <p class="sub" style="margin-top:14px">Keyboard: <b>/</b> type a command · <b>M</b> microphone · drag the hologram to turn it · drag a panel by its title. Chrome and Edge listen continuously (they send audio to their own speech service); typing works everywhere.</p>
+  <button class="btn" style="margin-top:14px" id="helpClose">Close</button>
+</div></div>
+<div id="toast"></div>
+
+<script>
+(() => {
+"use strict";
+const $ = id => document.getElementById(id);
+const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = s => { if (s == null || !isFinite(s)) return "–"; s = Math.round(s); return `${Math.floor(s/3600)}:${String(Math.floor(s%3600/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`; };
+const fmtD = s => { const r = Math.round(Math.abs(s)); return `${s < 0 ? "−" : "+"}${Math.floor(r/60)}:${String(r%60).padStart(2,"0")}`; };
+const mmss = s => { s = Math.round(s); return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`; };
+const store = { get(k, d){ try { const v = localStorage.getItem("pacesense.hud." + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+                set(k, v){ try { localStorage.setItem("pacesense.hud." + k, JSON.stringify(v)); } catch {} } };
+function toast(m){ const t = $("toast"); t.textContent = m; t.classList.add("show"); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("show"), 2800); }
+async function api(method, path, body){
+  const r = await fetch(path, {method, headers: {"Content-Type": "application/json"}, body: body ? JSON.stringify(body) : undefined});
+  const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`); return d;
+}
+let sid = null, S = null, busy = Promise.resolve();
+const queue = fn => (busy = busy.then(fn).catch(e => toast(e.message)));
+
+/* ================= holographic runner (canvas, own 3D projection: no libraries) ================= */
+const H = { cv: $("holo"), yaw: .6, auto: true, drag: null, t: 0, cadence: 1, heat: 0, legs: 0, chest: 0, calm: false,
+            ring: [], marker: null, dpr: Math.min(2, window.devicePixelRatio || 1) };
+const ctx = H.cv.getContext("2d");
+function resize(){ const r = H.cv.getBoundingClientRect(); H.cv.width = r.width * H.dpr; H.cv.height = r.height * H.dpr; }
+addEventListener("resize", () => { resize(); if (typeof applyView === "function") applyView(persp, false); }); resize();
+H.cv.addEventListener("pointerdown", e => { H.drag = {x: e.clientX, yaw: H.yaw}; H.cv.setPointerCapture(e.pointerId); });
+H.cv.addEventListener("pointermove", e => { if (H.drag) H.yaw = H.drag.yaw + (e.clientX - H.drag.x) * .008; });
+H.cv.addEventListener("pointerup", () => { H.drag = null; });
+const PITCH = .32;   // camera looks down a little, so the pacing orbit reads as a ring
+const rot = (p, a) => { const x = p[0] * Math.cos(a) + p[2] * Math.sin(a), z = -p[0] * Math.sin(a) + p[2] * Math.cos(a), y = p[1] - 1;
+  return [x, y * Math.cos(PITCH) - z * Math.sin(PITCH) + 1, y * Math.sin(PITCH) + z * Math.cos(PITCH)]; };
+function view(){ const w = H.cv.width, h = H.cv.height, mobile = innerWidth <= 900;
+  return {cx: w * (.5 + (H.shift || 0)), cy: h * (mobile ? .80 : .66), s: Math.min(w, h) * (mobile ? .36 : .26), cam: 6.2}; }
+function proj(p, V){ const q = rot(p, H.yaw), z = V.cam - q[2], k = V.cam / z; return [V.cx + q[0] * V.s * k, V.cy - q[1] * V.s * k, z, k]; }
+function pose(t){
+  // running gait: phase drives hips, knees, arms; bounce and lean
+  const ph = t * Math.PI * 2, sw = Math.sin(ph), sw2 = Math.sin(ph + Math.PI), amp = H.calm ? .25 : 1;
+  const lean = .12 * amp, bounce = Math.abs(Math.cos(ph)) * .05 * amp;
+  const P = {}; const pel = [0, 1.0 + bounce, 0]; P.pelvis = pel;
+  const up = (a, len, ang) => [a[0] + Math.sin(ang) * len * 0, a[1] + Math.cos(ang) * len, a[2] + Math.sin(ang) * len];
+  P.chest = [0, pel[1] + .55, lean * .55]; P.neck = [0, pel[1] + .75, lean * .8]; P.head = [0, pel[1] + .93, lean * .95];
+  for (const [side, x, s] of [["L", -.13, sw], ["R", .13, sw2]]){
+    const hip = [x, pel[1] - .02, 0], th = s * .62 * amp;                        // thigh swing
+    const knee = [x, hip[1] - .46 * Math.cos(th), hip[2] + .46 * Math.sin(th)];
+    const kneeFlex = (Math.max(0, -Math.cos(ph + (side === "L" ? 0 : Math.PI))) * 1.5 + .25) * amp;
+    const sh = th - kneeFlex;
+    const ankle = [x, knee[1] - .45 * Math.cos(sh), knee[2] + .45 * Math.sin(sh)];
+    const toe = [x, ankle[1] - .04, ankle[2] + .14];
+    P["hip" + side] = hip; P["knee" + side] = knee; P["ankle" + side] = ankle; P["toe" + side] = toe;
+    const shoulder = [x * 1.55, pel[1] + .6, lean * .6], arm = -s * .55 * amp;
+    const elbow = [shoulder[0] * 1.05, shoulder[1] - .27 * Math.cos(arm), shoulder[2] + .27 * Math.sin(arm)];
+    const fa = arm + 1.35;
+    const wrist = [shoulder[0] * .95, elbow[1] - .24 * Math.cos(fa) * .6, elbow[2] + .24 * Math.sin(fa)];
+    P["sh" + side] = shoulder; P["el" + side] = elbow; P["wr" + side] = wrist;
+  }
+  return P;
+}
+const BONES = [ ["pelvis","chest",.15,"torso"],["chest","neck",.12,"torso"],["hipL","kneeL",.075,"leg"],["kneeL","ankleL",.06,"leg"],["ankleL","toeL",.035,"leg"],
+  ["hipR","kneeR",.075,"leg"],["kneeR","ankleR",.06,"leg"],["ankleR","toeR",.035,"leg"],["shL","elL",.05,"arm"],["elL","wrL",.042,"arm"],["shR","elR",.05,"arm"],["elR","wrR",.042,"arm"],
+  ["shL","shR",.04,"torso"],["hipL","hipR",.06,"torso"] ];
+function partColor(part, alpha){
+  const heat = Math.min(1, H.heat), legs = part === "leg" ? H.legs : 0, chest = part === "torso" ? H.chest : 0;
+  let r = 98 + heat * 120 + legs * 157, g = 227 - heat * 60 - legs * 105, b = 255 - heat * 120 - legs * 122;
+  if (chest > 0){ r = r * (1 - chest) + 110 * chest; g = g * (1 - chest) + 231 * chest; b = b * (1 - chest) + 168 * chest; }
+  return `rgba(${r|0},${g|0},${b|0},${alpha})`;
+}
+function capsule(a, b, r, part, V){
+  const ax = [b[0]-a[0], b[1]-a[1], b[2]-a[2]], L = Math.hypot(...ax) || 1, d = ax.map(v => v / L);
+  const tmp = Math.abs(d[1]) < .9 ? [0, 1, 0] : [1, 0, 0];
+  const u = [d[1]*tmp[2]-d[2]*tmp[1], d[2]*tmp[0]-d[0]*tmp[2], d[0]*tmp[1]-d[1]*tmp[0]], ul = Math.hypot(...u); u.forEach((v, i) => u[i] = v / ul);
+  const v2 = [d[1]*u[2]-d[2]*u[1], d[2]*u[0]-d[0]*u[2], d[0]*u[1]-d[1]*u[0]];
+  const rings = 4, seg = 12, pts = [];
+  for (let i = 0; i <= rings; i++){
+    const t = i / rings, c = [a[0]+ax[0]*t, a[1]+ax[1]*t, a[2]+ax[2]*t], rr = r * (1 - .25 * Math.abs(t - .5));
+    const ring = []; for (let k = 0; k < seg; k++){ const th = k / seg * Math.PI * 2;
+      ring.push(proj([c[0]+(u[0]*Math.cos(th)+v2[0]*Math.sin(th))*rr, c[1]+(u[1]*Math.cos(th)+v2[1]*Math.sin(th))*rr, c[2]+(u[2]*Math.cos(th)+v2[2]*Math.sin(th))*rr], V)); }
+    pts.push(ring);
+  }
+  ctx.lineWidth = 1 * H.dpr;
+  pts.forEach((ring, i) => { const z = ring[0][2]; ctx.strokeStyle = partColor(part, .25 + .35 * (6.8 - z) / 1.6); ctx.beginPath();
+    ring.forEach((p, k) => k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath(); ctx.stroke(); });
+  for (let k = 0; k < seg; k += 3){ ctx.strokeStyle = partColor(part, .35); ctx.beginPath(); pts.forEach((ring, i) => i ? ctx.lineTo(ring[k][0], ring[k][1]) : ctx.moveTo(ring[k][0], ring[k][1])); ctx.stroke(); }
+}
+function sphere(c, r, V){
+  for (let i = 1; i < 6; i++){ const lat = -Math.PI / 2 + i * Math.PI / 6, y = c[1] + Math.sin(lat) * r, rr = Math.cos(lat) * r;
+    ctx.strokeStyle = partColor("head", .55); ctx.beginPath();
+    for (let k = 0; k <= 14; k++){ const th = k / 14 * Math.PI * 2, p = proj([c[0] + Math.cos(th) * rr, y, c[2] + Math.sin(th) * rr], V); k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); } ctx.stroke(); }
+  for (let m = 0; m < 4; m++){ const lon = m / 4 * Math.PI; ctx.beginPath();
+    for (let k = 0; k <= 16; k++){ const a = k / 16 * Math.PI * 2, p = proj([c[0] + Math.cos(a) * Math.cos(lon) * r, c[1] + Math.sin(a) * r, c[2] + Math.cos(a) * Math.sin(lon) * r], V); k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); } ctx.stroke(); }
+}
+function circle(y, r, V, style, dash, rotOff = 0){
+  ctx.strokeStyle = style; ctx.setLineDash(dash || []); ctx.beginPath();
+  for (let k = 0; k <= 64; k++){ const th = k / 64 * Math.PI * 2 + rotOff, p = proj([Math.cos(th) * r, y, Math.sin(th) * r], V); k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); }
+  ctx.stroke(); ctx.setLineDash([]);
+}
+function drawRing(V){
+  // the pacing plan as an orbit: 9 sections, warmer = slower than her average plan pace
+  const R = 1.25, segs = H.ring; if (!segs.length) return;
+  const tot = segs.reduce((a, s) => a + s.km, 0); let acc = -Math.PI / 2;
+  segs.forEach((s, i) => {
+    const span = s.km / tot * Math.PI * 2, warm = Math.max(-1, Math.min(1, s.rel * 25));
+    const col = warm > 0 ? `rgba(${(98 + 157 * warm)|0},${(227 - 90 * warm)|0},${(255 - 130 * warm)|0},.9)` : `rgba(${(98 + 12 * -warm)|0},${(227 + 4 * -warm)|0},${(255 - 87 * -warm)|0},.9)`;
+    ctx.strokeStyle = col; ctx.lineWidth = (3 + Math.abs(warm) * 3) * H.dpr; ctx.beginPath();
+    for (let k = 0; k <= 16; k++){ const th = acc + .02 + (span - .04) * k / 16, p = proj([Math.cos(th) * R, 0, Math.sin(th) * R], V); k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); }
+    ctx.stroke();
+    const mid = acc + span / 2, lp = proj([Math.cos(mid) * (R + .2), 0, Math.sin(mid) * (R + .2)], V);
+    ctx.fillStyle = "rgba(200,235,255,.75)"; ctx.font = `${11 * H.dpr}px ui-monospace,monospace`; ctx.textAlign = "center"; ctx.fillText(s.label, lp[0], lp[1] + 4 * H.dpr);
+    acc += span;
+  });
+  ctx.lineWidth = 1 * H.dpr;
+  if (H.marker != null){ const th = -Math.PI / 2 + H.marker * Math.PI * 2, p = proj([Math.cos(th) * R, 0, Math.sin(th) * R], V);
+    ctx.fillStyle = "#fff"; ctx.shadowColor = "#62E3FF"; ctx.shadowBlur = 18 * H.dpr; ctx.beginPath(); ctx.arc(p[0], p[1], 6 * H.dpr, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0; }
+}
+let last = performance.now();
+function frame(now){
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  const reduce = H.calm || matchMedia("(prefers-reduced-motion: reduce)").matches;
+  H.t += dt * (reduce ? .35 : 1.35) * H.cadence;
+  if (H.auto && !H.drag) H.yaw += dt * (reduce ? .04 : .16);
+  H.legs = Math.max(0, H.legs - dt * .35); H.chest = Math.max(0, H.chest - dt * .35);
+  const V = view(); ctx.clearRect(0, 0, H.cv.width, H.cv.height);
+  ctx.globalCompositeOperation = "lighter";
+  // platform
+  circle(0, .95, V, "rgba(98,227,255,.30)"); circle(0, .7, V, "rgba(98,227,255,.18)", [4 * H.dpr, 6 * H.dpr], H.t * .2);
+  circle(0, 1.55, V, "rgba(98,227,255,.10)"); drawRing(V);
+  for (let k = 0; k < 24; k++){ const th = k / 24 * Math.PI * 2 + H.t * .05, a = proj([Math.cos(th) * 1.5, 0, Math.sin(th) * 1.5], V), b = proj([Math.cos(th) * 1.6, 0, Math.sin(th) * 1.6], V);
+    ctx.strokeStyle = "rgba(98,227,255,.22)"; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
+  // body
+  const P = pose(H.t * .9);
+  BONES.forEach(([a, b, r, part]) => capsule(P[a], P[b], r, part, V));
+  sphere(P.head, .11, V);
+  // scan line
+  const sy = .1 + ((H.t * .25) % 1) * 1.95, l = proj([-.6, sy, 0], V), rr = proj([.6, sy, 0], V);
+  const g = ctx.createLinearGradient(l[0], 0, rr[0], 0); g.addColorStop(0, "rgba(98,227,255,0)"); g.addColorStop(.5, "rgba(154,240,255,.35)"); g.addColorStop(1, "rgba(98,227,255,0)");
+  ctx.strokeStyle = g; ctx.lineWidth = 2 * H.dpr; ctx.beginPath(); ctx.moveTo(l[0], l[1]); ctx.lineTo(rr[0], rr[1]); ctx.stroke(); ctx.lineWidth = 1 * H.dpr;
+  ctx.globalCompositeOperation = "source-over";
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+function bodyReacts(card){ // the hologram reacts to what was said
+  if (!card) return; const said = (card.said || "").toLowerCase();
+  if (/injur|cramp|fell|hit the wall|pain|sick|ill|flu/.test(said)) H.legs = 1;
+  if (/hot|heat|humid|warm/.test(said)) H.heat = Math.min(1, H.heat + .5);
+  if (/best|great|perfect|peak|strong|fit/.test(said)) H.chest = 1;
+  if (/scratch|undo|reset/.test(said)) { H.heat = 0; }
+}
+
+/* ================= panels: layout, perspectives, dragging ================= */
+const PANELS = [...document.querySelectorAll(".panel")].reduce((m, el) => (m[el.dataset.panel] = el, m), {});
+const TITLES = {races: "Past races", prediction: "Prediction", steering: "Steering meter", feedback: "Feedback loop", pacing: "Pacing plan",
+                similar: "Runners like her", simulator: "Simulator", log: "Change log", record: "Track record", chat: "Conversation"};
+// [x, y, cap]: x < 0 counts from the right; y "auto" stacks under the previous panel in that column;
+// cap = largest share of the window height the panel may take (the last panel in a column fills the rest)
+const VIEWS = {
+  coach: {races: [18, 64, .48], simulator: [18, "auto"], prediction: [-348, 64, .34], steering: [-348, "auto", .3], feedback: [-348, "auto"]},
+  runner: {prediction: [18, 64, .42], pacing: [18, "auto"], simulator: [-348, 64]},
+  researcher: {races: [18, 64, .5], similar: [18, "auto"], prediction: [-700, 64, .4], record: [-700, "auto"],
+               steering: [-348, 64, .34], feedback: [-348, "auto"]},
+};
+let persp = store.get("persp", "coach");
+function layoutFor(p){ return store.get("layout." + p, null) || VIEWS[p]; }
+function place(name, pos){ const el = PANELS[name]; if (!el || !pos) return; let [x, y] = pos;
+  if (x < 0) x = innerWidth + x; x = Math.max(4, Math.min(innerWidth - 120, x)); y = Math.max(48, Math.min(innerHeight - 120, y === "auto" ? 64 : y));
+  el.style.left = x + "px"; el.style.top = y + "px"; }
+function fitHeight(el){ if (innerWidth <= 900) { el.querySelector(".pb").style.maxHeight = ""; return; }
+  el.querySelector(".pb").style.maxHeight = Math.max(120, innerHeight - (parseInt(el.style.top) || 64) - 64) + "px"; }
+function stack(lay){
+  // place panels column by column; "auto" goes under the previous one; caps keep columns on screen
+  const cols = {};
+  for (const [name, pos] of Object.entries(lay)){ const key = String(pos[0]); (cols[key] = cols[key] || []).push([name, pos]); }
+  for (const list of Object.values(cols)){
+    let y = 64;
+    list.forEach(([name, pos], k) => { const el = PANELS[name]; if (!el) return;
+      const top = pos[1] === "auto" ? y : pos[1]; const last = k === list.length - 1;
+      place(name, [pos[0], top]);
+      const pb = el.querySelector(".pb");
+      if (innerWidth > 900){ const room = innerHeight - top - 64;
+        pb.style.maxHeight = Math.max(110, last ? room : Math.min(room, innerHeight * (pos[2] || .4) - 48)) + "px"; }
+      y = top + el.offsetHeight + 10; });
+  }
+}
+function applyView(p, save = true){
+  persp = p; if (save) store.set("persp", p);
+  document.querySelectorAll("#persp button").forEach(b => b.classList.toggle("on", b.dataset.p === p));
+  const lay = layoutFor(p);
+  for (const name in PANELS) PANELS[name].classList.toggle("hidden", !(name in lay));
+  stack(lay); H.shift = p === "researcher" && innerWidth > 1200 ? -.12 : 0;
+  renderMenu(); if (S) render(S, null);
+}
+function saveLayout(){ const lay = {}; for (const name in PANELS){ const el = PANELS[name]; if (!el.classList.contains("hidden")) lay[name] = [parseInt(el.style.left) || 20, parseInt(el.style.top) || 70, .9]; } store.set("layout." + persp, lay); }
+function showPanel(name, focus = true){ const el = PANELS[name]; if (!el) return; el.classList.remove("hidden");
+  if (!el.style.left) place(name, [innerWidth / 2 - 165, 90]);
+  el.style.zIndex = 12 + (++showPanel.z % 50); if (focus){ el.classList.add("pulse"); setTimeout(() => el.classList.remove("pulse"), 1400); } saveLayout(); renderMenu(); }
+showPanel.z = 0;
+function hidePanel(name){ PANELS[name]?.classList.add("hidden"); saveLayout(); renderMenu(); }
+for (const [name, el] of Object.entries(PANELS)){
+  el.querySelector(".x").onclick = () => hidePanel(name);
+  const h = el.querySelector(".ph");
+  h.addEventListener("pointerdown", e => { if (innerWidth <= 900 || e.target.closest("button")) return; const r = el.getBoundingClientRect(), ox = e.clientX - r.left, oy = e.clientY - r.top;
+    el.style.zIndex = 12 + (++showPanel.z % 50); h.setPointerCapture(e.pointerId);
+    const mv = ev => { el.style.left = Math.max(0, ev.clientX - ox) + "px"; el.style.top = Math.max(44, ev.clientY - oy) + "px"; };
+    const up = () => { h.removeEventListener("pointermove", mv); h.removeEventListener("pointerup", up); fitHeight(el); saveLayout(); };
+    h.addEventListener("pointermove", mv); h.addEventListener("pointerup", up); });
+}
+function renderMenu(){ const m = $("menu"); m.innerHTML = `<div class="sub" style="margin-bottom:6px">Panels in the ${persp} view</div>` +
+  Object.keys(PANELS).map(n => `<label><input type="checkbox" data-n="${n}" ${PANELS[n].classList.contains("hidden") ? "" : "checked"}> ${TITLES[n]}</label>`).join("") +
+  `<button class="btn" id="layReset" style="margin-top:8px;width:100%">Reset this view</button>`;
+  m.querySelectorAll("input").forEach(i => i.onchange = () => i.checked ? showPanel(i.dataset.n) : hidePanel(i.dataset.n));
+  $("layReset").onclick = () => { store.set("layout." + persp, null); applyView(persp); }; }
+document.querySelectorAll("#persp button").forEach(b => b.onclick = () => applyView(b.dataset.p));
+$("bPanels").onclick = () => $("menu").classList.toggle("open");
+$("bHelp").onclick = () => $("help").classList.add("open"); $("helpClose").onclick = () => $("help").classList.remove("open");
+function setCalm(v){ H.calm = v; document.body.classList.toggle("calm", v); $("bCalm").classList.toggle("on", v); store.set("calm", v); }
+$("bCalm").onclick = () => setCalm(!H.calm); setCalm(store.get("calm", matchMedia("(prefers-reduced-motion: reduce)").matches));
+let speakOn = store.get("speak", false); const setSpeak = v => { speakOn = v; $("bSpeak").classList.toggle("on", v); store.set("speak", v); }; setSpeak(speakOn);
+$("bSpeak").onclick = () => setSpeak(!speakOn);
+
+/* ================= rendering the state ================= */
+const VTAG = {supported: "data agrees", your_knowledge: "your knowledge", against_data: "against the data", undo: "undone", no_change: ""};
+function render(st, turn){
+  S = st; const moved = new Set((turn?.applied || []).map(a => a.index));
+  const name = st.runner.name.replace(" (best race hidden)", "");
+  $("who").innerHTML = `<strong>${esc(name)}</strong> · ${st.mode === "demo" ? "demo: her best race is hidden" : "runner"} · ${st.ai ? "AI on" : "offline rules"}`;
+  // races
+  const box = $("pRaces"); if (box.dataset.rid !== st.runner.id){ box.dataset.rid = st.runner.id;
+    box.innerHTML = st.races.map(r => `<div class="race" id="r${r.index}"><div class="rt"><span>${esc(r.event)} ${r.year} <span class="chip" id="c${r.index}"></span></span><b>${esc(r.finish)}</b></div>
+      <div class="srow"><input type="range" min="0" max="1" step="0.1" id="s${r.index}" aria-label="${esc(r.event)} ${r.year} weight"><span class="w" id="w${r.index}"></span></div>
+      <div class="pull"><i id="pu${r.index}"></i></div><div class="pl" id="pl${r.index}"></div></div>`).join("") +
+      `<div class="chips"><button class="sug" data-cmd="trust the recent races more">recent races count more</button><button class="sug" data-cmd="reset">equal weights</button><button class="sug" data-cmd="scratch that">undo</button></div>`;
+    st.races.forEach(r => $("s" + r.index).addEventListener("change", e => queue(async () => {
+      const d = await api("POST", `/api/hud/sessions/${sid}/weights`, {index: r.index, weight: parseFloat(e.target.value)}); addCard(d.card); render(d.state, d.turn); })));
+    shown.clear();
+  }
+  const maxPull = Math.max(60, ...st.races.map(r => Math.abs(r.influence.pull_s)));
+  st.races.forEach(r => { const ev = r.evidence, c = $("c" + r.index);
+    c.className = "chip " + (ev.direction > 0 ? "c-slow" : ev.direction < 0 ? "c-fast" : "c-typ"); c.textContent = ev.direction > 0 ? "slower than her others" : ev.direction < 0 ? "faster than her others" : "typical";
+    tween(r.index, r.weight); const p = r.influence.pull_s, w = Math.min(50, 50 * Math.abs(p) / maxPull), bar = $("pu" + r.index);
+    bar.style.left = (p >= 0 ? 50 : 50 - w) + "%"; bar.style.width = w + "%"; bar.style.background = p >= 0 ? "var(--hot)" : "var(--good)";
+    $("pl" + r.index).textContent = r.prediction_s == null ? "no similar runners" : Math.abs(p) < 5 ? "barely moves the prediction" : `pulls the prediction ${mmss(Math.abs(p))} ${p > 0 ? "slower" : "faster"}`;
+    if (moved.has(r.index)){ const el = $("r" + r.index); el.classList.remove("moved"); void el.offsetWidth; el.classList.add("moved"); } });
+  // prediction
+  const pr = st.prediction; $("fin").textContent = pr.finish;
+  const d = pr.finish_s - pr.initial_s; $("finDelta").textContent = Math.abs(d) < 1 ? "same as the model with equal weights" : `${fmtD(d)} vs equal weights (${pr.initial})`;
+  drawRange(pr, st.steering.coach_estimate_s, st.holdout?.truth_s);
+  const hb = $("hold");
+  if (st.holdout){ hb.innerHTML = st.holdout.revealed
+      ? `<div class="kv"><span>Her real best (${esc(st.holdout.label)})</span><b style="color:var(--good)">${fmt(st.holdout.truth_s)}</b></div>
+         <div class="kv"><span>Error now</span><b>${st.holdout.error_pct.toFixed(2)}%</b></div><div class="kv"><span>Equal weights</span><b>${st.holdout.equal_weights_error_pct.toFixed(2)}%</b></div>`
+      : `<div class="sub">Her best race (${esc(st.holdout.label)}) is hidden from the model, as in the paper's accuracy test. Each change tells you if it moved the prediction closer.</div><button class="btn" id="revealBtn" style="margin-top:8px">Reveal her real best</button>`;
+    $("revealBtn") && ($("revealBtn").onclick = () => send("reveal", "typed")); }
+  else hb.innerHTML = "";
+  // steering
+  const si = st.steering.index; $("pin").style.left = (si == null ? 0 : Math.max(0, Math.min(1.25, si)) / 1.25 * 100) + "%"; $("pin").style.opacity = si == null ? .25 : 1;
+  $("steerLbl").textContent = st.steering.label; $("sIdx").textContent = si == null ? "–" : si.toFixed(2);
+  $("sWhy").textContent = st.reasoned_share == null ? "–" : Math.round(st.reasoned_share * 100) + "%";
+  const rx = st.reactions; $("sReact").textContent = rx.n ? `👍 ${rx.agree} · 🤔 ${rx.unsure} · 👎 ${rx.disagree}` : "–";
+  // pacing, similar, log, hologram ring
+  drawPacing(st); drawSimilar(st);
+  $("pLog").innerHTML = st.change_log.length ? st.change_log.map(t => `<div class="note" style="padding:5px 0;border-top:1px solid rgba(120,210,255,.1)">${esc(t)}</div>`).join("") : `<div class="sub">No changes yet.</div>`;
+  const pa = st.plan.paces, avg = pa.reduce((a, b) => a + b, 0) / pa.length, km = [5, 5, 5, 5, 5, 5, 5, 5, 2.195];
+  H.ring = pa.map((p, i) => ({km: km[i], rel: (p - avg) / avg, label: ["5", "10", "15", "20", "25", "30", "35", "40", "42"][i]}));
+  H.cadence = Math.max(.7, Math.min(1.4, 300 / avg));
+  if (!store.get("layout." + persp, null)) stack(VIEWS[persp]);
+}
+const shown = new Map();
+function tween(i, target){ const sl = $("s" + i), from = shown.has(i) ? shown.get(i) : target, t0 = performance.now(); shown.set(i, target); $("w" + i).textContent = target.toFixed(1);
+  if (from === target){ sl.value = target; return; }
+  (function step(now){ const p = Math.min(1, (now - t0) / 700), e = 1 - Math.pow(1 - p, 3); sl.value = from + (target - from) * e; if (p < 1) requestAnimationFrame(step); })(t0); }
+function drawRange(pr, est, truth){
+  const el = $("rng"), vals = [pr.low_s, pr.high_s, pr.finish_s, est, truth].filter(v => v != null && isFinite(v)); if (!vals.length){ el.innerHTML = ""; return; }
+  const lo = Math.min(...vals) - 150, hi = Math.max(...vals) + 150, x = v => ((v - lo) / (hi - lo) * 100).toFixed(2) + "%";
+  let h = pr.low_s != null ? `<div class="bar" style="left:${x(pr.low_s)};width:calc(${x(pr.high_s)} - ${x(pr.low_s)})"></div><div class="lb" style="left:${x(pr.low_s)};top:30px;color:var(--muted)">${fmt(pr.low_s)}</div><div class="lb" style="left:${x(pr.high_s)};top:30px;color:var(--muted)">${fmt(pr.high_s)}</div>` : "";
+  h += `<div class="mk" style="left:${x(pr.finish_s)};background:var(--holo2);box-shadow:0 0 10px var(--holo)"></div>`;
+  if (est != null) h += `<div class="mk" style="left:${x(est)};background:var(--hot)"></div><div class="lb" style="left:${x(est)};top:-4px;color:var(--hot)">you ${fmt(est)}</div>`;
+  if (truth != null) h += `<div class="mk" style="left:${x(truth)};background:var(--good)"></div><div class="lb" style="left:${x(truth)};top:-4px;color:var(--good)">real ${fmt(truth)}</div>`;
+  el.innerHTML = h;
+}
+function svgEl(svg, tag, a){ const e = document.createElementNS("http://www.w3.org/2000/svg", tag); for (const k in a) e.setAttribute(k, a[k]); svg.appendChild(e); return e; }
+function svgTx(svg, x, y, s, a = {}){ const t = svgEl(svg, "text", Object.assign({x, y, fill: "#8EA9C4", "font-size": 10, "font-family": "ui-monospace,monospace"}, a)); t.textContent = s; return t; }
+function drawPacing(st){
+  const svg = $("paceSvg"); svg.innerHTML = ""; const km = [5, 5, 5, 5, 5, 5, 5, 5, 2.195], p = st.plan.paces, secs = p.map((v, i) => v * km[i]), per5 = p.map(v => v * 5);
+  const mn = Math.min(...per5) - 20, mx = Math.max(...per5) + 6;
+  per5.forEach((v, i) => { const x = 6 + i * 32.5, h = (v - mn) / (mx - mn) * 96 + 6, y = 128 - h;
+    svgEl(svg, "rect", {x, y, width: 24, height: h, rx: 4, fill: i < 8 ? "rgba(98,227,255,.55)" : "rgba(98,227,255,.25)"});
+    svgTx(svg, x + 12, y - 4, mmss(secs[i]), {"text-anchor": "middle", fill: "#E4F3FF", "font-size": 9});
+    svgTx(svg, x + 12, 142, st.plan.labels[i].split("-")[1], {"text-anchor": "middle"}); });
+  $("paceNote").textContent = `Plan ${fmt(st.plan.finish_s)} · time per 5 km` + (st.plan.check?.verdict ? ` · ${st.plan.check.verdict}` : "");
+}
+function drawSimilar(st){
+  const svg = $("simSvg"); svg.innerHTML = ""; const rows = st.similar.map((s, i) => s && {s, r: st.races[i]}).filter(Boolean); if (!rows.length) return;
+  const all = rows.flatMap(x => x.s.finishes_s), lo = Math.min(...all) - 60, hi = Math.max(...all) + 60, X = v => 86 + (v - lo) / (hi - lo) * 204;
+  const rh = Math.min(34, 170 / rows.length);
+  rows.forEach(({s, r}, k) => { const y = 14 + k * rh, w = st.races[r.index].weight;
+    svgTx(svg, 0, y + 4, `${r.event.slice(0, 9)} ${String(r.year).slice(2)}`, {fill: w > 0 ? "#E4F3FF" : "#56708a"}); svgTx(svg, 0, y + 15, `weight ${w.toFixed(1)}`, {"font-size": 8});
+    svgEl(svg, "line", {x1: 86, x2: 290, y1: y, y2: y, stroke: "rgba(120,210,255,.12)"});
+    s.finishes_s.forEach(v => svgEl(svg, "circle", {cx: X(v), cy: y, r: 2.6, fill: `rgba(98,227,255,${.25 + .6 * w})`}));
+    svgEl(svg, "line", {x1: X(s.median_s), x2: X(s.median_s), y1: y - 7, y2: y + 7, stroke: "#fff", "stroke-width": 1.5}); });
+  const fy = 14 + rows.length * rh; svgEl(svg, "line", {x1: X(st.prediction.finish_s), x2: X(st.prediction.finish_s), y1: 4, y2: fy - 10, stroke: "#9AF0FF", "stroke-dasharray": "3 3"});
+  svgTx(svg, X(st.prediction.finish_s), fy, "prediction " + fmt(st.prediction.finish_s), {"text-anchor": "middle", fill: "#9AF0FF"});
+  svgTx(svg, 86, fy + 12, fmt(lo + 60)); svgTx(svg, 290, fy + 12, fmt(hi - 60), {"text-anchor": "end"});
+}
+function addCard(card, reply){
+  if (!card) return; const feed = $("pFeed"); if (feed.querySelector(".sub")) feed.innerHTML = "";
+  const div = document.createElement("div"); div.className = "card";
+  const acc = card.accuracy ? `<div class="acc ${card.accuracy.closer ? "up" : card.accuracy.same ? "" : "down"}">${card.accuracy.closer ? "▲" : card.accuracy.same ? "■" : "▼"} ${esc(card.accuracy.text)}${S?.holdout?.revealed ? ` (${card.accuracy.after_pct.toFixed(2)}% off)` : ""}</div>` : "";
+  div.innerHTML = `<div class="said">“${esc(card.said)}”</div>` +
+    card.items.map(i => `<div class="it v-${i.verdict}"><span class="tag">${VTAG[i.verdict] || ""}</span>${esc(i.race)} <b>${i.old.toFixed(1)} → ${i.new.toFixed(1)}</b><div class="note">${esc(i.evidence)}</div></div>`).join("") +
+    card.notes.map(n => `<div class="note">${esc(n)}</div>`).join("") +
+    (card.items.length ? `<div class="note"><b style="color:#fff">Target ${esc(card.target)} (${esc(card.target_delta)})</b>${card.range ? ` · likely ${esc(card.range[0])}–${esc(card.range[1])}` : ""}</div>` : "") + acc +
+    (card.suggestions.length ? `<div class="chips">${card.suggestions.map(s => `<button class="sug" data-cmd="${esc(s)}">${esc(s)}</button>`).join("")}</div>` : "") +
+    (card.items.length ? `<div class="react"><button data-v="agree">Makes sense</button><button data-v="unsure">Not sure</button><button data-v="disagree">Disagree</button></div>` : "");
+  div.querySelectorAll(".react button").forEach(b => b.onclick = () => queue(async () => {
+    const r = await api("POST", `/api/hud/sessions/${sid}/react`, {turn: card.n, value: b.dataset.v});
+    div.querySelectorAll(".react button").forEach(x => x.classList.toggle("on", x === b));
+    $("sReact").textContent = `👍 ${r.agree} · 🤔 ${r.unsure} · 👎 ${r.disagree}`;
+    if (b.dataset.v !== "agree") showPanel("chat", false); }));
+  feed.prepend(div); while (feed.children.length > 12) feed.lastChild.remove();
+  setSuggestions(card.suggestions);
+}
+function chat(who, text, extra = ""){ const c = $("pChat"); if (c.querySelector(".sub")) c.innerHTML = "";
+  const d = document.createElement("div"); d.className = "card"; d.innerHTML = `<div class="tag" style="color:${who === "you" ? "var(--muted)" : "var(--holo2)"}">${who}</div><div style="white-space:pre-wrap">${esc(text)}</div>${extra}`;
+  c.prepend(d); while (c.children.length > 30) c.lastChild.remove(); }
+function setSuggestions(list){ const def = ["show the simulator", "trust the recent races more", "which race pulls the prediction most?", "switch to runner view"];
+  $("sugBar").innerHTML = (list && list.length ? list : def).slice(0, 4).map(s => `<button class="sug" data-cmd="${esc(s)}">${esc(s)}</button>`).join(""); }
+document.addEventListener("click", e => { const b = e.target.closest(".sug"); if (b && b.dataset.cmd) send(b.dataset.cmd, "typed"); });
+
+/* ================= commands ================= */
+function showReply(text){ const r = $("reply"); $("replyText").innerHTML = esc(text).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\n/g, "<br>"); r.classList.add("show");
+  clearTimeout(showReply.h); showReply.h = setTimeout(() => r.classList.remove("show"), Math.max(7000, text.length * 70)); if (speakOn) say(text); }
+function send(text, source){ text = (text || "").trim(); if (!text || !sid) return; caption(text, false); chat("you", text);
+  return queue(async () => {
+    const d = await api("POST", `/api/hud/sessions/${sid}/command`, {text, source});
+    await doActions(d.actions || [], d);
+    if (d.card){ addCard(d.card); bodyReacts(d.card); }
+    render(d.state, d.turn);
+    showReply(d.reply); chat("pacesense", d.reply, d.steps?.length ? `<div class="note">calculated with: ${d.steps.map(s => esc(s.function)).join(", ")}</div>` : "");
+  }); }
+async function doActions(actions, d){
+  for (const a of actions){
+    if (a.type === "focus") showPanel(a.panel);
+    else if (a.type === "close") hidePanel(a.panel);
+    else if (a.type === "perspective") applyView(a.value);
+    else if (a.type === "calm") setCalm(a.value);
+    else if (a.type === "layout"){ store.set("layout." + persp, null); applyView(persp); }
+    else if (a.type === "runner") await openRunner(a.id === "demo" ? "demo" : a.id);
+    else if (a.type === "simulate"){ showPanel("simulator"); $("tC").value = a.temp_c; $("wK").value = a.wind_kmh; $("prof").value = a.profile; simLabels(); if (d.simulation) playSim(d.simulation); }
+    else if (a.type === "reveal") showPanel("prediction");
+  }
+}
+$("q").addEventListener("keydown", e => { if (e.key === "Enter"){ const v = $("q").value; $("q").value = ""; send(v, "typed"); } });
+$("send").onclick = () => { const v = $("q").value; $("q").value = ""; send(v, "typed"); };
+document.addEventListener("keydown", e => { if (document.activeElement.tagName === "INPUT") return;
+  if (e.key === "/"){ e.preventDefault(); $("q").focus(); } else if (e.key === "m" || e.key === "M") toggleMic(); else if (e.key === "Escape"){ $("help").classList.remove("open"); $("menu").classList.remove("open"); } });
+function caption(t, interim){ $("caption").innerHTML = interim ? `<span class="interim">${esc(t)}</span>` : esc(t); clearTimeout(caption.h); if (!interim) caption.h = setTimeout(() => $("caption").innerHTML = "", 5000); }
+
+/* ================= voice: continuous listening + spoken replies ================= */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition; let rec = null, listening = false, speaking = false;
+function toggleMic(){
+  if (listening){ listening = false; rec && (rec.onend = null, rec.stop()); $("mic").classList.remove("on"); toast("Stopped listening"); return; }
+  if (!SR){ toast("No speech recognition in this browser: use Chrome or Edge, or type."); return; }
+  rec = new SR(); rec.continuous = true; rec.interimResults = true; rec.lang = navigator.language?.startsWith("en") ? navigator.language : "en-US";
+  rec.onresult = e => { let interim = ""; for (let i = e.resultIndex; i < e.results.length; i++){ const r = e.results[i]; if (r.isFinal){ const t = r[0].transcript.trim(); if (t) send(t, "voice"); } else interim += r[0].transcript; } if (interim) caption(interim, true); };
+  rec.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed"){ listening = false; $("mic").classList.remove("on"); toast("Allow the microphone for this page."); } };
+  rec.onend = () => { if (listening && !speaking) try { rec.start(); } catch {} };
+  rec.start(); listening = true; $("mic").classList.add("on"); toast("Listening continuously. Just talk.");
+}
+$("mic").onclick = toggleMic;
+function say(text){ if (!("speechSynthesis" in window)) return; const u = new SpeechSynthesisUtterance(text.replace(/\*\*/g, "").slice(0, 400)); u.rate = 1.02; u.pitch = .95;
+  speaking = true; if (rec && listening) try { rec.stop(); } catch {}
+  u.onend = u.onerror = () => { speaking = false; if (rec && listening) try { rec.start(); } catch {} }; speechSynthesis.cancel(); speechSynthesis.speak(u); }
+
+/* ================= simulator ================= */
+function simLabels(){ $("tCv").textContent = $("tC").value + "°C"; $("wKv").textContent = $("wK").value; }
+["tC", "wK"].forEach(id => $(id).addEventListener("input", simLabels)); simLabels();
+$("play").onclick = () => queue(async () => playSim(await api("POST", `/api/hud/sessions/${sid}/simulate`, {temp_c: +$("tC").value, wind_kmh: +$("wK").value, profile: $("prof").value})));
+let simRun = 0;
+function playSim(sim){
+  const run = ++simRun, fr = sim.frames, svg = $("simChart"); svg.innerHTML = "";
+  const ds = fr.map(f => f.delta_s), lo = fr.map(f => f.low_s - f.plan_s), hi = fr.map(f => f.high_s - f.plan_s);
+  const ymin = Math.min(-60, ...ds, ...lo), ymax = Math.max(60, ...ds, ...hi), X = km => 26 + km / 42.195 * 268, Y = v => 8 + (ymax - v) / (ymax - ymin) * 104;
+  let band = fr.map(f => `${X(f.km)},${Y(f.high_s - f.plan_s)}`).join(" ") + " " + [...fr].reverse().map(f => `${X(f.km)},${Y(f.low_s - f.plan_s)}`).join(" ");
+  svgEl(svg, "polygon", {points: band, fill: "rgba(98,227,255,.12)"});
+  svgEl(svg, "line", {x1: 26, x2: 294, y1: Y(0), y2: Y(0), stroke: "rgba(228,243,255,.35)", "stroke-dasharray": "3 3"});
+  svgTx(svg, 0, Y(0) + 3, "plan"); svgTx(svg, 0, 12, "+" + mmss(ymax)); svgTx(svg, 0, 116, "−" + mmss(Math.abs(ymin)));
+  [0, 10, 21.1, 30, 42.2].forEach(k => svgTx(svg, X(k), 128, k + "", {"text-anchor": "middle"}));
+  const path = svgEl(svg, "polyline", {points: "", fill: "none", stroke: "#FF9AA1", "stroke-width": 2});
+  const dot = svgEl(svg, "circle", {r: 3.5, fill: "#fff"});
+  const s = sim.summary; let i = 0; const pts = [];
+  H.heat = Math.max(0, Math.min(1, (s.temp_c - 11) / 18));
+  (function step(){ if (run !== simRun) return; const f = fr[i]; pts.push(`${X(f.km)},${Y(f.delta_s)}`); path.setAttribute("points", pts.join(" "));
+    dot.setAttribute("cx", X(f.km)); dot.setAttribute("cy", Y(f.delta_s)); H.marker = f.km / 42.195; H.cadence = Math.max(.6, Math.min(1.5, 300 / f.pace_s)); H.legs = Math.max(H.legs, Math.min(1, f.delta_s / 600));
+    $("simRead").innerHTML = `${f.km.toFixed(1)} km · ${fmt(f.sim_s)} · <span style="color:${f.delta_s > 15 ? "var(--hot)" : f.delta_s < -15 ? "var(--good)" : "var(--holo2)"}">${fmtD(f.delta_s)}</span><br>${esc(f.cue)}`;
+    if (++i < fr.length) setTimeout(step, H.calm ? 90 : 45);
+    else { H.marker = null; $("simRead").innerHTML += `<br><b style="color:#fff">Finish ${fmt(s.sim_finish_s)} (${fmtD(s.delta_s)} vs plan)</b>${s.inside_range ? " · inside the likely range" : " · outside the likely range"}${s.conditions_pct ? ` · conditions cost about ${s.conditions_pct}%` : ""}`; } })();
+}
+
+/* ================= start ================= */
+async function openRunner(id){
+  const d = await api("POST", "/api/hud/sessions", {runner_id: id || "demo"}); sid = d.id; $("pFeed").innerHTML = `<div class="sub">Every change you make appears here: what moved, what the data says, and whether it brought the prediction closer.</div>`;
+  $("pRaces").dataset.rid = ""; H.heat = 0; render(d.state, null); setSuggestions();
+  const slow = d.state.races.find(r => r.evidence.direction > 0);
+  showReply(`Planning for ${d.state.runner.name.replace(" (best race hidden)", "")}. ` + (d.state.mode === "demo" ? "Her best race is hidden: talk about her races and I'll tell you if the prediction gets closer. " : "") +
+            (slow ? `Try: “${slow.year} was a hot day and she was injured”.` : "Tell me about her races."));
+}
+$("bDemo").onclick = () => queue(() => openRunner("demo"));
+async function loadRecord(){ try { const r = await api("GET", "/api/hud/track-record");
+  $("pRec").innerHTML = r.n ? `<div class="kv"><span>Plans with a recorded result</span><b>${r.n}</b></div><div class="kv"><span>Your plans' error</span><b>${r.plan_error_pct.toFixed(2)}%</b></div><div class="kv"><span>Model with your weights</span><b>${r.model_with_weights_error_pct.toFixed(2)}%</b></div><div class="kv"><span>Model on its own</span><b>${r.model_default_error_pct.toFixed(2)}%</b></div><div class="kv"><span>Your plan beat the model</span><b>${r.plan_better_than_model} of ${r.n}</b></div>`
+    : `<div class="sub">The long feedback loop: save plans in the dashboard and record each race result afterwards. This panel then shows whether your adjustments beat the model over time.</div>`; } catch {} }
+applyView(persp, false); loadRecord();
+queue(() => openRunner("demo"));
+window.__hud = {H, state: () => S, send};
+})();
+</script>
+</body>
+</html>

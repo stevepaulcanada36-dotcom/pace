@@ -138,7 +138,7 @@ def route(text: str, hud: Any, source: str = "typed") -> Routed:
         if strong or it.estimate_s is not None or (it.actions and not actions):
             turn = hud.steer.hear(rest, source)
             if turn.applied or turn.estimate_s is not None or turn.source == "undo" or turn.notes:
-                out.turn = turn.to_dict()
+                out.turn = {**turn.to_dict(), "said": text}
                 out.actions.append({"type": "refresh"})
                 out.used.append("steer")
                 steered = True

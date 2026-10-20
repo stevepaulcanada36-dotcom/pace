@@ -13,3 +13,4 @@ config/local.yaml
 # Outputs of `pacesense reproduce` (keep results/manifest.json if you want to publish it)
 results/
 live.sqlite3*
+hud.sqlite3*

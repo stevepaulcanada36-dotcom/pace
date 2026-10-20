@@ -86,7 +86,7 @@ class HudSession:
         st = self.steer.state()
         pr = st["prediction"]
         delta = turn["finish_after_s"] - turn["finish_before_s"]
-        card = {"n": turn["n"], "said": turn["text"], "items": items, "notes": turn["notes"],
+        card = {"n": turn["n"], "said": turn.get("said", turn["text"]), "items": items, "notes": turn["notes"],
                 "target": pr["finish"], "target_delta": None if not items else _signed(delta),
                 "range": [format_time(pr["low_s"]), format_time(pr["high_s"])] if pr["low_s"] else None,
                 "steering": st["steering"], "suggestions": []}

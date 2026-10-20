@@ -47,6 +47,66 @@ pacesense simulate --data data/races.csv --coaches 71 --db study.sqlite3   # sim
 pacesense analyze  --db study.sqlite3 --out report.md  # the paper's Section 5 analyses
 ```
 
+## Command center: the 3D, voice-driven workspace
+
+```bash
+pacesense hud --data data/races.csv          # opens http://127.0.0.1:8000/hud
+```
+
+A holographic runner turns slowly in the middle of the screen, running at the pace of the current plan; the ring
+around her is the pacing plan (warmer sections are slower). Drag her to look around. Glass panels sit around her:
+past races and their weights, the prediction and likely range, the steering meter, the feedback loop, the pacing
+plan, runners like her, the race-day simulator, the change log, the track record and the conversation.
+
+**One command bar, by voice or typing.** Chrome and Edge listen continuously (they send audio to their own speech
+service); typing works everywhere; "Speak" reads replies aloud and pauses the microphone meanwhile.
+
+| You say | What happens |
+|---|---|
+| "2014 was a hot day and she was injured", "ignore the first race", "I think she can run 3:30", "scratch that" | race weights move (PaceSense Live's interpreter), with a feedback card |
+| "show the simulator", "hide the change log", "switch to runner view", "calm mode", "reset the layout" | the screen changes |
+| "simulate 26 degrees with a 15 km/h headwind", "what if she starts too fast" | the race is replayed on the ring and the chart |
+| "why is the likely range so wide?", "is my plan realistic?" | the assistant answers with PaceSense's own functions (OpenRouter with a key, the offline helper without) |
+
+The hologram reacts to what you say: legs flash for an injury, the body warms for heat, the chest glows for a best
+race. Rules: `hud/commands.py`; "simulate a hot day" never lowers a race, because interface commands are taken out
+of the sentence before the race interpreter reads it.
+
+**Views.** *Coach* (races, prediction, steering, feedback, simulator), *Runner* (prediction, pacing, simulator:
+no statistics), *Researcher* (races, runners like her, prediction, track record, steering, feedback). Drag panels
+by their title, hide them with ×, or pick them under ▦ Panels; each view remembers its own arrangement in this
+browser. ☾ Calm slows everything down (and is the default if your system asks for reduced motion).
+
+**The feedback loop.** The paper's sliders gave a number back, never a reason. Here every change gets a card: what
+you said, what moved, whether the runner's own races agree (*data agrees* / *your knowledge* / *against the
+data*), what it did to the target and range, two or three next steps, and buttons to say whether it makes sense
+(reactions are counted in the steering panel). In demo mode the runner's fastest recent race is hidden, as in the
+paper's accuracy test, so each card also says whether the change moved the prediction **closer to her real
+result**; "reveal" shows it. With real runners, the track record panel compares saved plans with recorded results.
+
+**Race-day simulator.** Heat (no effect up to 11 °C, then about 0.3 % per °C, growing through the race and larger
+for slower runners), headwind and three runner behaviours; the band is the likely range. The heat and wind numbers
+are stated assumptions, not fitted, and can be changed under `simulator:` in `config/pacesense.yaml`.
+
+## Real data (Kaggle) and tuning
+
+```bash
+pacesense import marathon_results_2015.csv marathon_results_2016.csv marathon_results_2017.csv --out data/boston.csv
+pacesense tune --data data/boston.csv            # add --write to use the chosen settings everywhere
+pacesense hud --data data/boston.csv
+```
+
+`import` reads Kaggle-style results files (Boston 2015-2017 is recognised by its columns; other files by column
+names such as `name`, `gender`/`sex`, `age`, `5k`...`40k`, `finish`/`net time`; or `--map finish="Net Time"`).
+Results files have no runner id, so the same runner is linked across years by normalised name, gender and birth
+year (year − age, ±1); runners who share a name, gender and birth year in one race are left unlinked rather than
+guessed. Everything dropped is counted, and the report is saved next to the output (`…csv.import.json`).
+
+`tune` searches the model's settings (similar runners k, time window, pacing and age weights) with the paper's
+hold-out protocol: settings are chosen on one seeded sample of runners and the error is reported on a different
+one, so the number is not flattered by the search. `--write` only saves settings that beat the defaults on the
+held-out runners.
+
 ## PaceSense Live: talk to the sliders (proposal)
 
 ```bash
@@ -222,6 +282,10 @@ src/pacesense/
   steer/                PaceSense Live: intent.py (words → weight changes), evidence.py (data checks, influence,
                         steering index), recency.py, session.py (SteeringSession, undo, replay),
                         llm_interpret.py (checked AI reader), benchmark.py
+  hud/                  command center: session.py (feedback loop, demo hold-out), commands.py (one command bar),
+                        sim.py (race-day simulator); the page is resources/hud.html
+  importers.py          `pacesense import`: Kaggle-style results → race CSV, linking runners across years
+  tuning.py             `pacesense tune`: held-out grid search; model settings from config (`model:`)
   repro.py              `pacesense reproduce`: the pipeline, the manifest and --check
   planning.py           PlanSession: weights, strategies, pace edits, change log (no UI code)
   racewatch.py          race-day watch: km splits, status and cues, race simulation, pace band exports
@@ -452,7 +516,7 @@ keep `pacesense serve` bound to localhost or place any public deployment behind 
 
 ```bash
 pip install -e ".[dev]"
-python -m unittest discover -s tests -t .     # 175 tests
+python -m unittest discover -s tests -t .     # 195 tests
 ```
 
 They cover PaceSense Live (interpreter, evidence statistics, sessions, replay, benchmark floors, the checked AI

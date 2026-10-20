@@ -28,3 +28,9 @@ voice:
 # and simulated coaches. `pacesense reproduce` records it in results/manifest.json.
 reproducibility:
   seed: 20240318
+
+# Race-day simulator (command center). These are stated assumptions, not fitted on data; see src/pacesense/hud/sim.py.
+simulator:
+  heat_start_c: 11      # no heat effect at or below this temperature
+  heat_pct_per_c: 0.30  # average slowdown per °C above it (about 4 % at 25 °C)
+  wind_pct: 0.05        # headwind cost: wind_pct * (m/s)^2, halved for a course that is not all into the wind
