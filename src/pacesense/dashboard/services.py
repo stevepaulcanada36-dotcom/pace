@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from ..tuning import configured_cbr
 from ..cbr import CaseBase, MarathonModel
 from ..coach import CoachService
 from ..data import load_csv, synthetic_runners
@@ -36,7 +37,7 @@ def build_services(db_path: str = "pacesense.sqlite3", data_path: str | None = N
         source = os.path.basename(data_path)
     else:
         runners, source = synthetic_runners(), "synthetic demo data"
-    model = MarathonModel(CaseBase(runners))
+    model = MarathonModel(CaseBase(runners, configured_cbr()))
     repo = Repository(db_path)
     study = StudyService(model, runners, repo, data_source=source, seed=seed)
     return Services(CoachService(model, runners, repo), study, repo, source, admin_token or None, assignment)

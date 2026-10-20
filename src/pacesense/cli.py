@@ -11,6 +11,7 @@ from .cbr import CaseBase, MarathonModel, validate_model
 from .data import load_csv, runners_to_frame, synthetic_runners
 from .domain import SEGMENT_LABELS, ValidationError, format_time, pace_per_km
 from .repro import configured_seed
+from .tuning import configured_cbr
 from .storage import Repository
 from .study import StudyService
 
@@ -35,7 +36,7 @@ def cmd_generate(args) -> int:
 
 def cmd_validate(args) -> int:
     runners, _ = _runners(args)
-    model = MarathonModel(CaseBase(runners))
+    model = MarathonModel(CaseBase(runners, configured_cbr()))
     v = validate_model(model, runners, n=args.n, seed=args.seed)
     print(f"Case base: {len(model.case_base):,} cases")
     print(f"Leave-best-out validation on {v.n} runners (equal weights):")
@@ -47,7 +48,7 @@ def cmd_validate(args) -> int:
 
 def cmd_predict(args) -> int:
     runners, _ = _runners(args)
-    model = MarathonModel(CaseBase(runners))
+    model = MarathonModel(CaseBase(runners, configured_cbr()))
     by_id = {r.runner_id: r for r in runners}
     if args.runner not in by_id:
         print(f"Runner {args.runner} not found", file=sys.stderr)
@@ -69,7 +70,7 @@ def cmd_predict(args) -> int:
 def cmd_simulate(args) -> int:
     from .simulate import simulate_study
     runners, source = _runners(args)
-    service = StudyService(MarathonModel(CaseBase(runners)), runners, Repository(args.db), data_source=source, seed=args.seed)
+    service = StudyService(MarathonModel(CaseBase(runners, configured_cbr())), runners, Repository(args.db), data_source=source, seed=args.seed)
     ids = simulate_study(service, n_coaches=args.coaches, seed=args.seed)
     print(f"Simulated {len(ids)} coaches into {args.db} (simulated data - not evidence about real coaches)")
     return 0
@@ -165,6 +166,36 @@ def cmd_live(args) -> int:
     return 0
 
 
+def cmd_import(args) -> int:
+    from .importers import write_import
+    overrides = dict(x.split("=", 1) for x in (args.map or []))
+    rep = write_import(args.files, args.out, event=args.event, year=args.year, column_map=overrides or None)
+    print(rep.text())
+    print(f"Wrote {args.out} (and {args.out}.import.json). Next:  pacesense tune --data {args.out}")
+    return 0
+
+
+def cmd_tune(args) -> int:
+    from .tuning import tune, write_model_config
+    from .llm.config import config_dir
+    import json
+    runners, _ = _runners(args)
+    print(f"Tuning on {len(runners):,} runners (grid search, held-out test; seed {args.seed})…")
+    res = tune(runners, n=args.n, seed=args.seed, log=print)
+    print(res.text())
+    out = Path(args.out); out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({**res.__dict__}, indent=2, default=float), encoding="utf-8")
+    print(f"Full grid: {out}")
+    if args.write and not res.improves and not args.force:
+        print("Not saved: the tuned settings did not beat the defaults on the held-out runners (use --force to save).")
+    elif args.write:
+        write_model_config(res.best, config_dir() / "pacesense.yaml")
+        print("Saved to config/pacesense.yaml (model:). Every command now uses these settings.")
+    else:
+        print("Add --write to use these settings everywhere.")
+    return 0
+
+
 def cmd_reproduce(args) -> int:
     from .repro import Params, check, run_pipeline
     if args.check:
@@ -227,6 +258,18 @@ def build_parser() -> argparse.ArgumentParser:
     lv.add_argument("--db", default="live.sqlite3"); lv.add_argument("--host", default="127.0.0.1")
     lv.add_argument("--port", type=int, default=8000); lv.add_argument("--no-browser", action="store_true")
     lv.set_defaults(fn=cmd_live)
+
+    im = sub.add_parser("import", help="import real results (e.g. Kaggle Boston 2015-2017) into a race CSV")
+    im.add_argument("files", nargs="+"); im.add_argument("--out", default="data/real_races.csv")
+    im.add_argument("--event", help="event name if not in the file name"); im.add_argument("--year", type=int)
+    im.add_argument("--map", nargs="*", help="column names, e.g. finish='Net Time' gender=Sex s5='5K split'")
+    im.set_defaults(fn=cmd_import)
+
+    tu = sub.add_parser("tune", help="choose the model's settings on your data (held-out test)"); data_opts(tu)
+    tu.add_argument("--n", type=int, default=300, help="runners for choosing (and as many for testing)")
+    tu.add_argument("--out", default="results/tune.json"); tu.add_argument("--write", action="store_true")
+    tu.add_argument("--force", action="store_true", help="save even if not better than the defaults")
+    tu.set_defaults(fn=cmd_tune)
 
     rp = sub.add_parser("reproduce", help="rebuild every reported number and write a manifest (or --check one)")
     rp.add_argument("--out", default="results"); rp.add_argument("--data", help="race CSV (default: synthetic)")

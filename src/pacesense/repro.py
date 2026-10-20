@@ -141,6 +141,7 @@ def run_pipeline(out: Path, p: Params, log: Callable[[str], None] = print) -> di
     from .steer.recency import fit_half_life
     from .storage import Repository
     from .study import StudyService
+    from .tuning import configured_cbr
 
     out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
@@ -160,7 +161,7 @@ def run_pipeline(out: Path, p: Params, log: Callable[[str], None] = print) -> di
         source = "synthetic"
         log(f"1/5 data: {len(runners):,} synthetic runners (seed {p.seed})")
     data_hash = sha256_file(data_path)
-    model = MarathonModel(CaseBase(runners))
+    model = MarathonModel(CaseBase(runners, configured_cbr()))
 
     # 2. validation
     v = validate_model(model, runners, n=p.validate_n, seed=p.seed)
@@ -201,6 +202,7 @@ def run_pipeline(out: Path, p: Params, log: Callable[[str], None] = print) -> di
     manifest = {
         "manifest_version": MANIFEST_VERSION,
         "command": "pacesense reproduce",
+        "model_settings": {k: v for k, v in configured_cbr().__dict__.items()},
         "parameters": {"seed": p.seed, "n_runners": p.n_runners, "validate_n": p.validate_n,
                        "recency_n": p.recency_n, "coaches": p.coaches, "data": Path(p.data).name if p.data else None},
         "inputs": {"data_sha256": data_hash, "config_sha256": _config_hash(),

@@ -17,6 +17,7 @@ import logging
 import os
 from typing import Callable, Iterable
 
+from ..tuning import configured_cbr
 from ..cbr import CaseBase, MarathonModel
 from ..coach import CoachService
 from ..data import load_csv, synthetic_runners
@@ -58,7 +59,7 @@ def build_service(db_path: str, data_path: str | None = None, seed: int | None =
         source = os.path.basename(data_path)
     else:
         runners, source = synthetic_runners(), "synthetic-demo"
-    return StudyService(MarathonModel(CaseBase(runners)), runners, Repository(db_path), data_source=source, seed=seed)
+    return StudyService(MarathonModel(CaseBase(runners, configured_cbr())), runners, Repository(db_path), data_source=source, seed=seed)
 
 
 def app_from_env() -> App:
