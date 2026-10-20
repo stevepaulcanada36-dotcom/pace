@@ -143,6 +143,12 @@ def cmd_serve(args) -> int:
     return 0
 
 
+def cmd_hud(args) -> int:
+    """The command center: 3D hologram, voice, panels; same model and services."""
+    args.page = "hud"
+    return cmd_live(args)
+
+
 def cmd_live(args) -> int:
     """PaceSense Live: talk to the model in the browser; the sliders follow (needs no extra packages)."""
     import webbrowser
@@ -154,9 +160,9 @@ def cmd_live(args) -> int:
         daemon_threads = True
 
     app = App(build_service(args.db, args.data, args.seed))
-    url = f"http://{args.host}:{args.port}/live"
+    url = f"http://{args.host}:{args.port}/{getattr(args, 'page', 'live')}"
     with make_server(args.host, args.port, app, server_class=ThreadingServer) as httpd:
-        print(f"PaceSense Live: open {url}  (Chrome or Edge for continuous listening; Ctrl+C to stop)")
+        print(f"PaceSense: open {url}  (Chrome or Edge for continuous listening; Ctrl+C to stop)")
         if not args.no_browser:
             webbrowser.open(url)
         try:
@@ -258,6 +264,11 @@ def build_parser() -> argparse.ArgumentParser:
     lv.add_argument("--db", default="live.sqlite3"); lv.add_argument("--host", default="127.0.0.1")
     lv.add_argument("--port", type=int, default=8000); lv.add_argument("--no-browser", action="store_true")
     lv.set_defaults(fn=cmd_live)
+
+    hd = sub.add_parser("hud", help="the 3D command center (hologram, voice, panels; opens the browser)"); data_opts(hd)
+    hd.add_argument("--db", default="hud.sqlite3"); hd.add_argument("--host", default="127.0.0.1")
+    hd.add_argument("--port", type=int, default=8000); hd.add_argument("--no-browser", action="store_true")
+    hd.set_defaults(fn=cmd_hud)
 
     im = sub.add_parser("import", help="import real results (e.g. Kaggle Boston 2015-2017) into a race CSV")
     im.add_argument("files", nargs="+"); im.add_argument("--out", default="data/real_races.csv")

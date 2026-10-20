@@ -23,7 +23,7 @@ from ..coach import CoachService
 from ..data import load_csv, synthetic_runners
 from ..storage import Repository
 from ..study import StudyService
-from . import coach_api, steer_api, study_api
+from . import coach_api, hud_api, steer_api, study_api
 from .core import Router, WSGIApp
 
 
@@ -35,13 +35,14 @@ class App:
         self.service = service
         self.coach = coach or CoachService(service.model, service.runners, service.repo)
         router = Router()
-        router.add("GET", "/", lambda req: {"name": "PaceSense API", "dashboard": "run `pacesense dashboard`", "live": "/live",
+        router.add("GET", "/", lambda req: {"name": "PaceSense API", "dashboard": "run `pacesense dashboard`", "live": "/live", "command_center": "/hud",
                                             "endpoints": sorted({p.pattern.strip("^$") for _, p, _ in router.routes})})
         router.add("GET", "/health", lambda req: {"status": "ok", "runners": len(service.runners),
                                                   "cases": len(service.model.case_base)})
         study_api.register(router, service, admin_token, default_assignment)
         coach_api.register(router, self.coach)
         steer_api.register(router, self.coach, ai_factory or self._default_ai)
+        hud_api.register(router, self.coach, ai_factory or self._default_ai)
         self._wsgi = WSGIApp(router, cors_origin)
 
     def _default_ai(self):

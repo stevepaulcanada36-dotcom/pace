@@ -94,10 +94,13 @@ class SteeringSession:
         r = self.races[i]
         return f"{r['event']} {r['year']}"
 
-    def _set(self, turn: Turn, i: int, new: float, cue: str, reasoned: bool) -> None:
+    def _set(self, turn: Turn, i: int, new: float, cue: str, reasoned: bool, say_if_unchanged: bool = False) -> None:
         new = round(min(1.0, max(0.0, new)), 1)
         old = self.plan.weights[i]
         if new == old:
+            if say_if_unchanged:
+                what = "counts for nothing" if old == 0 else "counts fully" if old == 1 else f"is at {old:.1f}"
+                turn.notes.append(f"{self._name(i)} already {what} (heard \"{cue}\").")
             return
         try:
             change = self.plan.set_weight(i, new)
@@ -164,10 +167,11 @@ class SteeringSession:
                 self._set(turn, i, w, a.cue, True)
         elif a.kind == "set":
             for i in a.races:
-                self._set(turn, i, float(a.value), a.cue, reasoned=not a.cue.split()[0] in ("to", "at", "of", "=", "weight", "weighted"))
+                self._set(turn, i, float(a.value), a.cue, reasoned=not a.cue.split()[0] in ("to", "at", "of", "=", "weight", "weighted"),
+                          say_if_unchanged=True)
         elif a.kind == "shift":
             for i in a.races:
-                self._set(turn, i, self.plan.weights[i] + float(a.value), a.cue, True)
+                self._set(turn, i, self.plan.weights[i] + float(a.value), a.cue, True, say_if_unchanged=True)
 
     def manual(self, i: int, weight: float) -> Turn:
         """A slider moved by hand (no reason given)."""

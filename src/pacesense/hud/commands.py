@@ -1,0 +1,160 @@
+"""One command bar for everything: "open the simulator", "2016 was a hot day", "why is the range so wide?".
+
+`route(text, hud)` turns one utterance into
+    reply    what PaceSense says back (shown, and optionally spoken)
+    actions  what the interface should do: open/close/focus a panel, switch perspective, run the simulator, calm
+             mode, open a runner, refresh after weight changes
+    turn     the steering turn, when race weights changed (with its feedback card)
+
+Order, so one sentence can do several things without misfiring:
+    1. interface commands (panels, perspectives, simulator, calm mode, runner) are found and cut out of the text;
+    2. what is left goes to PaceSense Live's interpreter: race weights, "reset", "undo", the coach's estimate.
+       A cue carried over from an earlier sentence ("she was injured") is only applied when no interface command
+       was found, so "simulate a hot day" never lowers a race;
+    3. if neither applied, the question goes to the assistant (OpenRouter with a key, the offline helper without),
+       which answers by calling PaceSense's own functions.
+Every rule is plain Python and covered by tests/test_hud.py.
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from typing import Any
+
+PANELS = {
+    "races": ("races", "sliders", "weights", "past races"),
+    "prediction": ("prediction", "target", "forecast", "likely range", "range"),
+    "pacing": ("pacing", "pace plan", "splits", "pace band"),
+    "similar": ("similar runners", "neighbours", "neighbors", "similar", "lookalikes"),
+    "simulator": ("simulator", "simulation", "race day", "race-day", "course"),
+    "feedback": ("feedback", "evidence", "checks", "data checks"),
+    "steering": ("steering", "steering meter", "whose view", "meter"),
+    "hologram": ("hologram", "runner model", "body", "avatar", "3d"),
+    "chat": ("chat", "conversation", "assistant"),
+    "log": ("change log", "log", "history of changes"),
+    "record": ("track record", "results", "outcomes"),
+}
+PERSPECTIVES = {"coach": ("coach",), "runner": ("runner", "athlete"), "researcher": ("researcher", "research", "study")}
+PROFILE_WORDS = {"fast_start": ("fast start", "goes out fast", "starts too fast", "start fast", "too fast"),
+                 "late_fade": ("fade", "fades", "late fade", "hits the wall", "hit the wall", "blows up")}
+
+
+@dataclass
+class Routed:
+    reply: str = ""
+    actions: list[dict] = field(default_factory=list)
+    turn: dict | None = None
+    used: list[str] = field(default_factory=list)       # "ui", "steer", "assistant"
+    steps: list[dict] = field(default_factory=list)
+
+
+def _alts(words) -> str:
+    return "|".join(re.escape(w) for w in sorted(words, key=len, reverse=True))
+
+
+PANEL_RE = re.compile(r"\b(show|open|bring up|display|hide|close|remove|minimi[sz]e|focus on|zoom (?:in )?on|pin)\s+"
+                      r"(?:me\s+)?(?:the\s+|my\s+|her\s+|his\s+)?(" + _alts(w for ws in PANELS.values() for w in ws) +
+                      r")(?:\s+panel)?\b", re.I)
+PERSP_RE = re.compile(r"\b(?:switch|change|go)\s+(?:to\s+)?(?:the\s+)?(" + _alts(w for ws in PERSPECTIVES.values() for w in ws)
+                      + r")\s+(?:view|mode|perspective)\b|\b(" + _alts(w for ws in PERSPECTIVES.values() for w in ws)
+                      + r")\s+(?:view|mode|perspective)\b", re.I)
+SIM_RE = re.compile(r"\b(simulate|simulation|run the race|play the race|replay the race|race[- ]day|what if)\b", re.I)
+TEMP_RE = re.compile(r"(-?\d{1,2})\s*(?:°\s*c|degrees(?:\s+celsius)?|celsius|c\b)", re.I)
+WIND_RE = re.compile(r"(\d{1,2})\s*(?:km/?h|kph|kilometres per hour|kilometers per hour)\s*(?:head)?wind|"
+                     r"(?:head)?wind\s*(?:of\s*)?(\d{1,2})\s*(?:km/?h|kph)?", re.I)
+CALM_RE = re.compile(r"\b(calm mode|focus mode|quiet mode|stop (?:rotating|spinning|moving)|pause the hologram|"
+                     r"less motion|reduce motion)\b", re.I)
+SPIN_RE = re.compile(r"\b(start (?:rotating|spinning)|rotate (?:her|him|the (?:body|hologram|runner))|resume)\b", re.I)
+RUNNER_RE = re.compile(r"\b(?:open|load|switch to|show)\s+(?:runner\s+)?([RCK]-?[0-9A-Za-z]{5,12})\b")
+DEMO_RE = re.compile(r"\b(demo runner|new demo|another runner|next runner)\b", re.I)
+LAYOUT_RE = re.compile(r"\b(reset (?:the )?layout|tidy (?:up )?(?:the )?(?:screen|panels)|arrange (?:the )?panels)\b", re.I)
+REVEAL_RE = re.compile(r"\b(reveal|show me the (?:real|actual|true) (?:best|result)|how (?:close|accurate) (?:am i|was i|is it))\b",
+                       re.I)
+
+
+def _panel_key(word: str) -> str:
+    w = word.lower()
+    return next(k for k, ws in PANELS.items() if w in ws)
+
+
+def ui_commands(text: str) -> tuple[list[dict], list[str], str]:
+    """(actions, short descriptions, text with the commands removed)."""
+    actions, said, rest = [], [], text
+    for m in PANEL_RE.finditer(text):
+        verb, panel = m.group(1).lower(), _panel_key(m.group(2))
+        kind = "close" if verb in ("hide", "close", "remove", "minimise", "minimize") else "focus"
+        actions.append({"type": kind, "panel": panel})
+        said.append(f"{'hid' if kind == 'close' else 'opened'} {panel}")
+        rest = rest.replace(m.group(0), " ")
+    m = PERSP_RE.search(text)
+    if m:
+        word = (m.group(1) or m.group(2)).lower()
+        p = next(k for k, ws in PERSPECTIVES.items() if word in ws)
+        actions.append({"type": "perspective", "value": p})
+        said.append(f"switched to the {p} view")
+        rest = rest.replace(m.group(0), " ")
+    if SIM_RE.search(text):
+        t = TEMP_RE.search(text)
+        w = WIND_RE.search(text)
+        temp = float(t.group(1)) if t else (27.0 if re.search(r"\b(hot|heat|warm|humid)\b", text, re.I) else
+                                            5.0 if re.search(r"\b(cold|freezing)\b", text, re.I) else 12.0)
+        wind = float(w.group(1) or w.group(2)) if w else (25.0 if re.search(r"\bwindy|strong wind", text, re.I) else 0.0)
+        prof = next((k for k, ws in PROFILE_WORDS.items() if re.search(_alts(ws), text, re.I)), "on_plan")
+        actions.append({"type": "simulate", "temp_c": temp, "wind_kmh": wind, "profile": prof})
+        said.append(f"simulated the race at {temp:g} °C" + (f", {wind:g} km/h headwind" if wind else "")
+                    + ("" if prof == "on_plan" else f", {prof.replace('_', ' ')}"))
+        rest = ""                          # the whole sentence was about the simulation
+    if CALM_RE.search(text):
+        actions.append({"type": "calm", "value": True}); said.append("calm mode on"); rest = CALM_RE.sub(" ", rest)
+    elif SPIN_RE.search(text):
+        actions.append({"type": "calm", "value": False}); said.append("motion back on"); rest = SPIN_RE.sub(" ", rest)
+    m = RUNNER_RE.search(text)
+    if m:
+        actions.append({"type": "runner", "id": m.group(1)}); said.append(f"opened runner {m.group(1)}")
+        rest = rest.replace(m.group(0), " ")
+    elif DEMO_RE.search(text):
+        actions.append({"type": "runner", "id": "demo"}); said.append("opened a demo runner"); rest = DEMO_RE.sub(" ", rest)
+    if LAYOUT_RE.search(text):
+        actions.append({"type": "layout", "value": "reset"}); said.append("tidied the panels")
+        rest = LAYOUT_RE.sub(" ", rest)
+    if REVEAL_RE.search(text):
+        actions.append({"type": "reveal"}); said.append("revealed the hidden best race"); rest = REVEAL_RE.sub(" ", rest)
+    rest = re.sub(r"\b(and|then|also|please|can you|could you)\b", " ", rest, flags=re.I)
+    return actions, said, " ".join(rest.split())
+
+
+def route(text: str, hud: Any, source: str = "typed") -> Routed:
+    """`hud` is a HudSession (web/hud_api.py): .steer (SteeringSession), .ask(question) -> (answer, steps)."""
+    out = Routed()
+    actions, said, rest = ui_commands(text)
+    if actions:
+        out.actions += actions
+        out.used.append("ui")
+    steered = False
+    if rest and len(rest) > 2:
+        from ..steer.intent import interpret
+        it = interpret(rest, hud.steer.races, hud.steer.context, hud.steer.lexicon)
+        strong = [a for a in it.actions if a.kind in ("reset", "undo", "recency") or a.confidence >= 0.8]
+        if strong or it.estimate_s is not None or (it.actions and not actions):
+            turn = hud.steer.hear(rest, source)
+            if turn.applied or turn.estimate_s is not None or turn.source == "undo" or turn.notes:
+                out.turn = turn.to_dict()
+                out.actions.append({"type": "refresh"})
+                out.used.append("steer")
+                steered = True
+    if steered:
+        out.reply = hud.feedback_text(out.turn)
+    elif rest and len(rest) > 2 and not (actions and len(rest.split()) < 3):
+        answer, steps = hud.ask(rest)
+        out.reply, out.steps = answer, steps
+        out.used.append("assistant")
+    if said:
+        lead = "Done: " + ", ".join(said) + "."
+        out.reply = (lead + (" " + out.reply if out.reply else "")).strip()
+    if not out.reply:
+        out.reply = ("I heard you, but nothing in that changes a race or the screen. Try “2016 was a hot day”, "
+                     "“simulate a hot day”, “switch to runner view” or ask a question.")
+    return out
+
+
+__all__ = ["route", "ui_commands", "Routed", "PANELS", "PERSPECTIVES"]
