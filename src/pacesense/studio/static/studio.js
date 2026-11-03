@@ -110,13 +110,14 @@
   async function openRunner(runnerId = "demo", holdout = null) {
     setBusy(true);
     try {
-      const r = await api("POST", "/sessions", { runner_id: runnerId, holdout });
+      const r = await api("POST", "/sessions", { runner_id: runnerId, holdout, coach_id: coachId() });
       if (app.sid) api("DELETE", `/sessions/${app.sid}`).catch(() => {});
       app.sid = r.id; app.reactions = {}; app.lastCard = null; app.sim = null;
       storage.set("pacesense.sid", r.id);
       clear($("#feed"));
       render(r.state);
       renderFeedFromTurns(r.state);
+      adapt(r.state.adapt, { fresh: true });
       runSim();
     } catch (e) { toast(e.message, "error"); } finally { setBusy(false); }
   }
@@ -126,7 +127,8 @@
     if (sid) {
       try {
         const st = await api("GET", `/sessions/${sid}`);
-        app.sid = sid; render(st); renderFeedFromTurns(st); runSim(); return;
+        if (st.session.coach_id !== coachId()) throw new Error("other coach");
+        app.sid = sid; render(st); renderFeedFromTurns(st); adapt(st.adapt, { fresh: true, resumed: true }); runSim(); return;
       } catch { storage.set("pacesense.sid", null); }
     }
     await openRunner("demo");
@@ -285,6 +287,7 @@
       tr.addEventListener("mouseenter", () => highlightRace(i));
       tr.addEventListener("mouseleave", () => highlightRace(null));
       if (app.changed && app.changed.has(i)) tr.classList.add("changed");
+      if ((app.spotlight || []).includes(i)) tr.classList.add("spot");
       body.append(tr);
     });
     app.changed = null;
@@ -565,8 +568,9 @@
 
   async function sendReaction(turn, value, group, btn) {
     try {
-      await api("POST", `/sessions/${app.sid}/reactions`, { turn, value });
-      $$("button", group).forEach((b) => { b.setAttribute("aria-pressed", String(b === btn)); b.disabled = true; });
+      const res = await api("POST", `/sessions/${app.sid}/reactions`, { turn, value });
+      if (group) $$("button", group).forEach((b) => { b.setAttribute("aria-pressed", String(b === btn)); b.disabled = true; });
+      adapt(res.adapt);
     } catch (e) { toast(e.message, "error"); }
   }
 
@@ -603,6 +607,7 @@
       if (r.card && r.card.items.length) addCard(r.card);
       else if (r.reply) addReply(r.reply);
       handleActions(r.actions || [], r.simulation);
+      adapt(r.adapt);
       if (!(r.simulation)) runSim();
     } catch (e) {
       typing.remove();
@@ -636,6 +641,7 @@
       app.changed = new Set([i]);
       render(r.state);
       if (it) { addSaid(`${it.race}: ${it.old.toFixed(2)} → ${it.new.toFixed(2)}`, "manual"); addCard(r.card); }
+      adapt(r.adapt);
       runSim();
     } catch (e) { toast(e.message, "error"); render(app.st); }
   }
@@ -647,6 +653,7 @@
       render(r.state);
       addSaid("Undo", "undo");
       if (r.card.items.length) addCard(r.card); else addReply((r.card.notes || []).join(" ") || "Nothing to undo.");
+      adapt(r.adapt);
       runSim();
     } catch (e) { toast(e.message, "error"); }
   }
@@ -658,6 +665,7 @@
       const ho = st.holdout;
       addReply(`Her real ${ho.label} result was ${fmt.time(ho.truth_s)}. The prediction is ${ho.error_pct.toFixed(2)}% off; `
         + `with equal weights it was ${ho.equal_weights_error_pct.toFixed(2)}% off.`);
+      adapt(st.adapt);
     } catch (e) { toast(e.message, "error"); }
   }
 
@@ -688,19 +696,26 @@
       let interim = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const t = e.results[i][0].transcript;
-        if (e.results[i].isFinal) { input.value = ""; send(t, "voice"); } else interim += t;
+        if (e.results[i].isFinal) { input.value = ""; hooks.transcript("", true, t); send(t, "voice"); } else interim += t;
       }
-      if (interim) input.value = interim;
+      if (interim) { input.value = interim; hooks.transcript(interim, false); }
     };
     rec.onerror = (e) => { if (e.error === "not-allowed") { toast("Microphone permission was refused.", "error"); stopVoice(); } };
-    rec.onend = () => { if (voice.on) try { rec.start(); } catch { /* already started */ } };
+    rec.onend = () => { if (voice.on && !voice.paused) try { rec.start(); } catch { /* already started */ } };
     try { rec.start(); } catch { /* ignore */ }
     $("#mic-btn").setAttribute("aria-pressed", "true");
-    toast("Listening. Talk about her races; the weights follow. Click the mic again to stop.");
+    hooks.voice(true);
   }
-  function stopVoice() {
+  function stopVoice(silent = false) {
     voice.on = false; if (voice.rec) voice.rec.stop();
     $("#mic-btn").setAttribute("aria-pressed", "false");
+    if (!silent) hooks.voice(false);
+  }
+  /** While PaceSense speaks, stop listening so it doesn't hear itself. */
+  function pauseListening(p) {
+    if (!voice.rec || !voice.on) return;
+    if (p) { voice.paused = true; try { voice.rec.abort(); } catch { /* ignore */ } }
+    else if (voice.paused) { voice.paused = false; try { voice.rec.start(); } catch { /* ignore */ } }
   }
 
   // ---------------------------------------------------------------- runner picker
@@ -722,7 +737,8 @@
   }, 160);
 
   // ---------------------------------------------------------------- tabs
-  function selectTab(id) {
+  function selectTab(id, byUser = false) {
+    if (byUser) hooks.panel(id.replace("tab-", ""));
     $$(".tabs [role=tab]").forEach((t) => {
       const on = t.id === id;
       t.setAttribute("aria-selected", String(on)); t.tabIndex = on ? 0 : -1;
@@ -734,6 +750,27 @@
 
   // ---------------------------------------------------------------- theme
   function applyTheme(t) { document.documentElement.dataset.theme = t; storage.set("pacesense.theme", t); }
+
+  // ---------------------------------------------------------------- adaptive bridge (see adaptive.js)
+  function coachId() {
+    let id = storage.get("pacesense.coach");
+    if (!id) {
+      const rnd = (crypto.getRandomValues ? [...crypto.getRandomValues(new Uint8Array(8))] : [Math.random() * 1e9])
+        .map((x) => Math.floor(x).toString(16).padStart(2, "0")).join("");
+      id = `coach-${rnd}`.slice(0, 40); storage.set("pacesense.coach", id);
+    }
+    return id;
+  }
+  const hooks = { transcript() {}, voice() {}, panel() {}, apply() {} };
+  function adapt(a, opts = {}) { if (a) hooks.apply(a, opts); }
+  window.PaceSense = {
+    $, $$, h, s, clear, fmt, api, toast, app, storage, coachId, hooks,
+    send, undo, reveal, selectTab, focusPanel, addReply, addSaid, addCard, scrollFeed, render, openRunner, runSim,
+    setBusy, handleActions,
+    startVoice, stopVoice, pauseListening, sendReaction, hasMic: !!SR, voiceOn: () => voice.on,
+    rerenderRaces: () => app.st && renderRaces(app.st),
+    adapt,
+  };
 
   // ---------------------------------------------------------------- wire up
   function init() {
@@ -759,11 +796,11 @@
     $("#runner-search").addEventListener("input", (e) => searchRunners(e.target.value));
 
     $$(".tabs [role=tab]").forEach((t) => {
-      t.addEventListener("click", () => selectTab(t.id));
+      t.addEventListener("click", () => selectTab(t.id, true));
       t.addEventListener("keydown", (e) => {
         const tabs = $$(".tabs [role=tab]"), i = tabs.indexOf(t);
         if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-          const n = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length]; selectTab(n.id); n.focus();
+          const n = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length]; selectTab(n.id, true); n.focus();
         }
       });
     });
@@ -789,6 +826,7 @@
     }, 150));
 
     setupVoice();
+    document.dispatchEvent(new CustomEvent("pacesense:ready"));
     api("GET", "/meta").then((m) => {
       app.meta = m;
       $("#foot-data").textContent = `Data: ${m.data.source} · ${m.data.runners.toLocaleString()} runners · ${m.data.cases.toLocaleString()} cases`;

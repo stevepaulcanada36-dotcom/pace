@@ -1,5 +1,17 @@
 # Changes
 
+## 3.0.0: the adaptive studio (N feedback loops, persona, voice stage)
+- `pacesense.adaptive`: events, a transparent coach persona (reliance, detail, modality, certainty, plus
+  per-runner familiarity; four archetypes; editable and deletable) and nine pluggable feedback loops at four time
+  scales: Persona, Data check, Clarify, Bias guard, Explanations, Guided interview, Track record, Shared learning,
+  Layout. Loops never change the model; they change what the coach sees and is asked.
+- Studio: voice stage (live transcript, spotlight race cards, large choices, spoken replies with the mic paused),
+  guided interview, persona chip and profile dialog, feedback-loops bar, "why did the screen change?" log,
+  layouts chosen by the persona (analysis / races / summary / guided) with a lock.
+- API: session events, interview, coach profile (GET/PUT/DELETE), loop registry; `adapt` block on every response;
+  exports include the adaptations and their reasons.
+- docs/FUTURE_SCOPE.md: from the paper's open questions to each loop, plus an evaluation plan. 21 new tests (230).
+
 ## 2.5.0: PaceSense Studio, the production web app
 - `pacesense studio`: a clean, light (and dark) dashboard for coaches: prediction summary with the hidden-race
   accuracy check and steering meter, race table with evidence and pull per race, coach notes with feedback cards

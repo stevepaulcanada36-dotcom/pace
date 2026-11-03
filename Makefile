@@ -13,10 +13,10 @@ test:           ## the whole test suite
 	$(PY) -m unittest discover -s tests -t .
 
 lint:
-	ruff check src/pacesense/studio tests/test_studio.py tests/asgi.py
+	ruff check src/pacesense/studio src/pacesense/adaptive tests/test_studio.py tests/test_adaptive.py tests/asgi.py
 
 typecheck:
-	mypy src/pacesense/studio
+	mypy src/pacesense/studio src/pacesense/adaptive
 
 check: lint typecheck test   ## everything CI runs
 

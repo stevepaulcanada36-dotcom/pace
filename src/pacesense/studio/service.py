@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .. import __version__
+from ..adaptive import AdaptiveEngine, Event
 from ..cbr import CaseBase, MarathonModel
 from ..coach import CoachService
 from ..data import load_csv, synthetic_runners
@@ -58,6 +59,14 @@ def load_coach(settings: Settings) -> tuple[CoachService, DataInfo]:
     return coach, info
 
 
+@dataclass
+class Live:
+    """One open session: the model session and the adaptive engine that watches it."""
+    hud: HudSession
+    engine: AdaptiveEngine
+    coach_id: str
+
+
 class StudioService:
     def __init__(self, coach: CoachService, info: DataInfo | None = None, settings: Settings | None = None,
                  ai_factory: Callable[[], Any] | None = None) -> None:
@@ -66,7 +75,7 @@ class StudioService:
         self.info = info or DataInfo("in-memory", len(coach.runners), sum(len(r.races) for r in coach.runners),
                                      len(coach.model.case_base), 0.0, "in-memory")
         self.ai_factory = ai_factory
-        self.sessions: SessionStore[HudSession] = SessionStore(self.settings.session_ttl_s, self.settings.max_sessions)
+        self.sessions: SessionStore[Live] = SessionStore(self.settings.session_ttl_s, self.settings.max_sessions)
         self.started = time.time()
         self._demo_id: str | None = None
 
@@ -101,58 +110,92 @@ class StudioService:
         return out[:limit]
 
     # ---- sessions -------------------------------------------------------------------------------
-    def create(self, runner_id: str = "demo", holdout: bool | None = None) -> tuple[str, dict]:
+    def create(self, runner_id: str = "demo", holdout: bool | None = None, coach_id: str = "anonymous") -> tuple[str, dict]:
         is_demo = runner_id == "demo"
         rid = self.demo_runner if is_demo else runner_id
         self.coach.runner(rid)                                   # 404 early for an unknown id
-        s = HudSession(self.coach, rid, holdout=is_demo if holdout is None else holdout,
-                       ai=self.ai_factory() if self.ai_factory else None)
-        sid = self.sessions.add(s)
-        log.info("session created", extra={"session": sid[:6], "runner": rid, "holdout": s.holdout})
-        return sid, self.view(sid, s)
+        hud = HudSession(self.coach, rid, holdout=is_demo if holdout is None else holdout,
+                         ai=self.ai_factory() if self.ai_factory else None)
+        live = Live(hud, AdaptiveEngine(self.coach.repo, coach_id), coach_id)
+        sid = self.sessions.add(live)
+        st = self.view(sid, live)
+        st["adapt"] = live.engine.start(st)
+        log.info("session created", extra={"session": sid[:6], "runner": rid, "holdout": hud.holdout, "coach": coach_id[:8]})
+        return sid, st
 
-    def _with(self, sid: str, fn: Callable[[HudSession], Any]) -> Any:
+    def _with(self, sid: str, fn: Callable[[Live], Any]) -> Any:
         e = self.sessions.entry(sid)
         with e.lock:
             return fn(e.value)
 
-    def view(self, sid: str, s: HudSession) -> dict:
+    def view(self, sid: str, live: Live, with_adapt: bool = False) -> dict:
+        s = live.hud
         st = s.state()
         st["session"] = {"id": sid, "source_runner": s.source_runner, "holdout": s.holdout,
-                         "can_undo": bool(s.steer._undo), "ai": st.pop("ai", False)}
+                         "can_undo": bool(s.steer._undo), "ai": st.pop("ai", False), "coach_id": live.coach_id}
         r = self.coach.runner(s.runner_id)
         st["runner"].update({"gender": r.gender, "age": r.age, "n_races": len(st["races"])})
+        if with_adapt:
+            st["adapt"] = live.engine.snapshot()
         return st
 
     def state(self, sid: str) -> dict:
-        return self._with(sid, lambda s: self.view(sid, s))
+        return self._with(sid, lambda live: self.view(sid, live, with_adapt=True))
+
+    # every mutation: do it, then let the feedback loops observe it
+    def _observe(self, sid: str, live: Live, ev: Event, out: dict) -> dict:
+        st = out.get("state") or self.view(sid, live)
+        adapt = live.engine.process(ev, st)
+        adapt["speak"] = live.engine.speak(out.get("card"), out.get("reply", ""))
+        out["adapt"] = adapt
+        return out
+
+    def _run_command(self, sid: str, live: Live, text: str, source: str, kind: str = "utterance",
+                     extra: dict | None = None) -> dict:
+        s = live.hud
+        r = route(text, s, source)
+        sim, revealed = None, False
+        for a in r.actions:
+            if a["type"] == "reveal" and s.truth_s is not None:
+                s.revealed = revealed = True
+            if a["type"] == "simulate":
+                sim = s.simulate(a["temp_c"], a["wind_kmh"], a["profile"])
+        card = s.feedback_card(r.turn) if r.turn else None
+        state = self.view(sid, live)
+        out: dict[str, Any] = {"reply": r.reply, "actions": r.actions, "card": card, "used": r.used,
+                               "simulation": sim, "state": state}
+        turn = r.turn or {}
+        data = {"applied": turn.get("applied", []), "turn": turn.get("n"), "estimate_s": turn.get("estimate_s"),
+                "notes": turn.get("notes", []),
+                "used": r.used, "ui_only": "ui" in r.used and "steer" not in r.used, **(extra or {})}
+        self._observe(sid, live, Event(kind, text, source, data), out)
+        if revealed:
+            out["adapt"] = live.engine.process(self._reveal_event(live), state) | {"speak": out["adapt"]["speak"]}
+        return out
 
     def command(self, sid: str, text: str, source: str = "typed") -> dict:
-        def run(s: HudSession):
-            r = route(text, s, source)
-            sim = None
-            for a in r.actions:
-                if a["type"] == "reveal" and s.truth_s is not None:
-                    s.revealed = True
-                if a["type"] == "simulate":
-                    sim = s.simulate(a["temp_c"], a["wind_kmh"], a["profile"])
-            card = s.feedback_card(r.turn) if r.turn else None
-            return {"reply": r.reply, "actions": r.actions, "card": card, "used": r.used,
-                    "simulation": sim, "state": self.view(sid, s)}
-        return self._with(sid, run)
+        return self._with(sid, lambda live: self._run_command(sid, live, text, source))
 
     def set_weight(self, sid: str, index: int, weight: float) -> dict:
-        def run(s: HudSession):
+        def run(live: Live):
+            s = live.hud
             if index >= len(s.steer.races):
                 raise ValidationError(f"race index {index} is out of range")
             turn = s.steer.manual(index, round(weight, 2)).to_dict()
-            return {"card": s.feedback_card(turn), "state": self.view(sid, s)}
+            out = {"card": s.feedback_card(turn), "state": self.view(sid, live)}
+            return self._observe(sid, live, Event("slider", source="manual",
+                                                  data={"applied": turn["applied"], "turn": turn["n"]}), out)
         return self._with(sid, run)
 
     def undo(self, sid: str) -> dict:
-        def run(s: HudSession):
+        def run(live: Live):
+            s = live.hud
+            last = next((t for t in reversed(s.steer.turns) if t.source != "undo" and t.applied), None)
+            undid = [a.verdict for a in last.applied] if last else []
             turn = s.steer.undo().to_dict()
-            return {"card": s.feedback_card(turn), "state": self.view(sid, s)}
+            out = {"card": s.feedback_card(turn), "state": self.view(sid, live)}
+            return self._observe(sid, live, Event("undo", "undo", "typed", {"undid_verdicts": undid,
+                                                                             "applied": turn["applied"]}), out)
         return self._with(sid, run)
 
     def estimate(self, sid: str, finish: str) -> dict:
@@ -162,28 +205,110 @@ class StudioService:
         return self.command(sid, f"I think she can run {format_time(secs)}")
 
     def simulate(self, sid: str, temp_c: float, wind_kmh: float, profile: str) -> dict:
-        return self._with(sid, lambda s: s.simulate(temp_c, wind_kmh, profile))
+        return self._with(sid, lambda live: live.hud.simulate(temp_c, wind_kmh, profile))
+
+    def _reveal_event(self, live: Live) -> Event:
+        st = live.hud.state()["holdout"] or {}
+        return Event("reveal", source="system", data={"error_pct": st.get("error_pct"), "runner": live.hud.source_runner,
+                                                      "equal_weights_error_pct": st.get("equal_weights_error_pct")})
 
     def reveal(self, sid: str) -> dict:
-        def run(s: HudSession):
+        def run(live: Live):
+            s = live.hud
             if s.truth_s is None:
                 raise ValidationError("this session has no hidden race; open the demo runner")
             s.revealed = True
-            return self.view(sid, s)
+            st = self.view(sid, live)
+            st["adapt"] = live.engine.process(self._reveal_event(live), st)
+            return st
         return self._with(sid, run)
 
     def react(self, sid: str, turn: int, value: str, note: str = "") -> dict:
-        return self._with(sid, lambda s: s.react(turn, value, note))
+        def run(live: Live):
+            counts = live.hud.react(turn, value, note)
+            t = next((x for x in live.hud.steer.turns if x.n == turn), None)
+            verdict = t.applied[0].verdict if t and t.applied else None
+            adapt = live.engine.process(Event("reaction", source="typed", data={"value": value, "verdict": verdict,
+                                                                                "turn": turn}), self.view(sid, live))
+            return {**counts, "adapt": adapt}
+        return self._with(sid, run)
+
+    # ---- adaptive layer --------------------------------------------------------------------------
+    def event(self, sid: str, kind: str, panel: str | None = None) -> dict:
+        def run(live: Live):
+            if kind == "dismiss":
+                return {"adapt": live.engine.dismiss()}
+            adapt = live.engine.process(Event(kind, source="system", data={"panel": panel} if panel else {}),
+                                        self.view(sid, live))
+            return {"adapt": adapt}
+        return self._with(sid, run)
+
+    def interview_start(self, sid: str) -> dict:
+        def run(live: Live):
+            live.engine.ctx.session.state = self.view(sid, live)
+            adapt = live.engine.start_interview()
+            adapt["speak"] = (adapt.get("prompt") or {}).get("message", "")
+            return {"adapt": adapt}
+        return self._with(sid, run)
+
+    def interview_answer(self, sid: str, question: str, choice: str) -> dict:
+        def run(live: Live):
+            try:
+                c = live.engine.interview_choice(question, choice)
+            except KeyError:
+                raise ValidationError(f"unknown question or choice: {question}/{choice}") from None
+            extra = {"question": question, "choice": c.key, "familiarity": c.familiarity}
+            if c.say:
+                out = self._run_command(sid, live, c.say, "typed", kind="interview_answer", extra=extra)
+            else:
+                out = {"reply": "Noted.", "card": None, "actions": [], "used": [], "simulation": None,
+                       "state": self.view(sid, live)}
+                self._observe(sid, live, Event("interview_answer", c.label, "typed", extra), out)
+            nxt = (out["adapt"].get("prompt") or {}).get("message")
+            if nxt and not (out.get("card") and out["card"].get("items")):
+                out["adapt"]["speak"] = nxt
+            return out
+        return self._with(sid, run)
+
+    def profile(self, coach_id: str) -> dict:
+        eng = AdaptiveEngine(self.coach.repo, coach_id)
+        snap = eng.snapshot()
+        return {"coach_id": coach_id, "persona": snap["persona"], "outcomes": eng.ctx.profile.get("outcomes", []),
+                "panel_usage": eng.ctx.profile.get("panel_usage", {}), "layout_lock": eng.ctx.profile.get("layout_lock"),
+                "interview_default": bool(eng.ctx.profile.get("interview_default"))}
+
+    def edit_profile(self, coach_id: str, changes: dict, sid: str | None = None) -> dict:
+        if sid:
+            def run(live: Live):
+                if live.coach_id != coach_id:
+                    raise ValidationError("that session belongs to another coach")
+                try:
+                    return {"adapt": live.engine.edit_persona(dict(changes))}
+                except ValueError as e:
+                    raise ValidationError(str(e)) from None
+            return self._with(sid, run)
+        try:
+            AdaptiveEngine(self.coach.repo, coach_id).edit_persona(dict(changes))
+        except ValueError as e:
+            raise ValidationError(str(e)) from None
+        return self.profile(coach_id)
+
+    def forget_coach(self, coach_id: str) -> None:
+        AdaptiveEngine(self.coach.repo, coach_id).forget()
 
     def export(self, sid: str) -> dict:
-        """Everything needed to audit or replay the session (pacesense.steer.replay)."""
-        def run(s: HudSession):
-            st = self.view(sid, s)
+        """Everything needed to audit or replay the session (pacesense.steer.replay), plus what adapted and why."""
+        def run(live: Live):
+            s = live.hud
+            st = self.view(sid, live)
+            snap = live.engine.snapshot()
             return {"pacesense_version": __version__, "exported_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     "data": {"source": self.info.source, "fingerprint": self.info.fingerprint},
                     "runner": st["runner"], "holdout": st["holdout"], "transcript": s.steer.transcript(),
                     "reactions": s.reactions, "final": {"weights": [r["weight"] for r in st["races"]],
-                                                        "prediction": st["prediction"], "steering": st["steering"]}}
+                                                        "prediction": st["prediction"], "steering": st["steering"]},
+                    "adaptive": {"persona": snap["persona"], "loops": snap["loops"],
+                                 "adaptations": [a.to_dict() for a in live.engine.log]}}
         return self._with(sid, run)
 
     def close(self, sid: str) -> None:
@@ -198,4 +323,4 @@ class StudioService:
         return {"ready": ok, "data": self.info.__dict__, "sessions": self.sessions.stats()}
 
 
-__all__ = ["DataInfo", "StudioService", "load_coach"]
+__all__ = ["DataInfo", "Live", "StudioService", "load_coach"]

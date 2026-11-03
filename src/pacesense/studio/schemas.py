@@ -11,8 +11,14 @@ class _Body(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
+COACH_ID = r"^[A-Za-z0-9_\-]{3,64}$"
+
+
 class CreateSession(_Body):
     runner_id: str = Field("demo", max_length=64, description='A runner id, or "demo" for the built-in example.')
+    coach_id: str = Field("anonymous", pattern=COACH_ID,
+                          description="A stable, opaque id for the coach (the app keeps one per browser). Persona, "
+                                      "track record and layout preferences are stored under it.")
     holdout: bool | None = Field(None, description="Hide the runner's best race to measure accuracy "
                                                    "(the paper's protocol). Defaults to true for the demo.")
 
@@ -44,7 +50,33 @@ class Estimate(_Body):
                         description="The coach's own finish estimate, h:mm or h:mm:ss")
 
 
-BODIES = {"CreateSession": CreateSession, "Command": Command, "SetWeight": SetWeight, "Simulate": Simulate,
-          "React": React, "Estimate": Estimate}
+class SessionEvent(_Body):
+    kind: Literal["voice_on", "voice_off", "panel", "dismiss"]
+    panel: Literal["races", "pacing", "similar", "insights", "simulator", "notes", "profile", "loops"] | None = None
 
-__all__ = ["BODIES", "Command", "CreateSession", "Estimate", "React", "SetWeight", "Simulate"]
+
+class InterviewAnswer(_Body):
+    question: str = Field(..., max_length=32)
+    choice: str = Field(..., max_length=32)
+
+
+class ProfileEdit(_Body):
+    """Set a persona dimension (0-1), clear it with null, or reset everything. Optional session id applies
+    the change to an open session immediately (the screen re-arranges)."""
+    reliance: float | None = Field(None, ge=0, le=1)
+    detail: float | None = Field(None, ge=0, le=1)
+    voice: float | None = Field(None, ge=0, le=1)
+    certainty: float | None = Field(None, ge=0, le=1)
+    familiarity: float | None = Field(None, ge=0, le=1)
+    layout_lock: Literal["standard", "voice", "analysis", "races", "summary", "guided"] | None = None
+    interview_default: bool | None = None
+    reset: bool = False
+    session_id: str | None = Field(None, max_length=64)
+
+
+BODIES = {"CreateSession": CreateSession, "Command": Command, "SetWeight": SetWeight, "Simulate": Simulate,
+          "React": React, "Estimate": Estimate, "SessionEvent": SessionEvent,
+          "InterviewAnswer": InterviewAnswer, "ProfileEdit": ProfileEdit}
+
+__all__ = ["BODIES", "COACH_ID", "Command", "CreateSession", "Estimate", "InterviewAnswer", "ProfileEdit", "React",
+           "SessionEvent", "SetWeight", "Simulate"]

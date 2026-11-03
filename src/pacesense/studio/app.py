@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import re
 import time
 import uuid
 from importlib import resources
@@ -228,7 +229,7 @@ def create_app(service: StudioService, settings: Settings | None = None) -> Star
 
     async def create(request: Request):
         b = await body_of(request, schemas.CreateSession)
-        sid, state = await call(service.create, b.runner_id, b.holdout)
+        sid, state = await call(service.create, b.runner_id, b.holdout, b.coach_id)
         return JSON({"id": sid, "state": state}, 201, headers={"location": f"/api/v1/sessions/{sid}"})
 
     async def get_state(request: Request):
@@ -269,7 +270,47 @@ def create_app(service: StudioService, settings: Settings | None = None) -> Star
         data = await call(service.export, sid)
         return JSON(data, headers={"content-disposition": f'attachment; filename="pacesense-session-{sid[:8]}.json"'})
 
+    # adaptive layer
+    async def session_event(request: Request):
+        b = await body_of(request, schemas.SessionEvent)
+        return JSON(await call(service.event, request.path_params["sid"], b.kind, b.panel))
+
+    async def interview_start(request: Request):
+        return JSON(await call(service.interview_start, request.path_params["sid"]))
+
+    async def interview_answer(request: Request):
+        b = await body_of(request, schemas.InterviewAnswer)
+        return JSON(await call(service.interview_answer, request.path_params["sid"], b.question, b.choice))
+
+    def _coach_id(request: Request) -> str:
+        cid = request.path_params["coach_id"]
+        if not re.fullmatch(schemas.COACH_ID[1:-1], cid):
+            raise Problem(422, "Invalid request", "coach id must be 3-64 letters, digits, - or _")
+        return cid
+
+    async def get_profile(request: Request):
+        return JSON(await call(service.profile, _coach_id(request)))
+
+    async def put_profile(request: Request):
+        cid = _coach_id(request)
+        b = await body_of(request, schemas.ProfileEdit)
+        changes = b.model_dump(exclude_unset=True)
+        sid = changes.pop("session_id", None)
+        if not changes.get("reset"):
+            changes.pop("reset", None)
+        return JSON(await call(service.edit_profile, cid, changes, sid))
+
+    async def delete_profile(request: Request):
+        await call(service.forget_coach, _coach_id(request))
+        return Response(status_code=204)
+
+    async def loops(request: Request):
+        from ..adaptive import default_loops
+        return JSON([{k: v for k, v in lp.status(None).items() if k not in ("fired", "last")}  # type: ignore[arg-type]
+                     for lp in default_loops()])
+
     S = "/api/v1/sessions/{sid:str}"
+    C = "/api/v1/coaches/{coach_id:str}/profile"
     routes = [
         Route("/", index), Route("/healthz", healthz), Route("/readyz", readyz), Route("/metrics", metrics_view),
         Route("/api/v1/meta", meta), Route("/api/v1/openapi.json", openapi),
@@ -280,6 +321,11 @@ def create_app(service: StudioService, settings: Settings | None = None) -> Star
         Route(S + "/undo", undo, methods=["POST"]), Route(S + "/estimate", estimate, methods=["POST"]),
         Route(S + "/simulations", simulate, methods=["POST"]), Route(S + "/reveal", reveal, methods=["POST"]),
         Route(S + "/reactions", react, methods=["POST"]), Route(S + "/export", export, methods=["GET"]),
+        Route(S + "/events", session_event, methods=["POST"]),
+        Route(S + "/interview/start", interview_start, methods=["POST"]),
+        Route(S + "/interview", interview_answer, methods=["POST"]),
+        Route(C, get_profile, methods=["GET"]), Route(C, put_profile, methods=["PUT"]),
+        Route(C, delete_profile, methods=["DELETE"]), Route("/api/v1/loops", loops),
         Mount("/static", StaticFiles(directory=str(static_dir)), name="static"),
     ]
 
@@ -352,6 +398,17 @@ def openapi_document() -> dict:
                 S + "/reveal": {"post": op("Reveal the hidden race (demo)")},
                 S + "/reactions": {"post": op("React to a feedback card", "React")},
                 S + "/export": {"get": op("Export a replayable transcript")},
+                S + "/events": {"post": op("Tell the loops about voice mode or a panel", "SessionEvent")},
+                S + "/interview/start": {"post": op("Start the guided interview")},
+                S + "/interview": {"post": op("Answer an interview question", "InterviewAnswer")},
+                "/api/v1/coaches/{coach_id}/profile": {
+                    "get": {"summary": "Coach persona and track record", "responses": {"200": {"description": "OK"}}},
+                    "put": {"summary": "Correct the persona or lock a layout", "requestBody": {"required": True, "content": {
+                        "application/json": {"schema": {"$ref": "#/components/schemas/ProfileEdit"}}}},
+                        "responses": {"200": {"description": "OK"}}},
+                    "delete": {"summary": "Forget everything learned about this coach", "responses": {"204": {"description": "Deleted"}}}},
+                "/api/v1/loops": {"get": {"summary": "The feedback loops and what each one answers",
+                                          "responses": {"200": {"description": "OK"}}}},
             },
             "components": {"schemas": comps}}
 

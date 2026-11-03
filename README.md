@@ -26,6 +26,22 @@ Everything is Python: the model, the services, the analysis, and a **Streamlit d
 
 ## PaceSense Studio (start here)
 
+**New in 3.0: it adapts to the coach.** Nine feedback loops instead of one, a transparent coach persona, a
+voice stage that re-arranges the screen as you talk, and a guided interview. See
+[docs/FUTURE_SCOPE.md](docs/FUTURE_SCOPE.md) for the reasoning from the paper, loop by loop.
+
+| Adaptive feature | What the coach sees |
+|---|---|
+| **Feedback loops bar** | Persona · Data check · Clarify · Bias guard · Explanations · Guided interview · Track record · Shared learning · Layout. Each lights up when it acts; "Why did the screen change?" lists every adaptation and its reason |
+| **Persona chip** | "You work like The Intuitive Expert" with a confidence ring. Opens the profile: four dimensions plus familiarity with this runner, the cues behind each, sliders to correct them, a layout lock, the track record chart and "Forget me" |
+| **Talk** (V) | The voice stage: live transcript, big target, race cards that light up when mentioned, PaceSense's question with large choices to tap or say; replies are spoken (the mic pauses meanwhile) |
+| **Guide me** (G) | Five questions built from the runner's data; each answer becomes a checked change |
+| **PaceSense asks** | Clarify ("which race was hot?"), Data check (keep / undo / show similar runners), Bias guard ("knowledge or expectation?") |
+
+Adaptive API: `POST /sessions/{id}/events` (voice_on, voice_off, panel, dismiss) · `POST /sessions/{id}/interview/start`
+· `POST /sessions/{id}/interview` · `GET|PUT|DELETE /coaches/{coach_id}/profile` · `GET /loops`. Every session
+response carries an `adapt` block (`ui`, `persona`, `loops`, `prompt`, `adaptations`, `speak`).
+
 The production web app: a clean dashboard for coaches on top of a versioned, validated JSON API.
 
 ```bash
@@ -572,7 +588,7 @@ keep `pacesense serve` bound to localhost or place any public deployment behind 
 
 ```bash
 pip install -e ".[dev]"
-python -m unittest discover -s tests -t .     # 209 tests
+python -m unittest discover -s tests -t .     # 230 tests
 ```
 
 They cover PaceSense Live (interpreter, evidence statistics, sessions, replay, benchmark floors, the checked AI

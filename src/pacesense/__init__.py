@@ -13,4 +13,4 @@ __all__ = [
     "CBRConfig", "CaseBase", "MarathonModel", "Prediction", "holdout_best", "validate_model",
     "acceptance", "adaptation_class", "model_adaptation", "percent_error",
 ]
-__version__ = "2.5.0"
+__version__ = "3.0.0"

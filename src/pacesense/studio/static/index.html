@@ -10,6 +10,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="/static/studio.css?v={{version}}">
+<script src="/static/adaptive.js?v={{version}}" defer></script>
 <script src="/static/studio.js?v={{version}}" defer></script>
 </head>
 <body>
@@ -29,7 +30,16 @@
 
   <span class="mode-pill" id="mode-pill" hidden></span>
 
+  <button class="persona-chip" id="persona-btn" aria-haspopup="dialog" aria-controls="profile-dialog" title="How PaceSense sees you (and how to change it)">
+    <svg class="ring" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="15" class="ring-bg"/><circle cx="18" cy="18" r="15" class="ring-fg" id="persona-ring"/></svg>
+    <span class="persona-text"><small>You work like</small><b id="persona-name">Getting to know you</b></span>
+  </button>
+
   <div class="top-actions">
+    <button class="btn talk" id="talk-btn" aria-pressed="false" title="Voice mode: the screen turns into a conversation (V)">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="1.5" width="5" height="9" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 8a5 5 0 0010 0M8 13v2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg><span>Talk</span></button>
+    <button class="btn ghost" id="guide-btn" title="Answer a few questions instead (G)">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.2 6.2a1.9 1.9 0 113 1.5c-.7.4-1.2.8-1.2 1.6M8 11.6v.1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>Guide me</span></button>
     <button class="btn ghost" id="undo-btn" title="Undo the last change (Ctrl+Z)" disabled>
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 4L2 7l3 3M2.5 7H10a4 4 0 010 8H7" fill="none" stroke="currentColor" stroke-width="1.5"/></svg><span>Undo</span></button>
     <button class="btn ghost" id="export-btn" title="Download a replayable record of this session">
@@ -41,6 +51,27 @@
 </header>
 
 <main class="layout" id="main" aria-busy="true">
+  <!-- Voice stage: shown in voice mode -->
+  <section class="stage" id="voice-stage" aria-label="Voice mode" hidden>
+    <div class="stage-left">
+      <div class="orb" id="orb" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="stage-talk">
+        <p class="stage-status" id="stage-status">Voice mode</p>
+        <p class="stage-transcript" id="stage-transcript" aria-live="polite">Say something about her races.</p>
+        <form class="stage-type" id="stage-form" autocomplete="off">
+          <label for="stage-input" class="sr">Say or type</label>
+          <input id="stage-input" placeholder="No microphone? Type what you would say…">
+        </form>
+      </div>
+    </div>
+    <div class="stage-right">
+      <div class="stage-target"><small>Target</small><b class="mono" id="stage-target">–</b><span id="stage-range" class="mono"></span></div>
+      <div class="stage-ask" id="stage-ask" hidden><p id="stage-ask-text"></p><div class="stage-choices" id="stage-choices"></div></div>
+      <div class="stage-races" id="stage-races"></div>
+    </div>
+    <button class="btn ghost stage-close" id="stage-close" type="button">Leave voice mode</button>
+  </section>
+
   <!-- KPIs -->
   <section class="kpis" aria-label="Prediction summary">
     <article class="kpi kpi-target">
@@ -67,6 +98,13 @@
         <button class="btn small" type="submit">Set</button>
       </form>
     </article>
+  </section>
+
+  <!-- Feedback loops -->
+  <section class="loops-bar" id="loops-bar" aria-label="Feedback loops">
+    <div class="loops-head"><b>Feedback loops</b><span class="muted" id="loops-sub">9 loops watch every change</span>
+      <button class="link-btn" id="why-btn" type="button">Why did the screen change?</button></div>
+    <ol class="loops" id="loops"></ol>
   </section>
 
   <!-- Races -->
@@ -155,6 +193,8 @@
         <div class="composer-actions">
           <button type="button" class="btn icon mic" id="mic-btn" title="Talk (continuous listening)" aria-pressed="false" hidden>
             <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="1.5" width="5" height="9" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 8a5 5 0 0010 0M8 13v2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
+          <button type="button" class="btn icon" id="speak-btn" title="Spoken replies" aria-pressed="false">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h3l4-3v10L5 10H2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path class="waves" d="M11 5.5a3.5 3.5 0 010 5M12.8 3.6a6 6 0 010 8.8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
           <button type="submit" class="btn primary" id="send-btn">Send</button>
         </div>
       </form>
@@ -178,6 +218,33 @@
   </form>
 </dialog>
 
+<!-- Coach profile -->
+<dialog id="profile-dialog" class="dialog wide" aria-labelledby="profile-h">
+  <form method="dialog" class="dialog-inner">
+    <header><h2 id="profile-h">How PaceSense sees you</h2><button class="btn icon ghost" value="close" aria-label="Close">✕</button></header>
+    <div class="arch" id="arch"></div>
+    <p class="muted small-print">Learned only from how you work here (what you say, ask and change), never from who you are.
+      Move a slider to correct it; your setting wins until you reset it.</p>
+    <div class="dims" id="dims"></div>
+    <div class="profile-row">
+      <label class="field inline"><span>Layout</span>
+        <select id="layout-lock">
+          <option value="">Adapt to me</option><option value="standard">Standard</option><option value="analysis">Analysis first</option>
+          <option value="races">Races first</option><option value="summary">Summary first</option><option value="guided">Guided</option>
+        </select></label>
+      <label class="check"><input type="checkbox" id="interview-default"> Start each runner with the guided interview</label>
+    </div>
+    <h3 class="sub-h">Your track record</h3>
+    <div id="record" class="record"></div>
+    <h3 class="sub-h">Why the screen changed</h3>
+    <ol class="why-log" id="why-log"></ol>
+    <footer class="profile-foot">
+      <button class="btn small" type="button" id="persona-reset">Reset what was learned</button>
+      <button class="btn small danger" type="button" id="persona-forget">Forget me completely</button>
+    </footer>
+  </form>
+</dialog>
+
 <!-- Help -->
 <dialog id="help-dialog" class="dialog" aria-labelledby="help-h">
   <form method="dialog" class="dialog-inner prose">
@@ -194,7 +261,11 @@
     </ul>
     <p>Every change gets a card that says whether <b>her own times agree</b>. In the demo her fastest race is hidden, so
       you can see whether your changes move the prediction <b>closer to what really happened</b>; press Reveal at the end.</p>
-    <p class="muted">Keyboard: <kbd>/</kbd> type a note · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>?</kbd> this help</p>
+    <p><b>It adapts to you.</b> Nine feedback loops watch every change: they check it against the data, ask when you
+      were ambiguous, challenge you when the model is only following your own estimate, explain more when you are
+      unsure, learn how you like to work, keep your track record and pool what all coaches' changes did to accuracy.
+      Press <b>Talk</b> for a voice stage, or <b>Guide me</b> to just answer questions.</p>
+    <p class="muted">Keyboard: <kbd>/</kbd> type a note · <kbd>V</kbd> voice mode · <kbd>G</kbd> guide me · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>?</kbd> this help</p>
   </form>
 </dialog>
 
