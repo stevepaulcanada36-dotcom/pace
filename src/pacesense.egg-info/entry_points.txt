@@ -1,0 +1,2 @@
+[console_scripts]
+pacesense = pacesense.cli:main
