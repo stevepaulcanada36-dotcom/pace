@@ -15,6 +15,8 @@ from typing import Any
 
 from .. import __version__
 from ..adaptive import AdaptiveEngine, Event
+from ..adaptive.answers import is_bare_answer, match_choice
+from ..adaptive.explain import explain
 from ..cbr import CaseBase, MarathonModel
 from ..coach import CoachService
 from ..data import load_csv, synthetic_runners
@@ -110,7 +112,8 @@ class StudioService:
         return out[:limit]
 
     # ---- sessions -------------------------------------------------------------------------------
-    def create(self, runner_id: str = "demo", holdout: bool | None = None, coach_id: str = "anonymous") -> tuple[str, dict]:
+    def create(self, runner_id: str = "demo", holdout: bool | None = None, coach_id: str = "anonymous",
+               condition: str = "ask") -> tuple[str, dict]:
         is_demo = runner_id == "demo"
         rid = self.demo_runner if is_demo else runner_id
         self.coach.runner(rid)                                   # 404 early for an unknown id
@@ -119,7 +122,8 @@ class StudioService:
         live = Live(hud, AdaptiveEngine(self.coach.repo, coach_id), coach_id)
         sid = self.sessions.add(live)
         st = self.view(sid, live)
-        st["adapt"] = live.engine.start(st)
+        st["adapt"] = live.engine.start(st, condition)
+        st["adapt"]["speak"] = live.engine.speak(None, "")
         log.info("session created", extra={"session": sid[:6], "runner": rid, "holdout": hud.holdout, "coach": coach_id[:8]})
         return sid, st
 
@@ -169,12 +173,72 @@ class StudioService:
                 "notes": turn.get("notes", []),
                 "used": r.used, "ui_only": "ui" in r.used and "steer" not in r.used, **(extra or {})}
         self._observe(sid, live, Event(kind, text, source, data), out)
+        if r.used == ["assistant"] and live.engine.pending_new:   # a loop asked something better than the helper's
+            out["reply"] = ""                                        # generic answer: show and say the question instead
+            out["adapt"]["speak"] = live.engine.speak(None, "")
         if revealed:
             out["adapt"] = live.engine.process(self._reveal_event(live), state) | {"speak": out["adapt"]["speak"]}
         return out
 
-    def command(self, sid: str, text: str, source: str = "typed") -> dict:
-        return self._with(sid, lambda live: self._run_command(sid, live, text, source))
+    def command(self, sid: str, text: str, source: str = "typed", voice: dict | None = None) -> dict:
+        """What the coach said. If PaceSense has a question open and the words answer it ("yes", "the second
+        one", "2010", "undo"), the answer is taken; otherwise it is a new sentence for the interpreter."""
+        def run(live: Live):
+            pend = live.engine.pending
+            if pend:
+                c = match_choice(text, pend["data"].get("choices") or [])
+                if c is not None:
+                    return self._take_choice(sid, live, c, text, source, pend, voice)
+            elif is_bare_answer(text):                           # "yes" with nothing to say yes to
+                reply = ("There's no question open right now. Tell me about her races, say “guide me”, "
+                         "or ask what the likely range means.")
+                adapt = live.engine.snapshot() | {"speak": reply}
+                return {"reply": reply, "card": None, "actions": [], "used": ["prompt"], "simulation": None,
+                        "state": self.view(sid, live), "adapt": adapt}
+            return self._run_command(sid, live, text, source, extra={"voice": voice} if voice else None)
+        return self._with(sid, run)
+
+    def choose(self, sid: str, index: int) -> dict:
+        """The coach tapped choice `index` of the open question (same path as saying it)."""
+        def run(live: Live):
+            pend = live.engine.pending
+            choices = (pend or {}).get("data", {}).get("choices") or []
+            if not pend or not 0 <= index < len(choices):
+                raise ValidationError("there is no open question with that choice")
+            return self._take_choice(sid, live, choices[index], choices[index]["label"], "typed", pend, None)
+        return self._with(sid, run)
+
+    def _take_choice(self, sid: str, live: Live, c: dict, said: str, source: str, pend: dict,
+                     voice: dict | None) -> dict:
+        loop = pend.get("loop")
+        if c.get("interview"):
+            out = self._interview(sid, live, c["interview"][0], c["interview"][1])
+        elif c.get("say"):
+            out = self._run_command(sid, live, c["say"], source, extra={"prompt_answer": loop, "voice": voice})
+        elif c.get("action") == "undo":
+            out = self._undo(sid, live)
+        elif c.get("action") == "explain":                       # answer, then ask the same question again
+            text = explain(c.get("explain", "check"), self.view(sid, live), c.get("race"))
+            out = {"reply": text, "card": None, "actions": [], "used": ["prompt"], "simulation": None,
+                   "state": self.view(sid, live), "adapt": live.engine.snapshot()}
+            again = pend["message"].split(". ")[-1] if pend.get("message") else ""
+            out["adapt"]["speak"] = f"{text} {again}{live.engine._choices_aloud(pend)}".strip()
+        else:
+            act = c.get("action") or "dismiss"
+            reply = "OK, I'll leave it as it is." if act in ("dismiss", "ack") else ""
+            actions: list[dict] = []
+            if act == "keep" and c.get("turn"):
+                live.hud.react(int(c["turn"]), "disagree", "kept against the data")
+                reply = "Kept. Your knowledge wins here; I've noted that the data disagreed."
+            elif act.startswith("tab:"):
+                actions = [{"type": "focus", "panel": act[4:]}]
+                reply = "Here is what similar runners went on to run."
+            out = {"reply": reply, "card": None, "actions": actions, "used": ["prompt"], "simulation": None,
+                   "state": self.view(sid, live)}
+            out["adapt"] = live.engine.dismiss()
+            out["adapt"]["speak"] = live.engine.speak(None, reply)
+        out["choice"] = {"label": c.get("label"), "loop": loop, "said": said}
+        return out
 
     def set_weight(self, sid: str, index: int, weight: float) -> dict:
         def run(live: Live):
@@ -187,16 +251,17 @@ class StudioService:
                                                   data={"applied": turn["applied"], "turn": turn["n"]}), out)
         return self._with(sid, run)
 
+    def _undo(self, sid: str, live: Live) -> dict:
+        s = live.hud
+        last = next((t for t in reversed(s.steer.turns) if t.source != "undo" and t.applied), None)
+        undid = [a.verdict for a in last.applied] if last else []
+        turn = s.steer.undo().to_dict()
+        out = {"card": s.feedback_card(turn), "state": self.view(sid, live), "reply": ""}
+        return self._observe(sid, live, Event("undo", "undo", "typed", {"undid_verdicts": undid,
+                                                                         "applied": turn["applied"]}), out)
+
     def undo(self, sid: str) -> dict:
-        def run(live: Live):
-            s = live.hud
-            last = next((t for t in reversed(s.steer.turns) if t.source != "undo" and t.applied), None)
-            undid = [a.verdict for a in last.applied] if last else []
-            turn = s.steer.undo().to_dict()
-            out = {"card": s.feedback_card(turn), "state": self.view(sid, live)}
-            return self._observe(sid, live, Event("undo", "undo", "typed", {"undid_verdicts": undid,
-                                                                             "applied": turn["applied"]}), out)
-        return self._with(sid, run)
+        return self._with(sid, lambda live: self._undo(sid, live))
 
     def estimate(self, sid: str, finish: str) -> dict:
         secs = parse_time(finish)
@@ -251,23 +316,34 @@ class StudioService:
             return {"adapt": adapt}
         return self._with(sid, run)
 
+    def _interview(self, sid: str, live: Live, question: str, choice: str) -> dict:
+        try:
+            c = live.engine.interview_choice(question, choice)
+        except KeyError:
+            raise ValidationError(f"unknown question or choice: {question}/{choice}") from None
+        extra = {"question": question, "choice": c.key, "familiarity": c.familiarity}
+        if c.say:
+            out = self._run_command(sid, live, c.say, "typed", kind="interview_answer", extra=extra)
+        else:
+            out = {"reply": "Noted.", "card": None, "actions": [], "used": [], "simulation": None,
+                   "state": self.view(sid, live)}
+            self._observe(sid, live, Event("interview_answer", c.label, "typed", extra), out)
+        if not (out.get("card") and out["card"].get("items")):
+            out["adapt"]["speak"] = live.engine.speak(None, "")
+        return out
+
     def interview_answer(self, sid: str, question: str, choice: str) -> dict:
+        return self._with(sid, lambda live: self._interview(sid, live, question, choice))
+
+    def set_condition(self, sid: str, condition: str) -> dict:
         def run(live: Live):
+            live.engine.ctx.session.state = self.view(sid, live)
             try:
-                c = live.engine.interview_choice(question, choice)
-            except KeyError:
-                raise ValidationError(f"unknown question or choice: {question}/{choice}") from None
-            extra = {"question": question, "choice": c.key, "familiarity": c.familiarity}
-            if c.say:
-                out = self._run_command(sid, live, c.say, "typed", kind="interview_answer", extra=extra)
-            else:
-                out = {"reply": "Noted.", "card": None, "actions": [], "used": [], "simulation": None,
-                       "state": self.view(sid, live)}
-                self._observe(sid, live, Event("interview_answer", c.label, "typed", extra), out)
-            nxt = (out["adapt"].get("prompt") or {}).get("message")
-            if nxt and not (out.get("card") and out["card"].get("items")):
-                out["adapt"]["speak"] = nxt
-            return out
+                adapt = live.engine.set_condition(condition)
+            except ValueError as e:
+                raise ValidationError(str(e)) from None
+            adapt["speak"] = live.engine.speak(None, "")
+            return {"adapt": adapt}
         return self._with(sid, run)
 
     def profile(self, coach_id: str) -> dict:
@@ -275,7 +351,9 @@ class StudioService:
         snap = eng.snapshot()
         return {"coach_id": coach_id, "persona": snap["persona"], "outcomes": eng.ctx.profile.get("outcomes", []),
                 "panel_usage": eng.ctx.profile.get("panel_usage", {}), "layout_lock": eng.ctx.profile.get("layout_lock"),
-                "interview_default": bool(eng.ctx.profile.get("interview_default"))}
+                "interview_default": bool(eng.ctx.profile.get("interview_default")),
+                "voice_preset": eng.ctx.profile.get("voice_preset"),
+                "runner_notes": eng.ctx.profile.get("runner_notes", {})}
 
     def edit_profile(self, coach_id: str, changes: dict, sid: str | None = None) -> dict:
         if sid:

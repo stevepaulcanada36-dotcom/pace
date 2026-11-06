@@ -1,4 +1,4 @@
-# PaceSense 3.0: from one feedback loop to many
+# PaceSense 3.x: from one feedback loop to many, by voice
 
 This document sets out the product's future direction, starting from Muijlwijk, Willemsen, Smyth &
 IJsselsteijn, *Benefits of Human-AI Interaction for Expert Users Interacting with Prediction Models: a Study on
@@ -69,6 +69,45 @@ update the coach's persona. **No loop changes the model on its own; the coach st
   answer is turned into a sentence for the same interpreter, so the data checks still apply.
 - **The feedback-loops bar** shows all nine loops and which one just fired; "Why did the screen change?" lists every
   adaptation with its reason.
+
+## 3.1: a voice assistant, for known and unknown runners
+
+Voice is now the main way in. You talk; the sliders move, visibly, and stay draggable at every point.
+
+- **Known and unknown runners, as in the paper's design.**
+  - Choose in the runner picker, click the header pill, or answer PaceSense's first question, "How well do you
+    know this runner?"
+  - **Unknown runner:** the data leads. *Suggest from data* proposes one change at a time ("Amsterdam 2010 was 18
+    min slower than her other races. Shall I count it less?") and the coach just says yes, no or why.
+  - **Known runner:** the coach leads. *Knowledge capture* keeps what they say about her for the next session and
+    asks which race it affects, and the *Bias guard* is on from the start.
+- **A different number of loops for each situation.** There are twelve loops, and each one says whether it is on and why:
+  - an unknown runner, typed, runs 8;
+  - a known runner, by voice, runs 9 to 10;
+  - Turn-taking switches on when you talk, Bias guard when you give your own estimate, and Guided interview when you ask for it.
+- **Answering by voice.**
+  - While a question is open, "yes", "no", "why", "the second one", "2010" or "undo" answer it directly.
+  - Tapping a choice goes through the same server path, so voice and touch can never disagree.
+  - A "yes" with nothing open is not acted on.
+- **Persona from how you speak, not only what you say.** The browser measures:
+  - speaking speed (words per minute);
+  - whether you talked over PaceSense;
+  - the pause before you answered;
+  - fillers and recognition confidence.
+
+  These feed a new *tempo* dimension and certainty. *What you focus on* (race conditions, health, training,
+  pacing, the data, goals) is your perspective on the runner, and it is shown in your profile.
+- **Turn-taking**, after Tandem's presets:
+  - presets: Quick, Balanced, Calm and Hands-free;
+  - each sets how fast PaceSense speaks, how long it waits for you to finish (the silence before your words are
+    sent), and whether choices are read aloud;
+  - the preset is chosen from how you speak, and you can lock one;
+  - you can always talk over PaceSense: it stops and listens, and its own voice is filtered out so it doesn't
+    answer itself.
+- **Sliders inside the conversation.**
+  - Every change card has that race's slider, which travels from the old weight to the new one and can be
+    dragged right there.
+  - The race table and the voice stage's race cards animate the same way.
 
 ## Try it
 

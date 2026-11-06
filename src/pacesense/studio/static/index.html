@@ -29,6 +29,7 @@
   </button>
 
   <span class="mode-pill" id="mode-pill" hidden></span>
+  <button class="cond-pill" id="cond-pill" type="button" title="Do you know this runner? Known and unknown runners get different help (and different feedback loops).">Runner: known?</button>
 
   <button class="persona-chip" id="persona-btn" aria-haspopup="dialog" aria-controls="profile-dialog" title="How PaceSense sees you (and how to change it)">
     <svg class="ring" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="15" class="ring-bg"/><circle cx="18" cy="18" r="15" class="ring-fg" id="persona-ring"/></svg>
@@ -36,8 +37,8 @@
   </button>
 
   <div class="top-actions">
-    <button class="btn talk" id="talk-btn" aria-pressed="false" title="Voice mode: the screen turns into a conversation (V)">
-      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="1.5" width="5" height="9" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 8a5 5 0 0010 0M8 13v2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg><span>Talk</span></button>
+    <button class="btn talk" id="talk-btn" aria-pressed="false" title="Talk to PaceSense: the screen turns into a conversation (V)">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="1.5" width="5" height="9" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 8a5 5 0 0010 0M8 13v2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg><span>Talk to PaceSense</span></button>
     <button class="btn ghost" id="guide-btn" title="Answer a few questions instead (G)">
       <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.2 6.2a1.9 1.9 0 113 1.5c-.7.4-1.2.8-1.2 1.6M8 11.6v.1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>Guide me</span></button>
     <button class="btn ghost" id="undo-btn" title="Undo the last change (Ctrl+Z)" disabled>
@@ -57,6 +58,7 @@
       <div class="orb" id="orb" aria-hidden="true"><span></span><span></span><span></span></div>
       <div class="stage-talk">
         <p class="stage-status" id="stage-status">Voice mode</p>
+        <p class="stage-mode" id="stage-mode"></p>
         <p class="stage-transcript" id="stage-transcript" aria-live="polite">Say something about her races.</p>
         <form class="stage-type" id="stage-form" autocomplete="off">
           <label for="stage-input" class="sr">Say or type</label>
@@ -214,6 +216,12 @@
     <header><h2 id="runner-dialog-h">Open a runner</h2><button class="btn icon ghost" value="close" aria-label="Close">✕</button></header>
     <input type="search" id="runner-search" placeholder="Search by id or name…" aria-label="Search runners">
     <ul class="runner-list" id="runner-list" role="listbox" aria-label="Runners"></ul>
+    <fieldset class="segmented cond-choice" id="cond-choice">
+      <legend>Do you know this runner? <span class="muted">(the paper's familiar / unfamiliar conditions)</span></legend>
+      <label><input type="radio" name="cond" value="known"><span>I know them</span></label>
+      <label><input type="radio" name="cond" value="unknown"><span>I don't</span></label>
+      <label><input type="radio" name="cond" value="ask" checked><span>Ask me</span></label>
+    </fieldset>
     <label class="check"><input type="checkbox" id="holdout-check" checked> Hide the best race to check accuracy</label>
   </form>
 </dialog>
@@ -232,8 +240,19 @@
           <option value="">Adapt to me</option><option value="standard">Standard</option><option value="analysis">Analysis first</option>
           <option value="races">Races first</option><option value="summary">Summary first</option><option value="guided">Guided</option>
         </select></label>
+      <label class="field inline"><span>Voice</span>
+        <select id="voice-preset">
+          <option value="">Adapt to how I speak</option><option value="quick">Quick</option><option value="balanced">Balanced</option>
+          <option value="calm">Calm</option><option value="handsfree">Hands-free</option>
+        </select></label>
       <label class="check"><input type="checkbox" id="interview-default"> Start each runner with the guided interview</label>
     </div>
+    <h3 class="sub-h">What you focus on</h3>
+    <div class="focus" id="focus"></div>
+    <h3 class="sub-h">How you speak</h3>
+    <div class="voice-stats" id="voice-stats"></div>
+    <h3 class="sub-h">What you told me about this runner</h3>
+    <ul class="notes-mem" id="runner-notes"></ul>
     <h3 class="sub-h">Your track record</h3>
     <div id="record" class="record"></div>
     <h3 class="sub-h">Why the screen changed</h3>

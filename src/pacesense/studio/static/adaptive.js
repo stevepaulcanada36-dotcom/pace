@@ -18,6 +18,8 @@
     // ------------------------------------------------------------ apply what the loops decided
     function apply(a, opts = {}) {
       A.adapt = a;
+      app.pending = a.prompt || null;
+      renderCondition(a);
       (a.loops || []).forEach((l) => { A.loopNames[l.key] = l.name; });
       renderPersonaChip(a.persona);
       renderLoops(a);
@@ -42,10 +44,35 @@
         if (ad.kind === "insight" || ad.kind === "persona") sysNote(ad);
         else if (ad.kind === "ui") uiNote(ad);
       }
-      if (a.prompt && a.prompt.t !== A.promptT) { A.promptT = a.prompt.t; renderPrompt(a.prompt); }
-      else if (!a.prompt) hideStageAsk();
+      if (a.prompt && a.prompt.t !== A.promptT) { closeAsks(); A.promptT = a.prompt.t; renderPrompt(a.prompt); }
+      else if (!a.prompt) { hideStageAsk(); closeAsks(); A.promptT = null; }
       if (!opts.fresh && a.speak && A.speakOn) say(a.speak);
       if ($("#profile-dialog").open) renderProfile();
+    }
+
+    /** Questions that are no longer open can't be answered twice. */
+    function closeAsks() {
+      $$("#feed .ask").forEach((li) => { if (li.dataset.t !== String(A.promptT)) return; li.classList.add("answered"); $$(".choice", li).forEach((b) => { b.disabled = true; }); });
+    }
+
+    // ------------------------------------------------------------ known / unknown runner
+    const COND = { known: ["Known runner", "You lead; I check and remember"], unknown: ["Unknown runner", "The data leads; you say yes or no"],
+      ask: ["Runner: known?", "Tell me whether you know this runner"] };
+    function renderCondition(a) {
+      const c = (a.ui && a.ui.condition) || "ask", pill = $("#cond-pill");
+      pill.textContent = COND[c][0]; pill.dataset.cond = c; pill.title = `${COND[c][1]}. Click to switch.`;
+      const [on, all] = [(a.loops || []).filter((l) => l.active).length, (a.loops || []).length];
+      const vs = (a.ui && a.ui.voice_style) || {};
+      $("#stage-mode").textContent = `${COND[c][0]}: ${COND[c][1].toLowerCase()} · ${on} of ${all} loops active · ${vs.label || "Balanced"} voice`;
+    }
+    async function toggleCondition() {
+      const cur = $("#cond-pill").dataset.cond, next = cur === "known" ? "unknown" : "known";
+      try {
+        const r = await api("PUT", `/sessions/${app.sid}/condition`, { condition: next });
+        storage.set("pacesense.condition", next);
+        apply(r.adapt);
+        toast(`${COND[next][0]}: ${COND[next][1].toLowerCase()}.`);
+      } catch (e) { toast(e.message, "error"); }
     }
 
     // ------------------------------------------------------------ persona chip
@@ -62,8 +89,8 @@
       const fired = new Set((a.adaptations || []).filter((x) => x.message || x.kind === "ui").map((x) => x.loop));
       const ol = clear($("#loops"));
       (a.loops || []).forEach((l, i) => {
-        const li = h("li", { class: `loop ${fired.has(l.key) ? "fired" : ""} ${l.fired ? "used" : ""}`, tabindex: 0,
-          title: `${l.answers}${l.last ? `\n\nLast: ${l.last}` : ""}` },
+        const li = h("li", { class: `loop ${fired.has(l.key) ? "fired" : ""} ${l.fired ? "used" : ""} ${l.active ? "" : "off"}`, tabindex: 0,
+          title: `${l.active ? "On" : "Off"}: ${l.reason}.\n\n${l.answers}${l.last ? `\n\nLast: ${l.last}` : ""}` },
           h("span", { class: "loop-n mono", text: String(i + 1) }),
           h("span", { class: "loop-name", text: l.name }),
           h("span", { class: `loop-scale ${l.timescale}`, text: TIMESCALE[l.timescale] || l.timescale }),
@@ -72,8 +99,8 @@
         li.addEventListener("keydown", (e) => { if (e.key === "Enter") openProfile(); });
         ol.append(li);
       });
-      const total = (a.loops || []).reduce((n, l) => n + l.fired, 0);
-      $("#loops-sub").textContent = `${(a.loops || []).length} loops watch every change · ${total} adaptations so far`;
+      const total = (a.loops || []).reduce((n, l) => n + l.fired, 0), on = (a.loops || []).filter((l) => l.active).length;
+      $("#loops-sub").textContent = `${on} of ${(a.loops || []).length} loops active for this runner · ${total} adaptations so far`;
     }
 
     // ------------------------------------------------------------ notes from the loops
@@ -93,25 +120,26 @@
     // ------------------------------------------------------------ PaceSense asks
     function choiceButtons(prompt, onDone) {
       const box = h("div", { class: "choices" });
-      for (const c of prompt.data.choices || []) {
-        const b = h("button", { type: "button", class: "choice", text: c.label });
+      (prompt.data.choices || []).forEach((c, i) => {
+        const b = h("button", { type: "button", class: `choice ${c.yes ? "yes" : ""}`, text: c.label });
         b.addEventListener("click", async () => {
           $$("button", box).forEach((x) => { x.disabled = true; x.classList.toggle("picked", x === b); });
           onDone && onDone();
-          await choose(c);
+          await choose(i, c);
         });
         box.append(b);
-      }
+      });
       return box;
     }
     function renderPrompt(pr) {
       const empty = $(".empty", feed); if (empty) empty.remove();
       const q = pr.data.question;
-      const li = h("li", { class: `ask ${q ? "interview" : ""}` },
+      const li = h("li", { class: `ask ${q ? "interview" : ""}`, "data-t": String(pr.t) },
         h("small", { class: "sys-label", text: q ? "Guided interview" : `PaceSense asks · ${loopLabel(pr.loop)}` }),
         h("p", { class: "ask-text", text: pr.message }),
         pr.why ? h("p", { class: "ask-why", text: q ? q.why : `Because ${pr.why}.` }) : "",
-        choiceButtons(pr, () => hideStageAsk()));
+        choiceButtons(pr, () => hideStageAsk()),
+        h("p", { class: "ask-say", text: (pr.data.choices || []).some((c) => c.yes) ? "Say “yes” or “no”, or tap." : "Tap, or just say it." }));
       feed.append(li); P.scrollFeed();
       // the same question, large, on the voice stage
       $("#stage-ask-text").textContent = pr.message;
@@ -120,17 +148,15 @@
     }
     function hideStageAsk() { $("#stage-ask").hidden = true; }
 
-    async function choose(c) {
+    /** A tap takes exactly the same path as saying the choice: the server matches it to the open question. */
+    async function choose(index, c) {
+      P.addSaid(c.label, "typed");
+      P.setBusy(true);
       try {
-        if (c.say) return P.send(c.say, A.voiceMode ? "voice" : "typed");
-        if (c.interview) return answerInterview(c.interview[0], c.interview[1], c.label);
-        const act = c.action || "dismiss";
-        if (act === "undo") return P.undo();
-        if (act === "keep") { if (c.turn) await P.sendReaction(c.turn, "disagree", null, null); }
-        if (act.startsWith("tab:")) { P.selectTab(`tab-${act.slice(4)}`, true); P.focusPanel("#panel-analysis"); }
-        const r = await api("POST", `/sessions/${app.sid}/events`, { kind: "dismiss" });
-        apply(r.adapt, { fresh: true });
-      } catch (e) { toast(e.message, "error"); }
+        const r = await api("POST", `/sessions/${app.sid}/choice`, { index });
+        r.choice = null;                               // the bubble above already shows what was picked
+        P.applyTurn(r);
+      } catch (e) { toast(e.message, "error"); } finally { P.setBusy(false); }
     }
 
     async function answerInterview(question, choice, label) {
@@ -166,6 +192,11 @@
       try {
         const r = await api("POST", `/sessions/${app.sid}/events`, { kind: on ? "voice_on" : "voice_off" });
         apply(r.adapt, { fresh: true });
+        if (on && A.speakOn) {
+          const p = r.adapt.prompt;
+          say(p ? p.message + ((p.data.choices || []).some((c) => c.yes) ? " Say yes or no." : "")
+            : "I'm listening. Tell me about her races, or say guide me.");
+        }
       } catch (e) { toast(e.message, "error"); }
       if (on) $("#stage-status").textContent = P.hasMic ? "Listening… talk about her races" : "Voice mode (this browser has no speech recognition: type below)";
       if (on && !P.hasMic) $("#stage-input").focus();
@@ -179,15 +210,23 @@
       $("#stage-target").textContent = st.prediction.finish;
       $("#stage-range").textContent = st.prediction.low_s ? `likely ${P.fmt.time(st.prediction.low_s, false)}–${P.fmt.time(st.prediction.high_s, false)}` : "";
       const box = clear($("#stage-races")), spot = new Set(app.spotlight || []);
+      const prev = A.stageWeights || null;
+      A.stageWeights = st.races.map((r) => r.weight);
       st.races.forEach((r, i) => {
-        const bar = h("span", { class: "sr-bar" }, h("span", { class: "sr-fill" }));
-        bar.firstChild.style.width = `${r.weight * 100}%`;
+        const bar = h("input", { type: "range", min: 0, max: 1, step: 0.05, value: r.weight, class: "sr-slider",
+          "aria-label": `Weight for ${r.event} ${r.year}` });
+        bar.style.setProperty("--fill", `${r.weight * 100}%`);
+        bar.addEventListener("click", (e) => e.stopPropagation());
+        bar.addEventListener("input", (e) => { e.stopPropagation(); bar.style.setProperty("--fill", `${bar.value * 100}%`); bar.nextSibling.textContent = Number(bar.value).toFixed(1); });
+        bar.addEventListener("change", () => P.setWeight(i, Number(bar.value)));
+        if (prev && prev[i] != null && prev[i] !== r.weight) requestAnimationFrame(() => P.animateSlider(bar, bar.nextSibling, prev[i], r.weight, 700));
         const ev = r.evidence.direction > 0 ? ["warn", "slower than usual"] : r.evidence.direction < 0 ? ["ok", "faster than usual"] : ["neutral", "typical"];
-        const card = h("button", { type: "button", class: `stage-race ${spot.has(i) ? "spot" : ""}`, title: `Start a sentence about ${r.event} ${r.year}` },
+        const card = h("div", { class: `stage-race ${spot.has(i) ? "spot" : ""}`, role: "button", tabindex: 0, title: `Start a sentence about ${r.event} ${r.year}` },
           h("span", { class: "sr-top" }, h("b", { text: `${r.event} ${r.year}` }), h("span", { class: "mono", text: r.finish })),
           h("span", { class: `chip ${ev[0]}`, text: ev[1] }),
           h("span", { class: "sr-w" }, bar, h("span", { class: "mono", text: r.weight.toFixed(1) })));
-        card.addEventListener("click", () => { const inp = $("#stage-input"); inp.value = `${r.event} ${r.year} `; inp.focus(); });
+        if (prev && prev[i] != null && prev[i] !== r.weight) card.classList.add("changed");
+        card.addEventListener("click", (e) => { if (e.target.closest("input")) return; const inp = $("#stage-input"); inp.value = `${r.event} ${r.year} `; inp.focus(); });
         box.append(card);
       });
     }
@@ -202,16 +241,26 @@
       const v = storage.get("pacesense.speak");
       return v === null ? !!ui.speak : v === "1";
     }
+    const TTS = { speaking: false, text: "", endedAt: 0 };
     function say(text) {
       if (!("speechSynthesis" in window) || !text) return;
       try {
         speechSynthesis.cancel();
-        const u = new SpeechSynthesisUtterance(text);
-        u.rate = 1.04; u.lang = "en-US";
-        u.onstart = () => { P.pauseListening(true); $("#orb").classList.add("speaking"); };
-        u.onend = u.onerror = () => { P.pauseListening(false); $("#orb").classList.remove("speaking"); };
+        const vs = (A.adapt && A.adapt.ui && A.adapt.ui.voice_style) || {};
+        const u = new SpeechSynthesisUtterance(text.replace(/[“”]/g, ""));
+        u.rate = vs.rate || 1.03; u.lang = "en-US";
+        u.onstart = () => { Object.assign(TTS, { speaking: true, text }); $("#orb").classList.add("speaking"); };
+        u.onend = u.onerror = () => { Object.assign(TTS, { speaking: false, endedAt: performance.now() }); $("#orb").classList.remove("speaking"); };
         speechSynthesis.speak(u);
       } catch { /* speech is optional */ }
+    }
+    /** The coach talked over PaceSense: stop speaking at once (they are always allowed to interrupt). */
+    function bargeIn() {
+      if (!TTS.speaking) return;
+      try { speechSynthesis.cancel(); } catch { /* ignore */ }
+      Object.assign(TTS, { speaking: false, endedAt: performance.now() });
+      $("#orb").classList.remove("speaking");
+      $("#stage-status").textContent = "Go ahead, I'm listening";
     }
 
     // ------------------------------------------------------------ coach profile
@@ -228,7 +277,8 @@
         h("div", { class: "arch-name" }, h("b", { text: p.archetype.name }), h("span", { class: "muted", text: ` · ${Math.round(100 * p.confidence)}% sure, from ${p.signals} signals` })),
         h("p", { text: p.archetype.description }));
       const dims = clear($("#dims"));
-      for (const d of p.dimensions.concat(p.runner)) {
+      const runnerDims = (A.adapt && A.adapt.persona && A.adapt.persona.runner) || p.runner;   // this session's runner
+      for (const d of p.dimensions.concat(runnerDims)) {
         const inp = h("input", { type: "range", min: 0, max: 1, step: 0.05, value: d.value, "aria-label": `${d.low} to ${d.high}` });
         inp.style.setProperty("--fill", `${d.value * 100}%`);
         inp.addEventListener("input", () => inp.style.setProperty("--fill", `${inp.value * 100}%`));
@@ -243,6 +293,23 @@
             d.override != null ? h("button", { type: "button", class: "link-btn", text: "use what PaceSense learned", onclick: () => editProfile({ [d.key]: null }) }) : "")));
       }
       $("#layout-lock").value = prof.layout_lock || "";
+      $("#voice-preset").value = prof.voice_preset || "";
+      const focus = clear($("#focus"));
+      if (!p.focus.length) focus.append(h("p", { class: "muted", text: "Nothing yet: talk about her races and this fills in." }));
+      for (const f of p.focus) {
+        const bar = h("span", { class: "fbar" }, h("span"));
+        bar.firstChild.style.width = `${Math.round(100 * f.share)}%`;
+        focus.append(h("div", { class: "frow" }, h("span", { text: f.label }), bar, h("small", { class: "mono", text: `${f.count}×` })));
+      }
+      const vs = clear($("#voice-stats")), v = p.voice || {};
+      const stat = (label, val) => h("div", { class: "vstat" }, h("small", { text: label }), h("b", { class: "mono", text: val }));
+      if (v.wpm == null) vs.append(h("p", { class: "muted", text: "Talk to PaceSense and this fills in (speed, cutting in, pauses)." }));
+      else vs.append(stat("Speaking speed", `${Math.round(v.wpm)} wpm`), stat("Cuts in", `${Math.round(100 * (v.barge_in_rate || 0))}%`),
+        stat("Pause before answering", v.latency_ms != null ? `${(v.latency_ms / 1000).toFixed(1)} s` : "–"),
+        stat("Voice style now", ((A.adapt && A.adapt.ui.voice_style) || {}).label || "Balanced"));
+      const notes = clear($("#runner-notes")), mine = (prof.runner_notes || {})[(app.st && app.st.session.source_runner) || ""] || [];
+      if (!mine.length) notes.append(h("li", { class: "muted", text: "Nothing yet. With a runner you know, what you tell me is kept for next time." }));
+      mine.slice().reverse().forEach((n) => notes.append(h("li", { text: `“${n.text}”` })));
       $("#interview-default").checked = !!prof.interview_default;
       renderRecord(prof.outcomes || []);
       const log = clear($("#why-log"));
@@ -275,6 +342,9 @@
 
     // ------------------------------------------------------------ hooks + wiring
     P.hooks.apply = apply;
+    P.hooks.tts = () => TTS;
+    P.hooks.bargeIn = bargeIn;
+    P.hooks.silenceMs = () => ((A.adapt && A.adapt.ui && A.adapt.ui.voice_style) || {}).silence_ms || 1000;
     P.hooks.transcript = onTranscript;
     P.hooks.voice = (on) => setVoiceMode(on, { fromMic: true });
     P.hooks.panel = (panel) => {
@@ -298,6 +368,8 @@
       $("#stage-input").value = ""; onTranscript("", true, v); P.send(v, "typed");
     });
     $("#layout-lock").addEventListener("change", (e) => editProfile({ layout_lock: e.target.value || null }));
+    $("#voice-preset").addEventListener("change", (e) => editProfile({ voice_preset: e.target.value || null }));
+    $("#cond-pill").addEventListener("click", toggleCondition);
     $("#interview-default").addEventListener("change", (e) => editProfile({ interview_default: e.target.checked }));
     $("#persona-reset").addEventListener("click", () => editProfile({ reset: true }));
     $("#persona-forget").addEventListener("click", async () => {

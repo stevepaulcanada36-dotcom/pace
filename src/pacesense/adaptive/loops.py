@@ -1,14 +1,18 @@
-"""N feedback loops, at four time scales, all running on every event.
+"""N feedback loops, at four time scales. Which ones run depends on the situation.
 
 The paper's system has one loop: the coach moves a slider, the model predicts again, and that is all. Here every
 coach action is an `Event`; each loop below watches the events it cares about and may answer with an
 `Adaptation` (rearrange the screen, ask a question, add an insight, update the persona). Loops are independent
 and pluggable: add one by subclassing `FeedbackLoop` and listing it in `default_loops()`.
 
-    instant        Data check · Clarify · Layout
-    session        Bias guard · Explanations · Guided interview
-    cross-session  Persona · Track record
+    instant        Data check · Clarify · Turn-taking · Layout
+    session        Bias guard · Explanations · Guided interview · Suggest from data
+    cross-session  Persona · Track record · Knowledge capture
     population     Shared learning (what other coaches' changes did to accuracy)
+
+Each loop's `active()` says whether it runs now and why. The paper's two conditions set most of that:
+a **known** runner turns on Knowledge capture and a stricter Bias guard (the coach leads); an **unknown** runner
+turns on Suggest from data and Clarify (the data leads, the coach says yes or no). Talking turns on Turn-taking.
 
 Nothing here changes the model's weights on its own: loops change what the coach sees and is asked. The coach
 stays in control, which is the paper's premise; the loops make that control better informed.
@@ -63,6 +67,11 @@ class SessionContext:
     interview_on: bool = False
     spotlight: list[int] = field(default_factory=list)
     shared_counted: bool = False
+    condition: str = "ask"                                  # known | unknown | ask (the paper's familiar/unfamiliar)
+    proposed: list[int] = field(default_factory=list)       # races the Suggest loop already raised
+    voice_style: dict = field(default_factory=dict)
+    knowledge_noted: bool = False
+    suggest_done: bool = False
 
 
 @dataclass
@@ -86,14 +95,20 @@ class FeedbackLoop:
     def observe(self, ev: Event, ctx: LoopContext) -> list[Adaptation]:
         return []
 
+    def active(self, ctx: LoopContext) -> tuple[bool, str]:
+        """Whether the loop runs right now, and why. The set of active loops changes with the runner
+        (known / unknown), with voice, and with what the coach has done."""
+        return True, "always on"
+
     def adapt(self, kind: str, message: str, why: str = "", **data: Any) -> Adaptation:
         self.fired += 1
         self.last = message
         return Adaptation(self.key, kind, message, why, data)
 
-    def status(self, ctx: LoopContext) -> dict:
+    def status(self, ctx: LoopContext | None) -> dict:
+        on, why = self.active(ctx) if ctx is not None else (True, "")
         return {"key": self.key, "name": self.name, "timescale": self.timescale, "answers": self.answers,
-                "fired": self.fired, "last": self.last}
+                "fired": self.fired, "last": self.last, "active": on, "reason": why}
 
 
 # ---------------------------------------------------------------------------------------------- instant
@@ -114,14 +129,19 @@ class EvidenceLoop(FeedbackLoop):
         return [self.adapt("prompt", f"{a['race']}: {a.get('evidence', 'her own times disagree with this change.')}{hint}",
                            "a change went against the runner's own data",
                            choices=[{"label": "Keep it: I know something the data doesn't", "action": "keep",
-                                     "turn": ev.data.get("turn")},
-                                    {"label": "Undo", "action": "undo"},
+                                     "turn": ev.data.get("turn"), "yes": True},
+                                    {"label": "Undo", "action": "undo", "no": True},
                                     {"label": "Show similar runners", "action": "tab:similar"}])]
 
 
 class ClarifyLoop(FeedbackLoop):
     key, name, timescale = "clarify", "Clarify", "instant"
     answers = "Talking is ambiguous; instead of guessing, PaceSense asks which race you meant."
+
+    def active(self, ctx):
+        if ctx.session.condition == "known":
+            return False, "with a runner you know, Knowledge capture asks instead"
+        return True, "asks when a cue has no race"
 
     def observe(self, ev, ctx):
         if (ev.kind != "utterance" or ev.applied or ev.data.get("estimate_s") or ev.data.get("ui_only")
@@ -144,13 +164,25 @@ class LayoutLoop(FeedbackLoop):
     LAYOUTS: ClassVar[dict[str, str]] = {"analyst": "analysis", "intuitive": "races", "pragmatist": "summary", "explorer": "guided",
                "unknown": "standard"}
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._seen: list[str] = []
+
     def desired(self, ctx: LoopContext) -> str:
+        """The persona only re-arranges the screen when it is fairly sure and has held the same view for
+        three events in a row, so the layout doesn't jump around while PaceSense is still learning."""
         lock = ctx.profile.get("layout_lock")
         if ctx.session.voice:
             return "voice"
         if lock:
             return lock
-        return self.LAYOUTS.get(ctx.persona.archetype()["key"], "standard")
+        arch = ctx.persona.archetype()["key"]
+        self._seen = (self._seen + [arch])[-3:]
+        current = ctx.session.layout if ctx.session.layout != "voice" else "standard"
+        edited = any(d.override is not None for d in ctx.persona.dims.values())   # the coach said so: follow at once
+        if not edited and (ctx.persona.confidence < 0.5 or len(self._seen) < 3 or len(set(self._seen)) > 1):
+            return current
+        return self.LAYOUTS.get(arch, "standard")
 
     def observe(self, ev, ctx):
         out = []
@@ -184,6 +216,13 @@ class BiasGuardLoop(FeedbackLoop):
     key, name, timescale = "bias", "Bias guard", "session"
     answers = ("Acceptance can be inflated when a coach steers the model toward their own prediction (paper, "
                "Sec. 6): when that happens PaceSense asks whether it is knowledge or expectation.")
+
+    def active(self, ctx):
+        if (ctx.session.state.get("steering") or {}).get("coach_estimate_s"):
+            return True, "you gave your own estimate"
+        if ctx.session.condition == "known":
+            return True, "you know this runner: strong opinions are likely (RQ2)"
+        return False, "waits for your own estimate"
 
     def threshold(self, ctx: LoopContext) -> float:
         t = 0.85
@@ -234,8 +273,8 @@ class ExplanationLoop(FeedbackLoop):
             ctx.session.explain = "full"
             return [self.adapt("ui", "Showing full explanations", "you were unsure about a check", explain="full"),
                     self.adapt("prompt", "Want me to explain it?", "you were unsure",
-                               choices=[{"label": "What is the likely range?", "say": "what does the likely range mean?"},
-                                        {"label": "Why does the data disagree?", "say": "why does the data disagree?"},
+                               choices=[{"label": "What is the likely range?", "action": "explain", "explain": "range"},
+                                        {"label": "How does the data check work?", "action": "explain", "explain": "check"},
                                         {"label": "No thanks", "action": "dismiss"}])]
         if ctx.session.reactions[-3:] == ["agree"] * 3 and ctx.session.explain != "brief":
             ctx.session.explain = "brief"
@@ -263,19 +302,188 @@ class InterviewLoop(FeedbackLoop):
                                "press Reveal to see whether it helped.", "no questions left")]
         ctx.session.asked.append(q.id)
         return [self.adapt("prompt", q.text, q.why, question=q.to_dict(),
-                           choices=[{"label": c["label"], "interview": [q.id, c["key"]]} for c in q.to_dict()["choices"]])]
+                           choices=[{"label": c["label"], "interview": [q.id, c["key"]], "no": c["key"] == "skip"}
+                                    for c in q.to_dict()["choices"]])]
+
+    def active(self, ctx):
+        if ctx.session.interview_on:
+            return True, "you asked to be guided"
+        if ctx.session.condition == "ask":
+            return True, "first: do you know this runner?"
+        return False, "say “guide me” to start it"
 
     def observe(self, ev, ctx):
         if ev.kind == "session_start":
+            if ctx.session.condition != "ask":
+                ctx.session.asked.append("familiarity")          # already known from the runner picker
             arche = ctx.persona.archetype()["key"]
             if arche in ("explorer",) or ctx.profile.get("interview_default"):
                 ctx.session.interview_on = True
                 return self.ask(ctx, "you like to be guided")
+            if ctx.session.condition == "ask":
+                return self.ask(ctx, "known and unknown runners need different help")
             return []
-        if ev.kind == "interview_answer":
-            ctx.session.interview_on = True
+        if ev.kind == "interview_answer" and ctx.session.interview_on:
             return self.ask(ctx, "next question")
         return []
+
+
+class SuggestLoop(FeedbackLoop):
+    """Unknown runner: the coach has little to add, so PaceSense leads with what the data says and the coach
+    says yes or no (the paper: coaches relied on the model more for unfamiliar runners, RQ2)."""
+    key, name, timescale = "suggest", "Suggest from data", "session"
+    answers = ("For a runner the coach doesn't know, PaceSense proposes changes the data supports, one at a "
+               "time, and the coach answers yes or no.")
+
+    def active(self, ctx):
+        if ctx.session.condition == "unknown":
+            return True, "you don't know this runner: the data leads"
+        return False, "only for runners you don't know"
+
+    def candidate(self, ctx: LoopContext) -> dict | None:
+        races = ctx.session.state.get("races") or []
+        pool = [r for r in races if abs(r.get("weight", 0.5) - 0.5) < 1e-9 and r.get("index") not in ctx.session.proposed
+                and r["evidence"].get("direction")]
+        return max(pool, key=lambda r: abs(r["evidence"].get("z") or 0), default=None)
+
+    def propose(self, ctx: LoopContext) -> list[Adaptation]:
+        r = self.candidate(ctx)
+        if r is None:
+            return []
+        ctx.session.proposed.append(r["index"])
+        name, med = f"{r['event']} {r['year']}", r["evidence"].get("others_median_s")
+        gap = "" if med is None else f"{abs(round((r['finish_s'] - med) / 60))} min "
+        if r["evidence"]["direction"] > 0:
+            msg = f"{name} was {gap}slower than her other races. The data suggests counting it less. Shall I?"
+            yes = {"label": "Yes, count it less", "say": f"set {name} to 0.2", "yes": True}
+        else:
+            msg = f"{name} was her fastest, {gap}quicker than her others. Count it fully, as her level now?"
+            yes = {"label": "Yes, that's her level", "say": f"{name} is exactly how she runs now", "yes": True}
+        return [self.adapt("prompt", msg, "the runner is unfamiliar, so the data leads", race=r["index"],
+                           choices=[yes, {"label": "No, keep it as it is", "action": "dismiss", "no": True},
+                                    {"label": "Why?", "action": "explain", "explain": "race", "race": r["index"]}])]
+
+    def done(self, ctx: LoopContext) -> list[Adaptation]:
+        if ctx.session.proposed and not ctx.session.suggest_done:
+            ctx.session.suggest_done = True
+            return [self.adapt("insight", "That's everything the data flags for her. Tell me anything else you "
+                               "know, or say “reveal” to see how close we got.", "no more suggestions")]
+        return []
+
+    def observe(self, ev, ctx):
+        if ev.kind in ("session_start", "condition") or \
+                (ev.kind == "interview_answer" and ev.data.get("question") == "familiarity"):
+            return self.propose(ctx)
+        if (ev.kind == "prompt_answer" and ev.data.get("loop") == self.key) or \
+                (ev.kind == "utterance" and ev.data.get("prompt_answer") == self.key):
+            return self.propose(ctx) or self.done(ctx)
+        return []
+
+
+class KnowledgeLoop(FeedbackLoop):
+    """Known runner: the coach leads. Whatever they say about her (injury, training, life) is remembered for
+    next time, and PaceSense asks whether it should change a race."""
+    key, name, timescale = "knowledge", "Knowledge capture", "cross-session"
+    answers = ("For a runner the coach knows, their knowledge is the input: it is kept across sessions and "
+               "PaceSense asks which race it affects (the think-aloud knowledge the sliders lost).")
+
+    def active(self, ctx):
+        if ctx.session.condition == "known":
+            return True, "you know this runner: your knowledge leads"
+        return False, "only for runners you know"
+
+    def _runner(self, ctx: LoopContext) -> str:
+        return (ctx.session.state.get("session") or {}).get("source_runner") or "runner"
+
+    def observe(self, ev, ctx):
+        notes = ctx.profile.setdefault("runner_notes", {}).setdefault(self._runner(ctx), [])
+        if ev.kind in ("session_start", "condition") or \
+                (ev.kind == "interview_answer" and ev.data.get("question") == "familiarity"):
+            if notes:
+                quoted = "; ".join(f"“{n['text']}”" for n in notes[-3:])
+                return [self.adapt("insight", f"Last time you told me about her: {quoted}. Still true?",
+                                   "what you said in earlier sessions")]
+            return [self.adapt("insight", "You know her, so tell me about her races: anything unusual, "
+                               "injuries, heat, how her training is going. I'll move the weights and check them.",
+                               "the coach leads for a known runner")]
+        if ev.kind != "utterance" or not ev.text or ev.data.get("prompt_answer"):
+            return []
+        from .persona import RUNNER_KNOWLEDGE, topics_in
+        if not (RUNNER_KNOWLEDGE.search(ev.text) or {"health", "form", "conditions"} & set(topics_in(ev.text))):
+            return []
+        if not any(n["text"] == ev.text for n in notes):
+            notes.append({"t": ev.t, "text": ev.text[:200]})
+            del notes[:-20]
+        if ev.applied:
+            if ctx.session.knowledge_noted:
+                return []
+            ctx.session.knowledge_noted = True
+            return [self.adapt("insight", "I'll remember that about her for next time.", "runner knowledge")]
+        races = ctx.session.state.get("races") or []
+        topics = set(topics_in(ev.text))
+        keep = {"label": "No, just remember it", "action": "dismiss", "no": True}
+        recovered = re.search(r"\b(fine|healthy|recovered|better|back to|good shape|strong)\b", ev.text, re.IGNORECASE)
+        if "form" in topics and (recovered or not ({"health", "conditions"} & topics)):
+            # training and form are about her now, not about one race: offer what that means for the weights
+            best = min(races, key=lambda r: r["finish_s"]) if races else None
+            choices = [{"label": "Count her recent races more", "say": "trust the recent races more"}]
+            if best:
+                choices.append({"label": f"Count {best['event']} {best['year']} fully (her best)",
+                                "say": f"{best['event']} {best['year']} is exactly how she runs now"})
+            return [self.adapt("prompt", f"Noted: “{ev.text[:80]}”. Should that change the weights?",
+                               "you described her form", choices=[*choices, keep])]
+        cue = "was a hot day" if "conditions" in topics else "she was injured"
+        return [self.adapt("prompt", f"Noted: “{ev.text[:80]}”. Which race did that affect?",
+                           "you shared knowledge without naming a race",
+                           choices=[{"label": f"{r['event']} {r['year']}", "say": f"{r['event']} {r['year']} {cue}"}
+                                    for r in races] + [keep])]
+
+
+class TurnTakingLoop(FeedbackLoop):
+    """How PaceSense talks back: speed, length and how long it waits before deciding you've finished,
+    adjusted to how this coach speaks (like voice presets, but chosen from behaviour and overridable)."""
+    key, name, timescale = "turns", "Turn-taking", "instant"
+    answers = "A voice assistant should match the person: brisk coaches get short, quick replies; hesitant ones get time."
+    PRESETS: ClassVar[dict[str, dict]] = {
+        "quick": {"label": "Quick", "rate": 1.12, "silence_ms": 700, "reply": "brief", "read_choices": False},
+        "balanced": {"label": "Balanced", "rate": 1.03, "silence_ms": 1000, "reply": "normal", "read_choices": False},
+        "calm": {"label": "Calm", "rate": 0.94, "silence_ms": 1600, "reply": "full", "read_choices": True},
+        "handsfree": {"label": "Hands-free", "rate": 1.0, "silence_ms": 1100, "reply": "brief", "read_choices": True},
+    }
+    WHY: ClassVar[dict[str, str]] = {
+        "quick": "you speak fast and cut in: shorter, quicker replies",
+        "calm": "you take your time: slower replies, longer pauses before I answer, choices read aloud",
+        "handsfree": "you work by voice: every question is read aloud with its choices",
+        "balanced": "the default",
+    }
+
+    def active(self, ctx):
+        if ctx.session.voice or ctx.persona.value("voice") >= 0.6:
+            return True, "you are talking"
+        return False, "starts when you talk"
+
+    def desired(self, ctx: LoopContext) -> str:
+        lock = ctx.profile.get("voice_preset")
+        if lock in self.PRESETS:
+            return lock
+        p = ctx.persona
+        if p.value("tempo") >= 0.62:
+            return "quick"
+        if p.value("tempo") <= 0.4 or p.value("certainty") <= 0.35:
+            return "calm"
+        if p.value("voice") >= 0.72:
+            return "handsfree"
+        return "balanced"
+
+    def observe(self, ev, ctx):
+        want = self.desired(ctx)
+        old = ctx.session.voice_style.get("preset")
+        if want == old:
+            return []
+        ctx.session.voice_style = {"preset": want, **self.PRESETS[want]}
+        if old is None and want == "balanced":
+            return []
+        return [self.adapt("ui", f"Voice: {self.PRESETS[want]['label']}", self.WHY[want], voice_style=ctx.session.voice_style)]
 
 
 # ---------------------------------------------------------------------------------------------- cross-session
@@ -381,10 +589,10 @@ class SharedLearningLoop(FeedbackLoop):
 
 def default_loops() -> list[FeedbackLoop]:
     """Order matters only for display: persona first so the others see the updated persona."""
-    return [PersonaLoop(), EvidenceLoop(), ClarifyLoop(), BiasGuardLoop(), ExplanationLoop(), InterviewLoop(),
-            TrackRecordLoop(), SharedLearningLoop(), LayoutLoop()]
+    return [PersonaLoop(), TurnTakingLoop(), InterviewLoop(), SuggestLoop(), KnowledgeLoop(), EvidenceLoop(),
+            ClarifyLoop(), BiasGuardLoop(), ExplanationLoop(), TrackRecordLoop(), SharedLearningLoop(), LayoutLoop()]
 
 
 __all__ = ["FeedbackLoop", "LoopContext", "SessionContext", "default_loops", "cue_category"] + [
     c.__name__ for c in (EvidenceLoop, ClarifyLoop, LayoutLoop, BiasGuardLoop, ExplanationLoop, InterviewLoop,
-                         PersonaLoop, TrackRecordLoop, SharedLearningLoop)]
+                         PersonaLoop, TrackRecordLoop, SharedLearningLoop, SuggestLoop, KnowledgeLoop, TurnTakingLoop)]

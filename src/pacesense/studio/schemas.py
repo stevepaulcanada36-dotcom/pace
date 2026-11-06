@@ -19,13 +19,27 @@ class CreateSession(_Body):
     coach_id: str = Field("anonymous", pattern=COACH_ID,
                           description="A stable, opaque id for the coach (the app keeps one per browser). Persona, "
                                       "track record and layout preferences are stored under it.")
+    condition: Literal["known", "unknown", "ask"] = Field(
+        "ask", description="Does the coach know this runner? (the paper's familiar / unfamiliar conditions). "
+                           "'ask' lets PaceSense ask first.")
     holdout: bool | None = Field(None, description="Hide the runner's best race to measure accuracy "
                                                    "(the paper's protocol). Defaults to true for the demo.")
+
+
+class VoiceSignals(_Body):
+    """How an utterance was spoken, measured in the browser (all optional)."""
+    wpm: float | None = Field(None, ge=0, le=600, description="Words per minute")
+    duration_ms: float | None = Field(None, ge=0, le=120000)
+    latency_ms: float | None = Field(None, ge=0, le=120000, description="Pause after PaceSense finished speaking")
+    barge_in: bool = Field(False, description="The coach started talking while PaceSense was speaking")
+    fillers: int = Field(0, ge=0, le=100)
+    confidence: float | None = Field(None, ge=0, le=1, description="Speech recognition confidence")
 
 
 class Command(_Body):
     text: str = Field(..., min_length=1, max_length=1000, examples=["2016 was a hot day and she was injured"])
     source: Literal["typed", "voice"] = "typed"
+    voice: VoiceSignals | None = None
 
 
 class SetWeight(_Body):
@@ -55,6 +69,14 @@ class SessionEvent(_Body):
     panel: Literal["races", "pacing", "similar", "insights", "simulator", "notes", "profile", "loops"] | None = None
 
 
+class Condition(_Body):
+    condition: Literal["known", "unknown"]
+
+
+class Choose(_Body):
+    index: int = Field(..., ge=0, le=20)
+
+
 class InterviewAnswer(_Body):
     question: str = Field(..., max_length=32)
     choice: str = Field(..., max_length=32)
@@ -70,13 +92,16 @@ class ProfileEdit(_Body):
     familiarity: float | None = Field(None, ge=0, le=1)
     layout_lock: Literal["standard", "voice", "analysis", "races", "summary", "guided"] | None = None
     interview_default: bool | None = None
+    tempo: float | None = Field(None, ge=0, le=1)
+    voice_preset: Literal["quick", "balanced", "calm", "handsfree"] | None = None
     reset: bool = False
     session_id: str | None = Field(None, max_length=64)
 
 
 BODIES = {"CreateSession": CreateSession, "Command": Command, "SetWeight": SetWeight, "Simulate": Simulate,
           "React": React, "Estimate": Estimate, "SessionEvent": SessionEvent,
-          "InterviewAnswer": InterviewAnswer, "ProfileEdit": ProfileEdit}
+          "InterviewAnswer": InterviewAnswer, "ProfileEdit": ProfileEdit, "Condition": Condition,
+          "Choose": Choose, "VoiceSignals": VoiceSignals}
 
-__all__ = ["BODIES", "COACH_ID", "Command", "CreateSession", "Estimate", "InterviewAnswer", "ProfileEdit", "React",
-           "SessionEvent", "SetWeight", "Simulate"]
+__all__ = ["BODIES", "COACH_ID", "Choose", "Command", "Condition", "CreateSession", "Estimate", "InterviewAnswer",
+           "ProfileEdit", "React", "SessionEvent", "SetWeight", "Simulate", "VoiceSignals"]

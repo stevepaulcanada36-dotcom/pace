@@ -81,7 +81,8 @@ class HudSession:
 
     # ---- the feedback loop ----------------------------------------------------------------------
     def feedback_card(self, turn: dict) -> dict:
-        items = [{"race": a["race"], "old": a["old"], "new": a["new"], "cue": a["cue"], "verdict": a["verdict"],
+        items = [{"race": a["race"], "index": a.get("index"), "old": a["old"], "new": a["new"], "cue": a["cue"],
+                  "verdict": a["verdict"],
                   "verdict_text": VERDICT_WORDS.get(a["verdict"], ""), "evidence": a["evidence"]} for a in turn["applied"]]
         st = self.steer.state()
         pr = st["prediction"]

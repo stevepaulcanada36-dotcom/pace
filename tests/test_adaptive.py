@@ -92,7 +92,7 @@ class LoopTests(unittest.TestCase):
 
     def test_there_are_n_independent_loops_at_four_time_scales(self):
         loops = default_loops()
-        self.assertGreaterEqual(len(loops), 9)
+        self.assertGreaterEqual(len(loops), 12)
         self.assertEqual({lp.timescale for lp in loops}, {"instant", "session", "cross-session", "population"})
         self.assertEqual(len({lp.key for lp in loops}), len(loops))
         self.assertTrue(all(lp.answers for lp in loops))
@@ -231,7 +231,7 @@ class AdaptiveApiTests(unittest.TestCase):
     def test_session_carries_the_adaptive_state(self):
         r = self.c.post("/api/v1/sessions", {"coach_id": "coach-api-1"}).json()
         sid, a = r["id"], r["state"]["adapt"]
-        self.assertEqual(len(a["loops"]), 9)
+        self.assertEqual(len(a["loops"]), 12)
         self.assertIn("layout", a["ui"])
         self.assertEqual(self.c.get(f"/api/v1/sessions/{sid}").json()["adapt"]["persona"]["archetype"]["key"], "unknown")
 
@@ -284,7 +284,7 @@ class AdaptiveApiTests(unittest.TestCase):
 
     def test_loops_are_described(self):
         rows = self.c.get("/api/v1/loops").json()
-        self.assertEqual(len(rows), 9)
+        self.assertEqual(len(rows), 12)
         self.assertTrue(all(r["answers"] for r in rows))
 
 

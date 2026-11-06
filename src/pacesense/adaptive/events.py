@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 EVENT_KINDS = ("session_start", "utterance", "slider", "undo", "reaction", "reveal", "simulate", "voice_on",
-               "voice_off", "panel", "interview_answer", "persona_edit")
+               "voice_off", "panel", "interview_answer", "persona_edit", "condition", "prompt_answer")
 
 
 @dataclass

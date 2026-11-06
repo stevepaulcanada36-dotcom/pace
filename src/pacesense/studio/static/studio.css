@@ -444,6 +444,41 @@ body[data-explain="full"] .fitem p { color: var(--ink-2); }
 .why-log { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 12.5px; color: var(--ink-2); max-height: 180px; overflow-y: auto; }
 .profile-foot { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding-top: 6px; border-top: 1px solid var(--line); }
 
+/* ================================================================ voice assistant (3.1) */
+.cond-pill { font-size: 12px; font-weight: 600; padding: 4px 11px; border-radius: 99px; border: 1px dashed var(--line-strong);
+  background: var(--surface); color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+.cond-pill[data-cond="known"] { border: 1px solid transparent; background: var(--accent-soft); color: var(--accent-ink); }
+.cond-pill[data-cond="unknown"] { border: 1px solid transparent; background: var(--know-soft); color: var(--know); }
+.loop.off { opacity: .42; background: transparent; border-style: dashed; }
+.loop.off .loop-n { background: transparent; }
+.inline-weight { display: grid; grid-template-columns: auto minmax(0, 1fr) 34px; align-items: center; gap: 10px; margin-top: 6px;
+  padding: 6px 10px; border-radius: 9px; background: var(--surface-2); border: 1px solid var(--line); }
+.inline-weight small { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
+.inline-weight output { font-size: 12.5px; font-weight: 600; text-align: right; }
+input[type="range"].moving::-webkit-slider-thumb { box-shadow: 0 0 0 6px var(--accent-soft); }
+input[type="range"].moving::-moz-range-thumb { box-shadow: 0 0 0 6px var(--accent-soft); }
+.ask.answered { opacity: .6; box-shadow: none; border-color: var(--line); }
+.ask-say { margin: 8px 0 0; font-size: 11.5px; color: var(--muted); }
+.choice.yes { background: var(--accent); color: #fff; }
+.choice.yes:hover:not(:disabled) { background: var(--accent-ink); }
+:root[data-theme="dark"] .choice.yes { color: #06201F; }
+.choice-note span { color: var(--accent-ink); }
+.stage-mode { margin: 4px 0 0; font-size: 12.5px; color: var(--ink-2); }
+.stage-race { cursor: pointer; }
+.stage-race.changed { animation: rowflash 1.6s ease; }
+.sr-slider { flex: 1; min-width: 0; }
+.cond-choice { grid-template-columns: repeat(3, 1fr); }
+.cond-choice legend { font-size: 12.5px; }
+.focus { display: grid; gap: 6px; }
+.frow { display: grid; grid-template-columns: 150px minmax(0, 1fr) 32px; align-items: center; gap: 10px; font-size: 12.5px; }
+.fbar { height: 8px; border-radius: 8px; background: var(--line); overflow: hidden; }
+.fbar span { display: block; height: 100%; background: var(--accent); border-radius: 8px; }
+.voice-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
+.vstat { border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px; }
+.vstat small { display: block; font-size: 11px; color: var(--muted); }
+.vstat b { font-size: 14px; }
+.notes-mem { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 12.5px; color: var(--ink-2); }
+
 @media (max-width: 1020px) {
   .layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "kpis" "loops" "notes" "races" "analysis" "sim"; }
   .layout, body[data-layout] .layout { grid-template-rows: none; }
@@ -459,6 +494,8 @@ body[data-explain="full"] .fitem p { color: var(--ink-2); }
 }
 @media (max-width: 640px) {
   .loops { flex-wrap: nowrap; overflow-x: auto; }
+  .cond-pill { order: 5; }
+  .frow { grid-template-columns: 110px minmax(0, 1fr) 28px; }
   .persona-text small { display: none; }
   .persona-chip { padding-right: 8px; }
   .persona-text b { max-width: 92px; }

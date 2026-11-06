@@ -107,10 +107,11 @@
   const tipLine = (label, value) => h("span", null, `${label} `, h("b", { text: value }));
 
   // ---------------------------------------------------------------- session lifecycle
-  async function openRunner(runnerId = "demo", holdout = null) {
+  async function openRunner(runnerId = "demo", holdout = null, condition = null) {
+    condition = condition || storage.get("pacesense.condition") || "ask";
     setBusy(true);
     try {
-      const r = await api("POST", "/sessions", { runner_id: runnerId, holdout, coach_id: coachId() });
+      const r = await api("POST", "/sessions", { runner_id: runnerId, holdout, coach_id: coachId(), condition });
       if (app.sid) api("DELETE", `/sessions/${app.sid}`).catch(() => {});
       app.sid = r.id; app.reactions = {}; app.lastCard = null; app.sim = null;
       storage.set("pacesense.sid", r.id);
@@ -142,8 +143,9 @@
 
   // ---------------------------------------------------------------- render: everything
   function render(st) {
+    const prev = app.st && app.st.races ? app.st.races.map((r) => r.weight) : null;
     app.st = st;
-    renderHeader(st); renderKpis(st); renderRaces(st);
+    renderHeader(st); renderKpis(st); renderRaces(st); animateWeights(prev, st);
     renderPacing(st); renderSimilar(st); renderInsights(st); renderSuggestions();
     $("#undo-btn").disabled = !st.session.can_undo;
     $("#ai-pill").hidden = !st.session.ai;
@@ -294,6 +296,27 @@
     const sub = $("#races-sub");
     sub.textContent = `How much each race counts · ${st.prediction.n_cases} similar cases`
       + (st.half_life_years ? ` · recent races count more (half-life ${st.half_life_years} yrs)` : "");
+  }
+
+  /** When the voice assistant (or anything else) changes a weight, the slider visibly travels to it. */
+  function animateSlider(slider, out, from, to, ms = 650) {
+    if (from == null || Math.abs(from - to) < 1e-9 || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const t0 = performance.now();
+    slider.classList.add("moving");
+    const step = (now) => {
+      const k = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - k, 3), v = from + (to - from) * e;
+      slider.value = v; slider.style.setProperty("--fill", `${v * 100}%`);
+      if (out) out.textContent = v.toFixed(2);
+      if (k < 1) requestAnimationFrame(step); else { slider.value = to; slider.classList.remove("moving"); }
+    };
+    requestAnimationFrame(step);
+  }
+  function animateWeights(prev, st) {
+    if (!prev) return;
+    $$("#race-rows tr[data-i]").forEach((tr) => {
+      const i = Number(tr.dataset.i), sl = $("input[type=range]", tr), out = $("output", tr);
+      if (sl && st.races[i] && prev[i] != null) animateSlider(sl, out, prev[i], st.races[i].weight);
+    });
   }
 
   function highlightRace(i) {
@@ -532,7 +555,8 @@
         h("div", { class: "fitem-top" }, h("b", { text: it.race }),
           h("span", { class: "wchange", text: `${it.old.toFixed(2)} → ${it.new.toFixed(2)}` }),
           h("span", { class: `chip ${cls}`, text: label })),
-        h("p", { text: it.evidence })));
+        h("p", { text: it.evidence }),
+        inlineSlider(it)));
     }
     const li = h("li", { class: "fcard" }, items);
     if (card.notes && card.notes.length) li.append(h("ul", { class: "notes-list" }, card.notes.map((n) => h("li", { text: n }))));
@@ -552,6 +576,18 @@
       react));
     feed.append(li); scrollFeed();
     renderSuggestions(card.suggestions);
+  }
+
+  /** The slider for this race, inside the conversation: it moves to the new weight, and can be dragged right here. */
+  function inlineSlider(it) {
+    if (it.index == null || !app.st || !app.st.races[it.index]) return "";
+    const sl = h("input", { type: "range", min: 0, max: 1, step: 0.05, value: it.old, "aria-label": `Weight for ${it.race}` });
+    const out = h("output", { class: "mono", text: Number(it.old).toFixed(2) });
+    sl.style.setProperty("--fill", `${it.old * 100}%`);
+    sl.addEventListener("input", () => { out.textContent = Number(sl.value).toFixed(2); sl.style.setProperty("--fill", `${sl.value * 100}%`); });
+    sl.addEventListener("change", () => setWeight(it.index, Number(sl.value)));
+    requestAnimationFrame(() => animateSlider(sl, out, it.old, it.new, 800));
+    return h("div", { class: "inline-weight" }, h("small", { text: "weight" }), sl, out);
   }
 
   function renderFeedFromTurns(st) {
@@ -588,27 +624,32 @@
   // ---------------------------------------------------------------- actions
   /** Messages are processed one at a time, in order (voice can produce several quickly). */
   let queue = Promise.resolve();
-  function send(text, source = "typed") {
-    queue = queue.then(() => sendNow(text, source)).catch(() => {});
+  function send(text, source = "typed", signals = null) {
+    queue = queue.then(() => sendNow(text, source, signals)).catch(() => {});
     return queue;
   }
-  async function sendNow(text, source) {
+  /** Everything a turn can bring back: new state (sliders animate), a card or reply, UI actions, adaptations. */
+  function applyTurn(r) {
+    app.changed = new Set((r.card && r.card.items || []).map((it) => r.state.races.findIndex((x) => `${x.event} ${x.year}` === it.race)));
+    render(r.state);
+    if (r.choice) feed.append(h("li", { class: "uinote choice-note" }, h("span", { text: `You chose: ${r.choice.label}` })));
+    if (r.card && r.card.items.length) addCard(r.card);
+    else if (r.reply) addReply(r.reply);
+    handleActions(r.actions || [], r.simulation);
+    adapt(r.adapt);
+    if (!(r.simulation)) runSim();
+  }
+  async function sendNow(text, source, signals) {
     text = text.trim();
     if (!text || !app.sid) return;
-    if (/^undo$/i.test(text)) return undo();
+    if (/^undo$/i.test(text) && !(app.pending)) return undo();
     addSaid(text, source);
     const typing = h("li", { class: "typing", text: "Checking her data" }); feed.append(typing); scrollFeed();
     setBusy(true);
     try {
-      const r = await api("POST", `/sessions/${app.sid}/commands`, { text, source });
+      const r = await api("POST", `/sessions/${app.sid}/commands`, { text, source, ...(signals ? { voice: signals } : {}) });
       typing.remove();
-      app.changed = new Set((r.card && r.card.items || []).map((it) => r.state.races.findIndex((x) => `${x.event} ${x.year}` === it.race)));
-      render(r.state);
-      if (r.card && r.card.items.length) addCard(r.card);
-      else if (r.reply) addReply(r.reply);
-      handleActions(r.actions || [], r.simulation);
-      adapt(r.adapt);
-      if (!(r.simulation)) runSim();
+      applyTurn(r);
     } catch (e) {
       typing.remove();
       if (e.status === 404) { toast("That session expired; opening the runner again."); return openRunner("demo"); }
@@ -621,7 +662,7 @@
   function handleActions(actions, sim) {
     for (const a of actions) {
       if (a.type === "simulate") { setSim(a); if (sim) { app.sim = sim; renderSim(sim); } focusPanel("#panel-sim"); }
-      else if ((a.type === "focus" || a.type === "open") && PANEL[a.panel]) {
+      else if ((a.type === "focus" || a.type === "open") && (PANEL[a.panel] || a.panel === "similar")) {
         if (a.panel === "similar") selectTab("tab-similar"); else if (a.panel === "pacing") selectTab("tab-pacing");
         focusPanel(PANEL[a.panel]);
       } else if (a.type === "runner") openRunner(a.id, a.id === "demo" ? null : $("#holdout-check").checked);
@@ -688,17 +729,50 @@
     const btn = $("#mic-btn"); btn.hidden = false;
     btn.addEventListener("click", () => (voice.on ? stopVoice() : startVoice()));
   }
+  const FILLER_RE = /\b(um+|uh+|erm*|hmm+)\b/gi;
+  const wordsOf = (t) => t.toLowerCase().replace(/[^a-z0-9' ]+/g, " ").split(/\s+/).filter(Boolean);
+  /** PaceSense hearing its own voice through the speakers: most words are in what it is saying (or just said). */
+  function isEcho(t) {
+    const tts = hooks.tts();
+    if (!tts.text || (!tts.speaking && performance.now() - tts.endedAt > 1500)) return false;
+    const spoken = new Set(wordsOf(tts.text)), w = wordsOf(t);
+    return w.length > 0 && w.filter((x) => spoken.has(x)).length / w.length >= 0.7;
+  }
+  function resetUtterance() { Object.assign(voice, { buf: [], conf: [], t0: 0, barge: false }); clearTimeout(voice.timer); }
+  /** Send what was said once the coach has paused for the turn-taking silence (shorter for brisk coaches). */
+  function flushUtterance() {
+    const text = voice.buf.join(" ").replace(/\s+/g, " ").trim();
+    if (!text) return resetUtterance();
+    const now = performance.now(), dur = Math.max(300, now - voice.t0 - hooks.silenceMs()), n = wordsOf(text).length;
+    const confs = voice.conf.filter((c) => c > 0), ended = hooks.tts().endedAt;
+    const signals = {
+      wpm: Math.round(n / (dur / 60000)), duration_ms: Math.round(dur), barge_in: voice.barge,
+      fillers: (text.match(FILLER_RE) || []).length,
+      confidence: confs.length ? +(confs.reduce((a, b) => a + b, 0) / confs.length).toFixed(2) : undefined,
+      latency_ms: ended && voice.t0 > ended && voice.t0 - ended < 20000 ? Math.round(voice.t0 - ended) : undefined,
+    };
+    resetUtterance();
+    $("#notes-input").value = "";
+    hooks.transcript("", true, text);
+    send(text, "voice", signals);
+  }
   function startVoice() {
-    const rec = new SR(); voice.rec = rec; voice.on = true;
+    const rec = new SR(); voice.rec = rec; voice.on = true; resetUtterance();
     rec.lang = "en-US"; rec.continuous = true; rec.interimResults = true;
     const input = $("#notes-input");
     rec.onresult = (e) => {
       let interim = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
-        const t = e.results[i][0].transcript;
-        if (e.results[i].isFinal) { input.value = ""; hooks.transcript("", true, t); send(t, "voice"); } else interim += t;
+        const res = e.results[i], t = res[0].transcript;
+        if (!t.trim() || isEcho(t)) continue;
+        if (!voice.t0) voice.t0 = performance.now();
+        if (hooks.tts().speaking && wordsOf(t).length >= 2) { voice.barge = true; hooks.bargeIn(); }   // talk over it
+        if (res.isFinal) { voice.buf.push(t.trim()); voice.conf.push(res[0].confidence || 0); } else interim += t;
       }
-      if (interim) { input.value = interim; hooks.transcript(interim, false); }
+      const shown = [...voice.buf, interim].join(" ").trim();
+      if (shown) { input.value = shown; hooks.transcript(shown, false); }
+      clearTimeout(voice.timer);
+      if (voice.buf.length) voice.timer = setTimeout(flushUtterance, interim ? hooks.silenceMs() + 600 : hooks.silenceMs());
     };
     rec.onerror = (e) => { if (e.error === "not-allowed") { toast("Microphone permission was refused.", "error"); stopVoice(); } };
     rec.onend = () => { if (voice.on && !voice.paused) try { rec.start(); } catch { /* already started */ } };
@@ -708,6 +782,7 @@
   }
   function stopVoice(silent = false) {
     voice.on = false; if (voice.rec) voice.rec.stop();
+    if (voice.buf && voice.buf.length) flushUtterance();
     $("#mic-btn").setAttribute("aria-pressed", "false");
     if (!silent) hooks.voice(false);
   }
@@ -730,7 +805,11 @@
           h("span", null, h("b", { text: r.runner_id === "demo" ? "Demo runner" : r.name }), r.runner_id === "demo" ? h("span", { class: "tag", text: "  recommended" }) : ""),
           h("span", { class: "best", text: r.best }),
           h("small", { text: [r.gender, r.age ? `${r.age} yrs` : "", `${r.n_races} races`, r.note || `best: ${r.best_race}`].filter(Boolean).join(" · ") }));
-        b.addEventListener("click", () => { dlg.close(); openRunner(r.runner_id, r.runner_id === "demo" ? null : $("#holdout-check").checked); });
+        b.addEventListener("click", () => {
+          const cond = ($("#cond-choice input:checked") || {}).value || "ask";
+          storage.set("pacesense.condition", cond);
+          dlg.close(); openRunner(r.runner_id, r.runner_id === "demo" ? null : $("#holdout-check").checked, cond);
+        });
         list.append(h("li", null, b));
       }
     } catch (e) { list.append(h("li", { class: "muted", text: e.message })); }
@@ -761,12 +840,13 @@
     }
     return id;
   }
-  const hooks = { transcript() {}, voice() {}, panel() {}, apply() {} };
+  const hooks = { transcript() {}, voice() {}, panel() {}, apply() {}, bargeIn() {}, silenceMs: () => 1000,
+    tts: () => ({ speaking: false, text: "", endedAt: 0 }) };
   function adapt(a, opts = {}) { if (a) hooks.apply(a, opts); }
   window.PaceSense = {
     $, $$, h, s, clear, fmt, api, toast, app, storage, coachId, hooks,
     send, undo, reveal, selectTab, focusPanel, addReply, addSaid, addCard, scrollFeed, render, openRunner, runSim,
-    setBusy, handleActions,
+    setBusy, handleActions, applyTurn, animateSlider, setWeight,
     startVoice, stopVoice, pauseListening, sendReaction, hasMic: !!SR, voiceOn: () => voice.on,
     rerenderRaces: () => app.st && renderRaces(app.st),
     adapt,

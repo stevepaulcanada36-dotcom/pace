@@ -26,6 +26,12 @@ Everything is Python: the model, the services, the analysis, and a **Streamlit d
 
 ## PaceSense Studio (start here)
 
+**New in 3.1: a voice assistant for known and unknown runners.** Talk to PaceSense; the sliders move as you
+speak (and stay draggable, in the conversation too). For an unknown runner it suggests changes from the data and
+you answer yes / no / why; for a runner you know, it captures what you say about them for next time. Twelve
+loops, with different ones on for each situation; questions answered by voice; a persona that learns from how you
+speak (speed, cutting in, pauses) as well as what you talk about; turn-taking presets; talk over it any time.
+
 **New in 3.0: it adapts to the coach.** Nine feedback loops instead of one, a transparent coach persona, a
 voice stage that re-arranges the screen as you talk, and a guided interview. See
 [docs/FUTURE_SCOPE.md](docs/FUTURE_SCOPE.md) for the reasoning from the paper, loop by loop.
@@ -38,7 +44,9 @@ voice stage that re-arranges the screen as you talk, and a guided interview. See
 | **Guide me** (G) | Five questions built from the runner's data; each answer becomes a checked change |
 | **PaceSense asks** | Clarify ("which race was hot?"), Data check (keep / undo / show similar runners), Bias guard ("knowledge or expectation?") |
 
-Adaptive API: `POST /sessions/{id}/events` (voice_on, voice_off, panel, dismiss) · `POST /sessions/{id}/interview/start`
+Adaptive API: `POST /sessions` takes `condition` (known / unknown / ask) · `PUT /sessions/{id}/condition` ·
+`POST /sessions/{id}/choice` · `POST /sessions/{id}/commands` takes `voice` signals (wpm, barge_in, latency_ms,
+fillers, confidence) and answers the open question when the words fit it · `POST /sessions/{id}/events` (voice_on, voice_off, panel, dismiss) · `POST /sessions/{id}/interview/start`
 · `POST /sessions/{id}/interview` · `GET|PUT|DELETE /coaches/{coach_id}/profile` · `GET /loops`. Every session
 response carries an `adapt` block (`ui`, `persona`, `loops`, `prompt`, `adaptations`, `speak`).
 
@@ -588,7 +596,7 @@ keep `pacesense serve` bound to localhost or place any public deployment behind 
 
 ```bash
 pip install -e ".[dev]"
-python -m unittest discover -s tests -t .     # 230 tests
+python -m unittest discover -s tests -t .     # 245 tests
 ```
 
 They cover PaceSense Live (interpreter, evidence statistics, sessions, replay, benchmark floors, the checked AI

@@ -229,7 +229,7 @@ def create_app(service: StudioService, settings: Settings | None = None) -> Star
 
     async def create(request: Request):
         b = await body_of(request, schemas.CreateSession)
-        sid, state = await call(service.create, b.runner_id, b.holdout, b.coach_id)
+        sid, state = await call(service.create, b.runner_id, b.holdout, b.coach_id, b.condition)
         return JSON({"id": sid, "state": state}, 201, headers={"location": f"/api/v1/sessions/{sid}"})
 
     async def get_state(request: Request):
@@ -241,7 +241,8 @@ def create_app(service: StudioService, settings: Settings | None = None) -> Star
 
     async def command(request: Request):
         b = await body_of(request, schemas.Command)
-        return JSON(await call(service.command, request.path_params["sid"], b.text, b.source))
+        voice = b.voice.model_dump(exclude_none=True) if b.voice else None
+        return JSON(await call(service.command, request.path_params["sid"], b.text, b.source, voice))
 
     async def weights(request: Request):
         b = await body_of(request, schemas.SetWeight)
@@ -274,6 +275,14 @@ def create_app(service: StudioService, settings: Settings | None = None) -> Star
     async def session_event(request: Request):
         b = await body_of(request, schemas.SessionEvent)
         return JSON(await call(service.event, request.path_params["sid"], b.kind, b.panel))
+
+    async def condition(request: Request):
+        b = await body_of(request, schemas.Condition)
+        return JSON(await call(service.set_condition, request.path_params["sid"], b.condition))
+
+    async def choose(request: Request):
+        b = await body_of(request, schemas.Choose)
+        return JSON(await call(service.choose, request.path_params["sid"], b.index))
 
     async def interview_start(request: Request):
         return JSON(await call(service.interview_start, request.path_params["sid"]))
@@ -322,6 +331,7 @@ def create_app(service: StudioService, settings: Settings | None = None) -> Star
         Route(S + "/simulations", simulate, methods=["POST"]), Route(S + "/reveal", reveal, methods=["POST"]),
         Route(S + "/reactions", react, methods=["POST"]), Route(S + "/export", export, methods=["GET"]),
         Route(S + "/events", session_event, methods=["POST"]),
+        Route(S + "/condition", condition, methods=["PUT"]), Route(S + "/choice", choose, methods=["POST"]),
         Route(S + "/interview/start", interview_start, methods=["POST"]),
         Route(S + "/interview", interview_answer, methods=["POST"]),
         Route(C, get_profile, methods=["GET"]), Route(C, put_profile, methods=["PUT"]),
@@ -399,6 +409,8 @@ def openapi_document() -> dict:
                 S + "/reactions": {"post": op("React to a feedback card", "React")},
                 S + "/export": {"get": op("Export a replayable transcript")},
                 S + "/events": {"post": op("Tell the loops about voice mode or a panel", "SessionEvent")},
+                S + "/condition": {"put": op("Known or unknown runner (turns loops on and off)", "Condition")},
+                S + "/choice": {"post": op("Pick a choice of the open question (or just say it)", "Choose")},
                 S + "/interview/start": {"post": op("Start the guided interview")},
                 S + "/interview": {"post": op("Answer an interview question", "InterviewAnswer")},
                 "/api/v1/coaches/{coach_id}/profile": {

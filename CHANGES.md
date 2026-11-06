@@ -1,5 +1,20 @@
 # Changes
 
+## 3.1.0: the voice assistant
+- Known / unknown runner modes (the paper's familiar / unfamiliar conditions): picked in the runner dialog, by the
+  header pill, or answered at the start. Each loop now reports whether it is active and why; 12 loops in all.
+- New loops: Suggest from data (unknown runner: one data-backed change at a time, answered yes / no / why),
+  Knowledge capture (known runner: what you say about them is kept across sessions and tied to a race), and
+  Turn-taking (Quick / Balanced / Calm / Hands-free presets chosen from how you speak, or locked).
+- Questions are answered by voice: yes / no, "the second one", a year or race name, "undo"; taps use the same path
+  (`POST /sessions/{id}/choice`). Deterministic "why" explanations from the session's own numbers.
+- Persona from voice: words per minute, talking over PaceSense, pause before answering, fillers, recognition
+  confidence → new tempo dimension, certainty; "what you focus on" (perspective) in the profile.
+- Browser: barge-in (speech stops PaceSense talking), echo filter, utterances sent after the preset's silence,
+  spoken questions with how to answer, sliders inside change cards and on the voice stage, animated slider moves.
+- Layout changes from the persona now need a confident, stable read (no jumping while it learns).
+- 15 new tests (245).
+
 ## 3.0.0: the adaptive studio (N feedback loops, persona, voice stage)
 - `pacesense.adaptive`: events, a transparent coach persona (reliance, detail, modality, certainty, plus
   per-runner familiarity; four archetypes; editable and deletable) and nine pluggable feedback loops at four time

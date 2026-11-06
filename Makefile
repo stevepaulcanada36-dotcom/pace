@@ -13,7 +13,7 @@ test:           ## the whole test suite
 	$(PY) -m unittest discover -s tests -t .
 
 lint:
-	ruff check src/pacesense/studio src/pacesense/adaptive tests/test_studio.py tests/test_adaptive.py tests/asgi.py
+	ruff check src/pacesense/studio src/pacesense/adaptive tests/test_studio.py tests/test_adaptive.py tests/test_voice_assistant.py tests/asgi.py
 
 typecheck:
 	mypy src/pacesense/studio src/pacesense/adaptive

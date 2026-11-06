@@ -7,6 +7,7 @@ dimension (familiarity) that starts fresh with every runner:
     detail       0 just the answer ...  1 wants the reasons
     voice        0 clicks          ...  1 talks
     certainty    0 exploring       ...  1 decisive
+    tempo        0 unhurried       ...  1 brisk           (from how they speak: pace, cutting in, pauses)
     familiarity  0 new to runner   ...  1 knows the runner well        (this session only)
 
 The persona is transparent: every nudge keeps the cue that caused it, the coach sees the profile and can set
@@ -28,6 +29,7 @@ DIMENSIONS = {
     "detail": ("Just the answer", "Wants the reasons"),
     "voice": ("Clicks", "Talks"),
     "certainty": ("Exploring", "Decisive"),
+    "tempo": ("Unhurried", "Brisk"),
 }
 RUNNER_DIMENSIONS = {"familiarity": ("New to this runner", "Knows this runner")}
 
@@ -53,6 +55,23 @@ DATA = _words("data", "average", "median", "similar runners", "similar", "statis
 WHY = _words("why", "explain", "how come", "what does", "what is", "show me", "reason", "how does", "tell me more")
 INTUITION = _words("i know her", "i know him", "i know this runner", "trust me", "my gut", "gut feeling", "i feel",
                    "she always", "he always", "she never", "he never", "i've seen", "i have seen", "believe me")
+# What the coach talks about: their perspective on the runner. Counted, never judged.
+TOPICS = {
+    "conditions": ("Race conditions", r"\b(hot|heat\w*|humid\w*|wind\w*|rain\w*|cold|weather|course|hill\w*|altitude|crowd\w*)\b"),
+    "health": ("Health and injury", r"\b(injur\w*|sick|ill|illness|flu|covid|knee|hamstring|calf|achilles|pain|cramp\w*|tired|sleep|pregnan\w*)\b"),
+    "form": ("Training and form", r"\b(training|trained|form|fitness|improv\w*|recent\w*|block|mileage|long runs?|getting (faster|slower)|peak\w*)\b"),
+    "pacing": ("Pacing", r"\b(pace|pacing|too fast|faded|fade|splits?|negative split|the wall|went out)\b"),
+    "data": ("The data", r"\b(data|similar|average|median|range|model|percent\w*|numbers?|statistic\w*|why)\b"),
+    "goals": ("Goals and estimates", r"\b(estimate|target|goal|aim\w*|sub[- ]?\d|pb|personal best|qualif\w*|can run)\b"),
+}
+_TOPIC_RE = {k: re.compile(rx, re.IGNORECASE) for k, (_, rx) in TOPICS.items()}
+FILLERS = re.compile(r"\b(um+|uh+|erm*|hmm+|you know|i mean|sort of|kind of)\b", re.IGNORECASE)
+
+
+def topics_in(text: str) -> list[str]:
+    return [k for k, rx in _TOPIC_RE.items() if rx.search(text or "")]
+
+
 RUNNER_KNOWLEDGE = _words("injured", "injury", "sick", "ill", "flu", "pregnant", "training", "trained", "work",
                           "stress", "knee", "hamstring", "calf", "illness", "her coach", "i coach", "my athlete",
                           "she told me", "he told me", "in training", "her form", "his form", "long runs")
@@ -98,10 +117,13 @@ class Persona:
     dims: dict[str, Dim] = field(default_factory=lambda: {k: Dim() for k in DIMENSIONS})
     runner: dict[str, Dim] = field(default_factory=lambda: {k: Dim() for k in RUNNER_DIMENSIONS})
     signals: int = 0
+    focus: dict[str, int] = field(default_factory=dict)          # topic -> times mentioned (perspective)
+    voice_stats: dict[str, float] = field(default_factory=dict)   # running means of how they speak
 
     # ---- persistence ----------------------------------------------------------------------------
     def to_dict(self) -> dict:
-        return {"dims": {k: d.to_dict() for k, d in self.dims.items()}, "signals": self.signals}
+        return {"dims": {k: d.to_dict() for k, d in self.dims.items()}, "signals": self.signals,
+                "focus": dict(self.focus), "voice_stats": dict(self.voice_stats)}
 
     @classmethod
     def from_dict(cls, d: dict | None) -> Persona:
@@ -110,6 +132,8 @@ class Persona:
             for k in DIMENSIONS:
                 p.dims[k] = Dim.from_dict((d.get("dims") or {}).get(k))
             p.signals = int(d.get("signals", 0))
+            p.focus = {k: int(v) for k, v in (d.get("focus") or {}).items() if k in TOPICS}
+            p.voice_stats = {k: float(v) for k, v in (d.get("voice_stats") or {}).items()}
         return p
 
     def new_runner(self, familiarity: float | None = None) -> None:
@@ -139,7 +163,11 @@ class Persona:
         def row(k, d, labels):
             return {"key": k, "value": round(d.value, 3), "inferred": round(d.inferred, 3), "override": d.override,
                     "low": labels[0], "high": labels[1], "evidence": round(d.n, 1), "cues": d.cues[:4]}
+        total = sum(self.focus.values())
+        focus = [{"key": k, "label": TOPICS[k][0], "count": n, "share": round(n / total, 3)}
+                 for k, n in sorted(self.focus.items(), key=lambda kv: -kv[1]) if n] if total else []
         return {"archetype": self.archetype(), "confidence": round(self.confidence, 3), "signals": self.signals,
+                "focus": focus, "voice": {k: round(v, 2) for k, v in self.voice_stats.items()},
                 "dimensions": [row(k, self.dims[k], DIMENSIONS[k]) for k in DIMENSIONS],
                 "runner": [row(k, self.runner[k], RUNNER_DIMENSIONS[k]) for k in RUNNER_DIMENSIONS]}
 
@@ -152,6 +180,11 @@ class Persona:
         """Update from one event; returns the cues used (for the loop log)."""
         before = self.signals
         t = ev.text or ""
+        if ev.kind == "utterance" and t:
+            for k in topics_in(t):
+                self.focus[k] = self.focus.get(k, 0) + 1
+        if ev.kind == "utterance" and ev.data.get("voice"):
+            self.observe_voice(ev.data["voice"], t)
         if ev.kind in ("utterance", "interview_answer") and t:
             short = t if len(t) <= 40 else t[:37] + "…"
             if m := HEDGE.search(t):
@@ -203,11 +236,48 @@ class Persona:
             self.runner["familiarity"].override = float(ev.data["familiarity"])
         return [] if self.signals == before else ["persona"]
 
+    def _mean(self, key: str, x: float, w: float = 0.3) -> None:
+        old = self.voice_stats.get(key)
+        self.voice_stats[key] = x if old is None else (1 - w) * old + w * x
+
+    def observe_voice(self, v: dict[str, Any], text: str = "") -> None:
+        """How something was said, measured by the browser: words per minute, cutting in while PaceSense was
+        speaking, the pause before answering a question, fillers, and recognition confidence."""
+        wpm = v.get("wpm")
+        if wpm and 40 <= wpm <= 320:
+            self._mean("wpm", float(wpm))
+            if wpm >= 170:
+                self._n("tempo", True, 0.8, f"spoke fast ({round(wpm)} wpm)")
+            elif wpm <= 110:
+                self._n("tempo", False, 0.8, f"spoke unhurriedly ({round(wpm)} wpm)")
+        if v.get("barge_in"):
+            self._mean("barge_in_rate", 1.0)
+            self._n("tempo", True, 1.0, "talked over a reply")
+            self._n("detail", False, 0.5, "talked over a reply")
+        else:
+            self._mean("barge_in_rate", 0.0)
+        lat = v.get("latency_ms")
+        if lat is not None and 0 <= lat <= 30000:
+            self._mean("latency_ms", float(lat))
+            if lat >= 4000:
+                self._n("certainty", False, 0.5, f"paused {lat / 1000:.0f}s before answering")
+            elif lat <= 1200:
+                self._n("certainty", True, 0.3, "answered straight away")
+        fillers = int(v.get("fillers") or 0) + len(FILLERS.findall(text or ""))
+        if fillers >= 2:
+            self._n("certainty", False, 0.5, "hesitated (um, uh)")
+        conf = v.get("confidence")
+        if conf is not None and 0 < conf < 0.55:
+            self._mean("low_confidence_rate", 1.0)
+        elif conf is not None:
+            self._mean("low_confidence_rate", 0.0)
+
     def edit(self, changes: dict[str, Any]) -> None:
         """Coach-set values (0..1) win over inference; None clears an override; 'reset' clears everything."""
         if changes.get("reset"):
             self.dims = {k: Dim() for k in DIMENSIONS}
             self.signals = 0
+            self.focus, self.voice_stats = {}, {}
             return
         for k, v in changes.items():
             dim = self.dims.get(k) or self.runner.get(k)
@@ -216,4 +286,4 @@ class Persona:
             dim.override = None if v is None else min(1.0, max(0.0, float(v)))
 
 
-__all__ = ["ARCHETYPES", "DIMENSIONS", "RUNNER_DIMENSIONS", "Dim", "Persona"]
+__all__ = ["ARCHETYPES", "DIMENSIONS", "FILLERS", "RUNNER_DIMENSIONS", "TOPICS", "Dim", "Persona", "topics_in"]
