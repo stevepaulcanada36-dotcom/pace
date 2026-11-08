@@ -25,6 +25,8 @@ Routes (all JSON under /api/v1; errors are RFC 9457 problem documents with a req
 """
 from __future__ import annotations
 
+import base64
+import hmac
 import json
 import logging
 import math
@@ -188,6 +190,40 @@ class Observe:
             if route != "/static" and scope["path"] != "/favicon.ico" and not route.startswith("/static") and route not in ("/healthz",):
                 access.info("%s %s %s %.1fms", scope["method"], scope["path"], status[0], dt * 1000,
                             extra={"request_id": rid, "status": status[0], "ms": round(dt * 1000, 1), "route": route})
+
+
+
+
+class BasicAuth:
+    """Optional HTTP Basic authentication for a public single-user deployment."""
+
+    def __init__(self, app, username: str, password: str) -> None:
+        self.app, self.username, self.password = app, username, password
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope.get("path") not in ("/healthz", "/readyz"):
+            headers = dict(scope.get("headers", []))
+            raw = headers.get(b"authorization", b"")
+            valid = False
+            if raw.startswith(b"Basic "):
+                try:
+                    decoded = base64.b64decode(raw[6:], validate=True).decode("utf-8")
+                    username, password = decoded.split(":", 1)
+                    valid = (hmac.compare_digest(username, self.username)
+                             and hmac.compare_digest(password, self.password))
+                except (ValueError, UnicodeDecodeError):
+                    valid = False
+            if not valid:
+                body = b"Authentication required"
+                await send({"type": "http.response.start", "status": 401, "headers": [
+                    (b"www-authenticate", b'Basic realm="PaceSense", charset="UTF-8"'),
+                    (b"content-type", b"text/plain; charset=utf-8"),
+                    (b"content-length", str(len(body)).encode()),
+                    (b"cache-control", b"no-store"),
+                ]})
+                await send({"type": "http.response.body", "body": body})
+                return
+        await self.app(scope, receive, send)
 
 
 # ---- the app ------------------------------------------------------------------------------------
@@ -362,6 +398,8 @@ def create_app(service: StudioService, settings: Settings | None = None) -> Star
 
     from starlette.exceptions import HTTPException
     middleware = [Middleware(Observe, metrics=metrics), Middleware(GZipMiddleware, minimum_size=1024)]
+    if settings.access_user and settings.access_password:
+        middleware.append(Middleware(BasicAuth, username=settings.access_user, password=settings.access_password))
     if settings.cors_origins:
         middleware.append(Middleware(CORSMiddleware, allow_origins=settings.cors_origins,
                                      allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["content-type", "x-request-id"]))
