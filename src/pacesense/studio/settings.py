@@ -19,7 +19,7 @@ from __future__ import annotations
 import os
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 
 class Settings(BaseModel):
@@ -34,6 +34,8 @@ class Settings(BaseModel):
     max_sessions: int = Field(200, ge=1, le=10_000)
     cors_origins: list[str] = Field(default_factory=list)
     ai_enabled: bool = False
+    access_user: str | None = None
+    access_password: str | None = None
 
     model_config = {"frozen": True}
 
@@ -48,6 +50,12 @@ class Settings(BaseModel):
     @classmethod
     def _upper(cls, v):
         return str(v).upper()
+
+    @model_validator(mode="after")
+    def _access_pair(self) -> "Settings":
+        if bool(self.access_user) != bool(self.access_password):
+            raise ValueError("PACESENSE_ACCESS_USER and PACESENSE_ACCESS_PASSWORD must be set together")
+        return self
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None, **overrides) -> Settings:
@@ -64,6 +72,8 @@ class Settings(BaseModel):
             "max_sessions": e.get("PACESENSE_MAX_SESSIONS"),
             "cors_origins": [o.strip() for o in e.get("PACESENSE_CORS_ORIGINS", "").split(",") if o.strip()] or None,
             "ai_enabled": e.get("PACESENSE_AI", "").lower() in ("1", "true", "yes", "on") or None,
+            "access_user": e.get("PACESENSE_ACCESS_USER"),
+            "access_password": e.get("PACESENSE_ACCESS_PASSWORD"),
         }
         raw.update({k: v for k, v in overrides.items()})
         raw = {k: v for k, v in raw.items() if v is not None and v != ""}
