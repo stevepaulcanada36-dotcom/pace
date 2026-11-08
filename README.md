@@ -592,6 +592,20 @@ proxy (or Streamlit's own authentication) if you host it. The JSON API's coach r
 keep `pacesense serve` bound to localhost or place any public deployment behind authentication and HTTPS. Only
 `/api/admin/*` uses `PACESENSE_ADMIN_TOKEN`. Use one server process per SQLite file and back up the database file.
 
+### Render (password-protected demo)
+
+The repository includes a Render Blueprint in `render.yaml`. To deploy it, create a new Blueprint in Render,
+connect this GitHub repository, and select the `deploy/render` branch. Render will read the Blueprint and ask you
+to provide `PACESENSE_ACCESS_USER` and `PACESENSE_ACCESS_PASSWORD` as secret environment values. Use a unique
+password; do not commit credentials to Git. The Studio app then requires HTTP Basic Authentication for the UI
+and API. Render health checks at `/readyz` and `/healthz` remain accessible to the platform.
+
+The Blueprint uses the Free web-service plan for a low-cost demonstration. **Do not use this configuration for
+important or long-lived user data:** the SQLite database is stored on the free instance's ephemeral filesystem
+and may be lost after a restart, spin-down, or deploy. Free web services also sleep after 15 minutes without
+traffic. For durable data, move persistence to a supported database or use a paid service with a persistent disk.
+The free Render Postgres tier also expires after 30 days, so it is not a permanent free database option.
+
 ## Tests
 
 ```bash
