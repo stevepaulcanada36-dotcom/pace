@@ -4,7 +4,7 @@
                                       └──refine──> clearer version + what changed + questions (coach decides)
 
 Without a Boson API key (or with PACESENSE_AI=offline) the text tasks fall back to simple rules and chat
-to the offline helper. Speech-to-text defaults to local Whisper, which is free to run but must be installed.
+to the offline helper. Speech-to-text uses Boson by default; local Whisper remains an optional fallback.
 """
 from __future__ import annotations
 
@@ -93,7 +93,7 @@ class AIService:
         configured_key, configured_source = boson_api_key(self.env)
         key = api_key or self.env.get("BOSON_API_KEY") or configured_key
         self.key_source = ("browser session" if api_key else
-                           "environment" if self.env.get("OPENROUTER_API_KEY") else configured_source)
+                           "environment" if self.env.get("BOSON_API_KEY") else configured_source)
         provider = config.get("boson", {})
         if self.offline_forced:
             self.client = None
