@@ -162,6 +162,8 @@ class StudioService:
         for a in r.actions:
             if a["type"] == "reveal" and s.truth_s is not None:
                 s.revealed = revealed = True
+            if a["type"] == "condition":
+                live.engine.set_condition(a["value"])
             if a["type"] == "simulate":
                 sim = s.simulate(a["temp_c"], a["wind_kmh"], a["profile"])
         card = s.feedback_card(r.turn) if r.turn else None
