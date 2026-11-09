@@ -54,12 +54,18 @@ class OfflineModel:
             if any(n == "propose_runner" for n, _, _ in done):     # the check is repeated in the proposal
                 done = [d for d in done if d[0] != "check_runner_details"]
             return ModelReply("\n\n".join(_answer(n, r) for n, _, r in done))
-        return self._decide(messages[last_user]["content"], messages[0]["content"])
+        prior = "\\n".join(m.get("content", "") for i, m in enumerate(messages)
+                            if m.get("role") == "user" and i != last_user)
+        return self._decide(messages[last_user]["content"], messages[0]["content"], prior)
 
-    def _decide(self, text: str, system: str) -> ModelReply:
+    def _decide(self, text: str, system: str, history: str = "") -> ModelReply:
         t = text.lower()
-        if re.search(r"\\b(trial run|training run|training session|relay|time trial|track session|parkrun)\\b", t):
-            if re.search(r"\\b(injur\\w*|pain|hurt|sore|strain|sprain|fracture)\\b", t):
+        conversation = (history + "\\n" + text).lower()
+        has_non_marathon_event = bool(re.search(
+            r"\\b(trial run|training run|training session|relay|time trial|track session|parkrun)\\b", conversation))
+        has_injury = bool(re.search(r"\\b(injur\\w*|pain|hurt|sore|strain|sprain|fracture)\\b", conversation))
+        if has_non_marathon_event:
+            if has_injury:
                 return ModelReply(
                     "A trial run or relay is not one of her marathon records, so I won't change those race weights. "
                     "A leg injury could affect her marathon performance depending on its severity, when it happened, "
