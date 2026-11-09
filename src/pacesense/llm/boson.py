@@ -63,6 +63,8 @@ class BosonClient:
         role = message.get("role")
         if role in ("system", "developer"):
             return None
+        if role == "assistant" and message.get("tool_calls"):
+            return None
         if role in ("user", "assistant"):
             text = message.get("content")
             if isinstance(text, list):
@@ -71,8 +73,6 @@ class BosonClient:
             return {"type": "message", "role": item_role,
                     "content": [{"type": "input_text" if role == "user" else "text",
                                  "text": str(text or "")}]}
-        if role == "assistant" and message.get("tool_calls"):
-            return None
         if role == "tool":
             return {"type": "function_call_output", "call_id": message.get("tool_call_id"),
                     "output": str(message.get("content", ""))}
