@@ -29,7 +29,7 @@
   </button>
 
   <span class="mode-pill" id="mode-pill" hidden></span>
-  <button class="cond-pill" id="cond-pill" type="button" title="Do you know this runner? Known and unknown runners get different help (and different feedback loops).">Runner: known?</button>
+  <button class="cond-pill" id="cond-pill" type="button" title="Is this an athlete you personally know, or an existing database runner who is unfamiliar to you?">Runner familiarity?</button>
 
   <button class="persona-chip" id="persona-btn" aria-haspopup="dialog" aria-controls="profile-dialog" title="How PaceSense sees you (and how to change it)">
     <svg class="ring" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="15" class="ring-bg"/><circle cx="18" cy="18" r="15" class="ring-fg" id="persona-ring"/></svg>
@@ -219,9 +219,9 @@
     <input type="search" id="runner-search" placeholder="Search existing runners by ID or name…" aria-label="Search runners">
     <ul class="runner-list" id="runner-list" role="listbox" aria-label="Runners"></ul>
     <fieldset class="segmented cond-choice" id="cond-choice">
-      <legend>Do you know this runner? <span class="muted">(the paper's familiar / unfamiliar conditions)</span></legend>
-      <label><input type="radio" name="cond" value="known"><span>I know them</span></label>
-      <label><input type="radio" name="cond" value="unknown"><span>I don't</span></label>
+      <legend>Do you know this runner personally? <span class="muted">(the paper's familiar / unfamiliar conditions)</span></legend>
+      <label><input type="radio" name="cond" value="known"><span>Known to me</span></label>
+      <label><input type="radio" name="cond" value="unknown"><span>Unfamiliar to me (already in database)</span></label>
       <label><input type="radio" name="cond" value="ask" checked><span>Ask me</span></label>
     </fieldset>
     <label class="check"><input type="checkbox" id="holdout-check" checked> Hide the best race to check accuracy</label>
