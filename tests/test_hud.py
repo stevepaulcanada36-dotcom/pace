@@ -36,6 +36,7 @@ class CommandParsingTests(unittest.TestCase):
         self.assertEqual(types(ui_commands("calm mode please")[0]), ["calm"])
         self.assertEqual(types(ui_commands("reveal")[0]), ["reveal"])
         self.assertEqual(ui_commands("open runner R00042")[0], [{"type": "runner", "id": "R00042"}])
+        self.assertEqual(ui_commands("open runner R0004")[0], [{"type": "runner", "id": "R0004"}])
         self.assertEqual(types(ui_commands("reset the layout")[0]), ["layout"])
 
     def test_runner_database_and_familiarity_commands(self):
