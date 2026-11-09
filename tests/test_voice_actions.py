@@ -134,6 +134,15 @@ class VoiceIntentValidationTests(unittest.TestCase):
         self.assertEqual(female["status"], "clarify")
         self.assertEqual(races["status"], "clarify")
 
+    def test_zero_asr_confidence_is_not_treated_as_missing(self):
+        utterance = "find Jamie Lee in the runner database"
+        result = validate_voice_intent(
+            intent("runner_database", {"query": "Jamie Lee"}, evidence=[utterance]),
+            RUNNERS, utterance=utterance, transcript_confidence=0.0,
+        )
+        self.assertEqual(result["status"], "clarify")
+        self.assertEqual(result["confidence"], 0.0)
+
     def test_asr_confidence_is_combined_with_model_confidence(self):
         utterance = "find Jamie Lee in the runner database"
         result = validate_voice_intent(

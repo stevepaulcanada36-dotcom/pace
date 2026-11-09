@@ -340,18 +340,18 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                 current[key] = default
 
         temp_match = re.search(
-            r"(?<!\\w)(-?\\d+(?:\\.\\d+)?)\\s*(?:°\\s*c|degrees?(?:\\s+celsius)?|celsius|c\\b)",
+            r"(?<!\w)(-?\d+(?:\.\d+)?)\s*(?:°\s*c|degrees?(?:\s+celsius)?|celsius|c\b)",
             text, re.IGNORECASE,
         )
         wind_match = re.search(
-            r"(?:(\\d+(?:\\.\\d+)?)\\s*(?:km/?h|kph|kilometres?\\s+per\\s+hour|kilometers?\\s+per\\s+hour)\\s*(?:head)?wind|"
-            r"(?:head)?wind\\s*(?:of\\s*)?(\\d+(?:\\.\\d+)?)\\s*(?:km/?h|kph)?)",
+            r"(?:(\d+(?:\.\d+)?)\s*(?:km/?h|kph|kilometres?\s+per\s+hour|kilometers?\s+per\s+hour)\s*(?:head)?wind|"
+            r"(?:head)?wind\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*(?:km/?h|kph)?)",
             text, re.IGNORECASE,
         )
         profile = current["profile"]
-        if re.search(r"\\b(fast start|starts too fast|start too fast)\\b", text, re.IGNORECASE):
+        if re.search(r"\b(fast start|starts too fast|start too fast)\b", text, re.IGNORECASE):
             profile = "fast_start"
-        elif re.search(r"\\b(late fade|fade late|hits the wall|hit the wall)\\b", text, re.IGNORECASE):
+        elif re.search(r"\b(late fade|fade late|hits the wall|hit the wall)\b", text, re.IGNORECASE):
             profile = "late_fade"
 
         payload = {
