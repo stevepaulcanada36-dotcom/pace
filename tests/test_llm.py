@@ -108,7 +108,7 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(s.get("refine"), {"model": "higgs-realtime", "temperature": 0.2, "source": "settings"})
         self.assertEqual(ModelSettings(repo, env={}).get("refine")["model"], "higgs-realtime")   # saved in the db
         s.reset("refine")
-        self.assertEqual(s.get("refine")["source"], "environment")
+        self.assertEqual(s.get("refine")["source"], "default")
         for bad in ({"model": "gpt4"}, {"model": "a/b c"}, {"temperature": 3}):
             with self.assertRaises(ValidationError):
                 s.update("refine", **bad)
@@ -119,7 +119,7 @@ class SettingsTests(unittest.TestCase):
         repo = Repository(":memory:")
         fake = FakeOpenRouter()
         fake.chat_handler = smart_handler
-        repo.set_setting("transcription_backend", "openrouter")
+        repo.set_setting("transcription_backend", "boson")
         ai = AIService(repo, env={}, client=fake.client())
         for task in TASKS:
             ai.settings.update(task, model="higgs-realtime")
@@ -133,7 +133,7 @@ class ServiceTests(unittest.TestCase):
     def test_local_transcription_can_be_selected_as_fallback(self):
         repo = Repository(":memory:")
         ai = AIService(repo, env={})
-        self.repo.set_setting("transcription_backend", "local")
+        repo.set_setting("transcription_backend", "local")
         self.assertEqual(ai.transcription_backend, "local")
         from pacesense.llm.openrouter import Transcript
         with __import__("unittest.mock", fromlist=["patch"]).patch(
@@ -152,7 +152,7 @@ class ServiceTests(unittest.TestCase):
         self.ai = AIService(self.repo, env={}, client=self.fake.client())
 
     def test_offline_without_key(self):
-        self.repo.set_setting("transcription_backend", "openrouter")
+        self.repo.set_setting("transcription_backend", "boson")
         ai = AIService(self.repo, env={})
         self.assertFalse(ai.online)
         self.assertIn("No BOSON_API_KEY", ai.why_offline())
