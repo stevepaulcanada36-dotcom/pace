@@ -261,7 +261,17 @@ def create_app(service: StudioService, settings: Settings | None = None) -> Star
     # runners and sessions
     async def runners(request: Request):
         q = request.query_params.get("q", "")[:64]
-        return JSON(await call(service.runners, q))
+        gender = request.query_params.get("gender") or None
+        if gender not in (None, "F", "M"):
+            raise Problem(422, "Invalid request", "gender must be F or M")
+        raw_min_races = request.query_params.get("min_races", "0")
+        try:
+            min_races = int(raw_min_races)
+        except ValueError:
+            raise Problem(422, "Invalid request", "min_races must be a whole number") from None
+        if not 0 <= min_races <= 20:
+            raise Problem(422, "Invalid request", "min_races must be between 0 and 20")
+        return JSON(await call(service.runners, q, 50, gender, min_races))
 
     async def create(request: Request):
         b = await body_of(request, schemas.CreateSession)
