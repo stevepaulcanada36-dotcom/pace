@@ -470,7 +470,7 @@ assistant and rule-based form handling.
 ### Voice input
 
 On **Ask PaceSense**, **Runners**, **Plan a race** and **Saved plans**, voice recordings can be transcribed,
-then used to fill and refine form fields. Boson voice transcription currently accepts PCM WAV recordings.
+then used to fill and refine form fields. Boson voice transcription decodes WAV, MP3, M4A, OGG, WebM and FLAC uploads to mono 24 kHz PCM before sending them to Higgs Realtime.
 The optional local Whisper fallback can be selected in Settings and requires
 `pip install -e ".[local-stt]"`.
 
