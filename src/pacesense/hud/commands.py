@@ -70,6 +70,10 @@ DEMO_RE = re.compile(r"\b(demo runner|new demo|another runner|next runner)\b", r
 LAYOUT_RE = re.compile(r"\b(reset (?:the )?layout|tidy (?:up )?(?:the )?(?:screen|panels)|arrange (?:the )?panels)\b", re.I)
 REVEAL_RE = re.compile(r"\b(reveal|show me the (?:real|actual|true) (?:best|result)|how (?:close|accurate) (?:am i|was i|is it))\b",
                        re.I)
+# These phrases refer to existing database records, not adding new runners.
+DATABASE_RE = re.compile(r"\b(?:open|show|view|browse|search)\s+(?:the\s+)?(?:runner\s+)?(?:database|directory|roster)\b|\bshow\s+(?:me\s+)?all\s+runners\b", re.I)
+UNKNOWN_RE = re.compile(r"\b(?:i\s+(?:do\s+not|don't|dont)\s+know\s+(?:this\s+)?(?:the\s+)?runner|i\s+have\s+not\s+coached\s+(?:this\s+)?runner|i\s+haven't\s+coached\s+(?:this\s+)?runner|not\s+familiar\s+with\s+(?:this\s+)?runner|unfamiliar\s+runner|unknown\s+runner|new\s+to\s+me|mark\s+(?:this\s+)?runner\s+as\s+unknown)\b", re.I)
+KNOWN_RE = re.compile(r"\b(?:i\s+know\s+(?:this\s+)?runner|i\s+coach\s+(?:this\s+)?runner|familiar\s+runner|known\s+runner|my\s+runner|mark\s+(?:this\s+)?runner\s+as\s+known)\b", re.I)
 
 
 def _panel_key(word: str) -> str:
@@ -80,7 +84,24 @@ def _panel_key(word: str) -> str:
 def ui_commands(text: str) -> tuple[list[dict], list[str], str]:
     """(actions, short descriptions, text with the commands removed)."""
     actions, said, rest = [], [], text
-    for m in PANEL_RE.finditer(text):
+    # The runner is selected from the existing database; this command never creates a record.
+    m = DATABASE_RE.search(rest)
+    if m:
+        actions.append({"type": "runner_database"})
+        said.append("opened the existing runner database")
+        rest = rest.replace(m.group(0), " ")
+    m = UNKNOWN_RE.search(rest)
+    if m:
+        actions.append({"type": "condition", "value": "unknown"})
+        said.append("marked this as an unfamiliar runner already in the database")
+        rest = rest.replace(m.group(0), " ")
+    else:
+        m = KNOWN_RE.search(rest)
+        if m:
+            actions.append({"type": "condition", "value": "known"})
+            said.append("marked this as a runner you know")
+            rest = rest.replace(m.group(0), " ")
+    for m in PANEL_RE.finditer(rest):
         verb, panel = m.group(1).lower(), _panel_key(m.group(2))
         kind = "close" if verb in ("hide", "close", "remove", "minimise", "minimize") else "focus"
         actions.append({"type": kind, "panel": panel})
