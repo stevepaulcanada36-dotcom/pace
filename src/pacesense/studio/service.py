@@ -21,7 +21,8 @@ from ..cbr import CaseBase, MarathonModel
 from ..coach import CoachService
 from ..data import load_csv, synthetic_runners
 from ..domain import ValidationError, format_time, parse_time
-from ..hud import HudSession, route
+from ..hud import HudSession
+from ..hud.commands import Routed, route
 from ..repro import configured_seed
 from ..storage import Repository
 from ..tuning import configured_cbr
@@ -155,10 +156,94 @@ class StudioService:
         out["adapt"] = adapt
         return out
 
+    def _interpret_voice_intent(self, text: str, live: Live) -> dict | None:
+        """Ask Boson to classify a voice command; validate every proposed action locally."""
+        if not self.ai_factory:
+            return None
+        try:
+            ai = self.ai_factory()
+            if not getattr(ai, "online", False):
+                return None
+            from ..hud.voice_actions import validate_voice_intent
+            from ..llm.openrouter import parse_json_answer
+
+            model, _ = ai.config("assistant")
+            rows = [{**CoachService._summary(r, False), "runner_id": r.runner_id}
+                    for r in sorted(self.coach.runners, key=lambda x: x.runner_id)]
+            rows.append({"runner_id": "demo", "name": "Demo runner"})
+            # The catalog is reference material only; the validator still resolves exact records.
+            catalog = [{"runner_id": r["runner_id"], "name": r.get("name", "")} for r in rows[:150]]
+            system = """You interpret spoken commands for PaceSense, a marathon-coaching application.
+Return exactly one JSON object: {"intent": "...", "arguments": {}, "confidence": 0.0, "evidence": ["..."], "clarification": "..."}.
+Allowed intents only:
+- runner_database: arguments {"query": "optional runner name or ID search text"}
+- select_runner: arguments {"runner": "exact existing runner name or ID from the catalog"}
+- set_familiarity: arguments {"value": "known" or "unfamiliar"}
+- focus_panel or close_panel: arguments {"panel": "races|prediction|pacing|similar|simulator|feedback|steering|hologram|chat|log|record"}
+- simulate: arguments {"temp_c": number, "wind_kmh": number, "profile": "on_plan|fast_start|late_fade"}
+- reveal or undo: arguments {}
+- none: arguments {}
+Rules:
+Use only one intent. Do not invent runner IDs or names; choose select_runner only for one unambiguous catalog entry. If the coach asks to find/search/browse runners, use runner_database and preserve their search words as query. Known/unfamiliar describes whether the coach personally knows an existing database runner; it never means create or add a runner. Do not invent filters or actions. If ambiguous, unsupported, or missing a necessary value, use none and explain the clarification. Confidence is your estimate that the intent and arguments faithfully match the utterance. Evidence must quote or briefly identify the words that support the intent. Do not execute anything; the application validates and executes separately."""
+            user = {"utterance": text, "current_runner_id": live.hud.runner_id,
+                    "can_undo": bool(live.hud.steer._undo),
+                    "can_reveal": live.hud.truth_s is not None,
+                    "existing_runner_catalog": catalog}
+            result = ai.client.chat(model, [
+                {"role": "system", "content": system},
+                {"role": "user", "content": __import__("json").dumps(user, ensure_ascii=False)},
+            ], temperature=0.0, json_mode=True)
+            payload = parse_json_answer(result.text)
+            return validate_voice_intent(payload, rows, can_undo=bool(live.hud.steer._undo),
+                                          can_reveal=live.hud.truth_s is not None)
+        except Exception as exc:
+            log.warning("voice intent interpretation unavailable; using safe rule-based fallback: %s", exc)
+            return None
+
+    @staticmethod
+    def _voice_route(text: str, source: str, live: Live, intent: dict) -> Routed:
+        """Convert one validated intent into the existing, tested command/action path."""
+        name, args = intent["intent"], intent["arguments"]
+        if name == "select_runner":
+            return Routed(reply=f"Opening {args['name']} from the existing runner database.",
+                          actions=[{"type": "runner", "id": args["runner_id"]}], used=["ui"])
+        if name == "runner_database":
+            routed = route("open the runner database", live.hud, source)
+            for action in routed.actions:
+                if action.get("type") == "runner_database":
+                    action["query"] = args["query"]
+            return routed
+        if name == "set_familiarity":
+            phrase = "I know this runner" if args["condition"] == "known" else "I don't know this runner"
+            return route(phrase, live.hud, source)
+        if name in ("focus_panel", "close_panel"):
+            verb = "open" if name == "focus_panel" else "close"
+            return route(f"{verb} {args['panel']}", live.hud, source)
+        if name == "simulate":
+            phrase = f"simulate {args['temp_c']:g} degrees"
+            if args["wind_kmh"]:
+                phrase += f" with {args['wind_kmh']:g} km/h headwind"
+            if args["profile"] == "fast_start":
+                phrase += " and starts too fast"
+            elif args["profile"] == "late_fade":
+                phrase += " and a late fade"
+            return route(phrase, live.hud, source)
+        if name == "reveal":
+            return route("reveal", live.hud, source)
+        if name == "undo":
+            return route("undo", live.hud, source)
+        return route(text, live.hud, source)
+
     def _run_command(self, sid: str, live: Live, text: str, source: str, kind: str = "utterance",
                      extra: dict | None = None) -> dict:
         s = live.hud
-        r = route(text, s, source)
+        voice_intent = self._interpret_voice_intent(text, live) if source == "voice" else None
+        if voice_intent and voice_intent.get("status") == "clarify":
+            r = Routed(reply=voice_intent["message"], used=["prompt"])
+        elif voice_intent and voice_intent.get("status") == "action":
+            r = self._voice_route(text, source, live, voice_intent)
+        else:
+            r = route(text, s, source)
         sim, revealed = None, False
         for a in r.actions:
             if a["type"] == "reveal" and s.truth_s is not None:
