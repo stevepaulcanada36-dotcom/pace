@@ -117,6 +117,10 @@ class BosonClient:
             "tools": self._tool_specs(tools),
             "tool_choice": "auto" if tools else "none",
         }
+        # Higgs Realtime documents temperature as a session setting. Keeping it here
+        # avoids sending an unsupported per-response field to compatible Realtime APIs.
+        if temperature is not None:
+            session["temperature"] = max(0.0, min(2.0, float(temperature)))
         if json_mode:
             session["instructions"] += "\nReturn only one valid JSON object. Do not use Markdown fences."
         t0 = time.perf_counter()
@@ -138,8 +142,6 @@ class BosonClient:
                         if item:
                             self._send(ws, {"type": "conversation.item.create", "item": item})
                 response_options: dict[str, Any] = {}
-                if temperature is not None:
-                    response_options["temperature"] = max(0.0, min(2.0, float(temperature)))
                 if max_tokens:
                     response_options["max_output_tokens"] = int(max_tokens)
                 self._send(ws, {"type": "response.create", "response": response_options})
