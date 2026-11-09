@@ -1,12 +1,10 @@
 """The AI tasks in PaceSense, and which Boson model each one uses.
 
-Each task has its own model and temperature, so a cheap fast model can fill fields while a stronger model
-answers questions, and the Model lab can compare models task by task. Where a setting comes from, first
-match wins:
+All hosted tasks use Boson higgs-realtime. Each task keeps its own temperature setting. Temperature precedence:
 
-    1. Settings page (saved in the database)       "settings"
-    2. Environment, e.g. PACESENSE_MODEL_REFINE     "environment"
-    3. The default below                            "default"
+    1. Settings page (saved in the database)
+    2. Environment: PACESENSE_TEMPERATURE_<TASK>
+    3. The default below
 """
 from __future__ import annotations
 
@@ -27,11 +25,7 @@ class Task:
     needs: str                 # what the model must support: "tools", "audio" or "text"
     default_model: str
     default_temperature: float
-    suggestions: tuple[str, ...]   # starting points for the Model lab; check the live list for current models
-
-    @property
-    def env_model(self) -> str:
-        return f"PACESENSE_MODEL_{self.key.upper()}"
+    suggestions: tuple[str, ...]   # fixed Boson model suggestion for evaluation tools
 
     @property
     def env_temperature(self) -> str:
@@ -59,7 +53,7 @@ TASKS: dict[str, Task] = {t.key: t for t in (
 
 
 class ModelSettings:
-    """Per-task model and temperature, saved in the database under the setting "llm_models"."""
+    """Per-task temperature settings; the hosted model is fixed to Boson higgs-realtime."""
 
     KEY = "llm_models"
 
