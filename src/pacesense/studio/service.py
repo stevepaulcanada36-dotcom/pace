@@ -328,8 +328,8 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
         if not any(action.get("type") == "simulate" for action in actions):
             return None
         if not re.search(
-            r"\\b(simulate|run\\s+(?:the\\s+)?(?:race|simulation)|play\\s+the\\s+race|"
-            r"replay\\s+the\\s+race|what\\s+if)\\b",
+            r"\b(simulate|run\s+(?:the\s+)?(?:race|simulation)|play\s+the\s+race|"
+            r"replay\s+the\s+race|what\s+if)\b",
             text, re.IGNORECASE,
         ):
             return None
