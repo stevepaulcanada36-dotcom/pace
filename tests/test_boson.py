@@ -102,10 +102,8 @@ class BosonAdapterTests(unittest.TestCase):
     def test_chat_clamps_temperature_in_session_configuration(self):
         socket = FakeSocket([
             {"type": "session.updated", "session": {"type": "realtime"}},
-            {
-            "type": "response.done",
-            "response": {"status": "completed", "output": []},
-        }])
+            {"type": "response.done", "response": {"status": "completed", "output": []}},
+        ])
         client = BosonClient("test-key")
         client._connect = lambda: socket
         client.chat("higgs-realtime", [{"role": "user", "content": "hello"}], temperature=2.5)
@@ -124,13 +122,15 @@ class BosonAdapterTests(unittest.TestCase):
             client.chat("higgs-realtime", [{"role": "user", "content": "hello"}])
 
     def test_chat_parses_function_call(self):
-        socket = FakeSocket([{
+        socket = FakeSocket([
+            {"type": "session.updated", "session": {"type": "realtime"}},
+            {
             "type": "response.done",
             "response": {"status": "completed", "output": [{
                 "type": "function_call", "call_id": "call-1", "name": "predict",
                 "arguments": '{"runner_id": "R1"}',
-            }]},
-        }])
+            }]}},
+        ])
         client = BosonClient("test-key")
         client._connect = lambda: socket
         result = client.chat("higgs-realtime", [{"role": "user", "content": "Predict"}],
