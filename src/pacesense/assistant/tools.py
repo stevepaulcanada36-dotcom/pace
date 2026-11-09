@@ -163,7 +163,9 @@ class AssistantTools:
         races = self.coach.overview(runner_id)["races"]
         return {
             "finish": p["finish"], "likely_range": f"{format_time(p['low_s'])} to {format_time(p['high_s'])}",
-            "range_meaning": p["range_label"], "similar_runners": p["n_cases"],
+            "range_meaning": ("The interval uses the 20th to 80th percentiles of similar runners' implied "
+                              "next-marathon finishes. On held-out demo races, the actual result fell inside "
+                              "it for about 80% of runners; this is validation evidence, not a guarantee."), "similar_runners": p["n_cases"],
             "with_equal_weights": format_time(p["default_finish_s"]),
             "weights_used": dict(zip((f"{r['event']} {r['year']}" for r in races), p["weights"])),
             "prediction_from_each_race": {f"{r['event']} {r['year']}": None if x is None else format_time(x["finish_s"])
