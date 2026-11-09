@@ -98,6 +98,7 @@ class BosonClient:
         t0 = time.perf_counter()
         calls: dict[str, dict] = {}
         output = []
+        usage_data: dict[str, Any] = {}
         try:
             with self._connect() as ws:
                 self._send(ws, {"type": "session.update", "session": session})
@@ -112,10 +113,15 @@ class BosonClient:
                         item = self._conversation_item(message)
                         if item:
                             self._send(ws, {"type": "conversation.item.create", "item": item})
-                self._send(ws, {"type": "response.create"})
+                response_options: dict[str, Any] = {}
+                if temperature is not None:
+                    response_options["temperature"] = max(0.0, min(2.0, float(temperature)))
+                if max_tokens:
+                    response_options["max_output_tokens"] = int(max_tokens)
+                self._send(ws, {"type": "response.create", "response": response_options})
                 deadline = time.monotonic() + self.timeout
                 while time.monotonic() < deadline:
-                    raw = ws.recv(timeout=max(1, min(10, deadline - time.monotonic())))
+                    raw = ws.recv(timeout=max(1, deadline - time.monotonic()))
                     event = json.loads(raw)
                     kind = event.get("type", "")
                     if kind == "error":
@@ -140,6 +146,11 @@ class BosonClient:
                                       "arguments": event.get("arguments", "{}")}
                     elif kind == "response.done":
                         response = event.get("response", {})
+                        usage_data = response.get("usage") or {}
+                        if response.get("status") == "failed":
+                            details = response.get("status_details") or {}
+                            error = details.get("error") or {}
+                            raise LLMError(str(error.get("message") or "Boson response failed"))
                         for item in response.get("output", []):
                             if item.get("type") == "function_call":
                                 cid = item.get("call_id") or item.get("id")
@@ -162,7 +173,7 @@ class BosonClient:
             except (TypeError, json.JSONDecodeError):
                 args = {"_invalid_json": call["arguments"]}
             parsed_calls.append({"id": call["id"], "name": call["name"], "arguments": args})
-        return ChatResult("".join(output), parsed_calls, Usage(), time.perf_counter() - t0, MODEL)
+        return ChatResult("".join(output), parsed_calls, Usage.from_json(usage_data), time.perf_counter() - t0, MODEL)
 
     @staticmethod
     def _wav_to_pcm24k(audio: bytes) -> bytes:
@@ -238,4 +249,4 @@ class BosonClient:
             raise
         except Exception as exc:
             raise LLMError(f"Boson voice transcription failed: {exc}") from exc
-        return Transcript("".join(output).strip(), Usage(), time.perf_counter() - t0, MODEL, "realtime")
+        return Transcript("".join(output).strip(), Usage(audio_seconds=len(pcm) / 48000), time.perf_counter() - t0, MODEL, "realtime")
