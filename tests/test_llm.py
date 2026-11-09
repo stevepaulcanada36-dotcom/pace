@@ -99,14 +99,14 @@ class ClientTests(unittest.TestCase):
 class SettingsTests(unittest.TestCase):
     def test_priority_settings_env_default(self):
         repo = Repository(":memory:")
-        s = ModelSettings(repo, env={"PACESENSE_MODEL_REFINE": "google/gemini-2.5-flash",
+        s = ModelSettings(repo, env={"PACESENSE_MODEL_REFINE": "higgs-realtime",
                                      "PACESENSE_TEMPERATURE_REFINE": "0.7"})
         self.assertEqual(s.get("extract"), {"model": TASKS["extract"].default_model, "temperature": 0.0,
                                             "source": "default"})
-        self.assertEqual(s.get("refine"), {"model": "google/gemini-2.5-flash", "temperature": 0.7, "source": "environment"})
-        s.update("refine", model="anthropic/claude-x", temperature=0.2)
-        self.assertEqual(s.get("refine"), {"model": "anthropic/claude-x", "temperature": 0.2, "source": "settings"})
-        self.assertEqual(ModelSettings(repo, env={}).get("refine")["model"], "anthropic/claude-x")   # saved in the db
+        self.assertEqual(s.get("refine"), {"model": "higgs-realtime", "temperature": 0.7, "source": "default"})
+        s.update("refine", model="higgs-realtime", temperature=0.2)
+        self.assertEqual(s.get("refine"), {"model": "higgs-realtime", "temperature": 0.2, "source": "settings"})
+        self.assertEqual(ModelSettings(repo, env={}).get("refine")["model"], "higgs-realtime")   # saved in the db
         s.reset("refine")
         self.assertEqual(s.get("refine")["source"], "environment")
         for bad in ({"model": "gpt4"}, {"model": "a/b c"}, {"temperature": 3}):
@@ -122,17 +122,18 @@ class SettingsTests(unittest.TestCase):
         repo.set_setting("transcription_backend", "openrouter")
         ai = AIService(repo, env={}, client=fake.client())
         for task in TASKS:
-            ai.settings.update(task, model=f"test/{task}")
+            ai.settings.update(task, model="higgs-realtime")
         ai.voice("runner", b"audio", "wav")
         ai.chat_model().complete([{"role": "user", "content": "hi"}], [])
         used = [r["body"]["model"] for r in fake.requests]
-        self.assertEqual(used, ["test/transcribe", "test/extract", "test/refine", "test/assistant"])
+        self.assertEqual(used, ["higgs-realtime", "higgs-realtime", "higgs-realtime", "higgs-realtime"])
 
 
 class ServiceTests(unittest.TestCase):
-    def test_local_transcription_is_the_default_backend(self):
+    def test_local_transcription_can_be_selected_as_fallback(self):
         repo = Repository(":memory:")
         ai = AIService(repo, env={})
+        self.repo.set_setting("transcription_backend", "local")
         self.assertEqual(ai.transcription_backend, "local")
         from pacesense.llm.openrouter import Transcript
         with __import__("unittest.mock", fromlist=["patch"]).patch(
@@ -147,14 +148,14 @@ class ServiceTests(unittest.TestCase):
         self.repo = Repository(":memory:")
         self.fake = FakeOpenRouter()
         self.fake.chat_handler = smart_handler
-        self.repo.set_setting("transcription_backend", "openrouter")
+        self.repo.set_setting("transcription_backend", "boson")
         self.ai = AIService(self.repo, env={}, client=self.fake.client())
 
     def test_offline_without_key(self):
         self.repo.set_setting("transcription_backend", "openrouter")
         ai = AIService(self.repo, env={})
         self.assertFalse(ai.online)
-        self.assertIn("No OpenRouter key", ai.why_offline())
+        self.assertIn("No BOSON_API_KEY", ai.why_offline())
         with self.assertRaises(AIUnavailable):
             ai.transcribe(b"x")
         ex = ai.extract("runner", "Add runner Sam Lee, f, 41: Toronto 2022 4:01:10")
