@@ -3,6 +3,7 @@ import unittest
 
 from pacesense.adaptive import AdaptiveEngine, Event, Persona, default_loops, questions
 from pacesense.adaptive.loops import cue_category
+from pacesense.adaptive.explain import likely_range
 from pacesense.coach import CoachService
 from pacesense.storage import Repository
 from pacesense.studio import Settings, StudioService
@@ -29,6 +30,14 @@ STATE = {"runner": {"gender": "F"},
                     "evidence": {"direction": -1, "z": -1.1, "others_median_s": 13850}}],
          "prediction": {"finish_s": 12923, "low_s": 12675, "high_s": 13212},
          "steering": {"index": None, "coach_estimate_s": None}}
+
+
+class ExplanationTests(unittest.TestCase):
+    def test_likely_range_explains_percentiles_and_validated_coverage(self):
+        explanation = likely_range(STATE)
+        self.assertIn("20th to 80th percentiles", explanation)
+        self.assertIn("about 80% of runners", explanation)
+        self.assertIn("not a guarantee", explanation)
 
 
 class PersonaTests(unittest.TestCase):
