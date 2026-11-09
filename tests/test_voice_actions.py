@@ -101,6 +101,8 @@ class VoiceIntentExecutionTests(unittest.TestCase):
         service, sid, _ = self.service(intent("runner_database", {"query": "Jamie Lee"}))
         result = service.command(sid, "find Jamie Lee in the runner database", source="voice")
         self.assertIn({"type": "runner_database", "query": "Jamie Lee", "gender": "", "min_races": 0}, result["actions"])
+        self.assertEqual(result["voice_intent"]["confidence"], 0.95)
+        self.assertTrue(result["voice_intent"]["evidence"])
 
     def test_voice_familiarity_executes_existing_runner_condition(self):
         service, sid, _ = self.service(intent("set_familiarity", {"value": "unfamiliar"}))
