@@ -474,6 +474,8 @@ then used to fill and refine form fields. Boson voice transcription decodes WAV,
 The optional local Whisper fallback can be selected in Settings and requires
 `pip install -e ".[local-stt]"`.
 
+**Studio live Talk mode is a separate path:** the microphone uses the browser's built-in SpeechRecognition, and spoken replies use browser speech synthesis. The recognized text is sent to PaceSense, where Boson Higgs Realtime handles intent interpretation and chat. This is not yet a direct, duplex microphone-audio stream to Boson. The dashboard's uploaded recordings described above do use Boson audio transcription.
+
 ### Boson evaluation lab
 
 The evaluation lab runs PaceSense's repeatable test cases against the single Boson model and scores the results:
