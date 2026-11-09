@@ -49,6 +49,19 @@ class BosonClient:
     def _send(ws, event: dict[str, Any]) -> None:
         ws.send(json.dumps(event, ensure_ascii=False))
 
+    def _await_session_updated(self, ws) -> dict[str, Any]:
+        """Wait until Boson confirms the requested Realtime session configuration."""
+        deadline = time.monotonic() + self.timeout
+        while time.monotonic() < deadline:
+            event = json.loads(ws.recv(timeout=max(1, min(10, deadline - time.monotonic()))))
+            kind = event.get("type", "")
+            if kind == "error":
+                err = event.get("error", {})
+                raise LLMError(str(err.get("message") or err))
+            if kind == "session.updated":
+                return event.get("session", {})
+        raise LLMError("Boson Realtime session configuration timed out")
+
     @staticmethod
     def _tool_specs(tools: list[dict] | None) -> list[dict]:
         out = []
@@ -130,6 +143,7 @@ class BosonClient:
         try:
             with self._connect() as ws:
                 self._send(ws, {"type": "session.update", "session": session})
+                self._await_session_updated(ws)
                 for message in messages:
                     if message.get("role") == "assistant" and message.get("tool_calls"):
                         for call in message["tool_calls"]:
@@ -265,6 +279,7 @@ class BosonClient:
                         "turn_detection": None,
                     }},
                 }})
+                self._await_session_updated(ws)
                 for offset in range(0, len(pcm), AUDIO_CHUNK_BYTES):
                     chunk = pcm[offset:offset + AUDIO_CHUNK_BYTES]
                     self._send(ws, {"type": "input_audio_buffer.append",
