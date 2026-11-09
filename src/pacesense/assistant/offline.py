@@ -25,7 +25,7 @@ HELP_TEXT = ("I am the offline helper, so I understand a few kinds of question:\
              "- \"At 21.1 km in 1:41:00, am I on plan?\"\n"
              "- \"Explain the race weights\", \"Show my saved plans\", \"Find runner Anna\"\n"
              "- \"Add runner Anna de Vries, female, 34: Amsterdam 2023 3:35:48; Rotterdam 2024 3h33\"\n\n"
-             "With an OpenRouter key the assistant understands free questions and longer conversations.")
+             "With a BOSON_API_KEY configured on the server, PaceSense can answer free questions and longer conversations.")
 
 
 class OfflineModel:
