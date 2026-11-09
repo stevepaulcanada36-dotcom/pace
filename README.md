@@ -22,7 +22,7 @@ Everything is Python: the model, the services, the analysis, and a **Streamlit d
 | **Voice input** (several pages) | Speak instead of typing: transcribed, fields filled in, a refined version suggested for review | PaceSense addition |
 | **PaceSense Live** (`steer/`, `pacesense live`, Plan step 2) | *Proposal.* Talk instead of dragging: what the coach says moves the race sliders, continuously; each move is checked against the data, and a live steering index shows whose view the model is taking | Proposed extension (answers the paper's open question on steering) |
 | **Reproducibility** (`repro.py`, `pacesense reproduce`) | One command rebuilds every reported number and writes a manifest of input and output hashes; `--check` proves a re-run matches | PaceSense addition |
-| **AI models per task** (`llm/`, Settings, Model lab) | Chat, field filling and refining use per-task Boson Higgs Realtime; speech-to-text defaults to local Whisper and can optionally use Boson | PaceSense addition |
+| **AI models per task** (`llm/`, Settings, Model lab) | Chat, voice transcription, field filling and refining use Boson Higgs Realtime; local Whisper is an optional transcription fallback | PaceSense addition |
 
 ## PaceSense Studio (start here)
 
@@ -146,7 +146,7 @@ service); typing works everywhere; "Speak" reads replies aloud and pauses the mi
 | "2014 was a hot day and she was injured", "ignore the first race", "I think she can run 3:30", "scratch that" | race weights move (PaceSense Live's interpreter), with a feedback card |
 | "show the simulator", "hide the change log", "switch to runner view", "calm mode", "reset the layout" | the screen changes |
 | "simulate 26 degrees with a 15 km/h headwind", "what if she starts too fast" | the race is replayed on the ring and the chart |
-| "why is the likely range so wide?", "is my plan realistic?" | the assistant answers with PaceSense's own functions (OpenRouter with a key, the offline helper without) |
+| "why is the likely range so wide?", "is my plan realistic?" | the assistant answers with PaceSense's own functions (Boson with a key, the offline helper without) |
 
 The hologram reacts to what you say: legs flash for an injury, the body warms for heat, the chest glows for a best
 race. Rules: `hud/commands.py`; "simulate a hot day" never lowers a race, because interface commands are taken out
@@ -568,7 +568,7 @@ seconds per km.
 
 ```bash
 docker build -t pacesense .
-docker run -p 8501:8501 -v pacesense-data:/data -e BOSON_API_KEY pacesense
+docker run -p 8000:8000 -v pacesense-data:/data -e PACESENSE_AI=1 -e BOSON_API_KEY pacesense
 ```
 
 or without Docker:
@@ -576,7 +576,8 @@ or without Docker:
 ```bash
 export PACESENSE_DB=/var/lib/pacesense/pacesense.sqlite3 PACESENSE_DATA=/srv/races.csv
 export PACESENSE_ADMIN_TOKEN=$(openssl rand -hex 24)
-export OPENROUTER_API_KEY=your-boson-api-key            # optional: AI features; Higgs Realtime is used
+export PACESENSE_AI=1
+export BOSON_API_KEY=your-boson-api-key            # enable Boson Higgs Realtime
 streamlit run src/pacesense/dashboard/app.py --server.port 8501
 ```
 
@@ -589,7 +590,7 @@ keep `pacesense serve` bound to localhost or place any public deployment behind 
 
 The repository includes a Render Blueprint in `render.yaml`. To deploy it, create a new Blueprint in Render,
 connect this GitHub repository, and select the `deploy/render` branch. Render will read the Blueprint and ask you
-to provide `PACESENSE_ACCESS_USER` and `PACESENSE_ACCESS_PASSWORD` as secret environment values. Use a unique
+to provide `PACESENSE_ACCESS_USER`, `PACESENSE_ACCESS_PASSWORD` and `BOSON_API_KEY` as secret environment values. Use a unique
 password; do not commit credentials to Git. The Studio app then requires HTTP Basic Authentication for the UI
 and API. Render health checks at `/readyz` and `/healthz` remain accessible to the platform.
 
@@ -603,14 +604,14 @@ The free Render Postgres tier also expires after 30 days, so it is not a permane
 
 ```bash
 pip install -e ".[dev]"
-python -m unittest discover -s tests -t .     # 245 tests
+python -m unittest discover -s tests -t .     # the full test suite
 ```
 
 They cover PaceSense Live (interpreter, evidence statistics, sessions, replay, benchmark floors, the checked AI
 reader, the HTTP routes and the Plan-page box), `reproduce` (two runs give identical hashes; a changed seed is
 detected), the model, measures and statistics, the study procedure, planning sessions, the race-day watch,
-the assistant, the OpenRouter client, voice input and the Model lab (against `tests/fake_boson.py`, a
-stand-in for Boson's Realtime API, so no key or network is needed), every chart, and every
+the assistant, legacy HTTP-client compatibility tests, voice input and the Boson adapter (including
+`tests/test_boson.py`, which runs without a key or network), every chart, and every
 dashboard page. Pages are run against `tests/fake_streamlit.py`, a stand-in that takes
 Streamlit's own parameter names, rejects anything else, and plays back clicks and typed values. It checks
 the page logic and Streamlit calls, not how the page looks; for that, run the dashboard.
