@@ -99,7 +99,8 @@ class StudioService:
             self._demo_id = demo_runner_id(self.coach)
         return self._demo_id
 
-    def runners(self, query: str = "", limit: int = 50) -> list[dict]:
+    def runners(self, query: str = "", limit: int = 50, gender: str | None = None,
+                min_races: int = 0) -> list[dict]:
         q = query.strip().lower()
         demo = self.coach.runner(self.demo_runner)
         out = []
@@ -112,6 +113,10 @@ class StudioService:
             # Browse the loaded database, not only runners with four or more races.
             picks = sorted(self.coach.runners, key=lambda r: r.runner_id)
             out += [CoachService._summary(r, False) for r in picks[: limit - len(out)]]
+        if gender:
+            out = [r for r in out if r.get("gender") == gender]
+        if min_races:
+            out = [r for r in out if int(r.get("n_races") or 0) >= min_races]
         return out[:limit]
 
     # ---- sessions -------------------------------------------------------------------------------
