@@ -530,3 +530,10 @@ input[type="range"].moving::-moz-range-thumb { box-shadow: 0 0 0 6px var(--accen
   .legend { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+
+/* Runner database filters */
+.runner-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0 14px; }
+.runner-filters label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; }
+.runner-filters select { width: 100%; min-width: 0; }
+@media (max-width: 420px) { .runner-filters { grid-template-columns: 1fr; } }
