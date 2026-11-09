@@ -125,11 +125,12 @@ class BosonAdapterTests(unittest.TestCase):
         socket = FakeSocket([
             {"type": "session.updated", "session": {"type": "realtime"}},
             {
-            "type": "response.done",
-            "response": {"status": "completed", "output": [{
-                "type": "function_call", "call_id": "call-1", "name": "predict",
-                "arguments": '{"runner_id": "R1"}',
-            }]}},
+                "type": "response.done",
+                "response": {"status": "completed", "output": [{
+                    "type": "function_call", "call_id": "call-1", "name": "predict",
+                    "arguments": '{"runner_id": "R1"}',
+                }]},
+            },
         ])
         client = BosonClient("test-key")
         client._connect = lambda: socket
