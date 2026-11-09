@@ -206,6 +206,13 @@ class OfflineTests(unittest.TestCase):
         self.assertIn("won't change those race weights", text)
         self.assertIn("fully recovered", text)
 
+    def test_offline_assistant_carries_context_between_turns(self):
+        history = [{"role": "user", "content": "I meant the 2026 trial run"},
+                   {"role": "assistant", "content": "Got it; I'll keep that separate from marathon history."}]
+        text = self.a.ask("She had a leg injury. Could it affect performance?", history=history).text
+        self.assertIn("not one of her marathon records", text)
+        self.assertIn("fully recovered", text)
+
     def test_add_runner_conversation(self):
         names, text = self.steps("Add runner Anna de Vries, female, 34: Amsterdam 2023 3h35m48; Rotterdam 2024 3:33:11")
         self.assertEqual(names, ["check_runner_details", "propose_runner"])
