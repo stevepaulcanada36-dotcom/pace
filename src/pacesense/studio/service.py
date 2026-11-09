@@ -97,7 +97,7 @@ class StudioService:
             self._demo_id = demo_runner_id(self.coach)
         return self._demo_id
 
-    def runners(self, query: str = "", limit: int = 20) -> list[dict]:
+    def runners(self, query: str = "", limit: int = 50) -> list[dict]:
         q = query.strip().lower()
         demo = self.coach.runner(self.demo_runner)
         out = []
@@ -107,7 +107,8 @@ class StudioService:
         if len(q) >= 2:
             out += self.coach.search(q, limit)
         else:
-            picks = [r for r in sorted(self.coach.runners, key=lambda r: r.runner_id) if len(r.recent(5)) >= 4]
+            # Browse the loaded database, not only runners with four or more races.
+            picks = sorted(self.coach.runners, key=lambda r: r.runner_id)
             out += [CoachService._summary(r, False) for r in picks[: limit - len(out)]]
         return out[:limit]
 
