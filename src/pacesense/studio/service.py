@@ -314,7 +314,7 @@ Use only one intent. Do not invent runner IDs or names; choose select_runner onl
         # The adaptation is rendered separately and included in the next AI context.
         if revealed:
             out["adapt"] = live.engine.process(self._reveal_event(live), state) | {"speak": out["adapt"]["speak"]}
-        if source in ("voice", "typed") and not (extra or {}).get("prompt_answer"):
+        if kind == "utterance" and source in ("voice", "typed") and not (extra or {}).get("prompt_answer"):
             response = out.get("reply") or ""
             pending = live.engine.pending
             if pending:
@@ -384,6 +384,11 @@ Use only one intent. Do not invent runner IDs or names; choose select_runner onl
             out["adapt"] = live.engine.dismiss()
             out["adapt"]["speak"] = live.engine.speak(None, reply)
         out["choice"] = {"label": c.get("label"), "loop": loop, "said": said}
+        response = out.get("reply") or ""
+        pending = live.engine.pending
+        if pending:
+            response += "\\nPaceSense follow-up: " + str(pending.get("message", ""))
+        live.hud.remember_turn(said, response)
         return out
 
     def set_weight(self, sid: str, index: int, weight: float) -> dict:
