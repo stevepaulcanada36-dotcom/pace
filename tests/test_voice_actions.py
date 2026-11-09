@@ -1,5 +1,12 @@
 """Validation tests for AI-interpreted voice actions."""
+import json
 import unittest
+from types import SimpleNamespace
+
+from pacesense.coach import CoachService
+from pacesense.storage import Repository
+from pacesense.studio import Settings, StudioService
+from tests import helpers
 
 from pacesense.hud.voice_actions import MIN_CONFIDENCE, validate_voice_intent
 
@@ -56,6 +63,60 @@ class VoiceIntentValidationTests(unittest.TestCase):
         self.assertEqual(validate_voice_intent(intent("undo"), RUNNERS, can_undo=False)["status"], "clarify")
         self.assertEqual(validate_voice_intent(intent("undo"), RUNNERS, can_undo=True)["status"], "action")
         self.assertEqual(validate_voice_intent(intent("reveal"), RUNNERS, can_reveal=False)["status"], "clarify")
+
+
+class FakeIntentClient:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def chat(self, model, messages, **kwargs):
+        return SimpleNamespace(text=json.dumps(self.payload))
+
+
+class FakeAI:
+    online = True
+
+    def __init__(self, payload):
+        self.client = FakeIntentClient(payload)
+
+    def config(self, task):
+        return "higgs-realtime", 0.0
+
+
+class VoiceIntentExecutionTests(unittest.TestCase):
+    def service(self, payload):
+        coach = CoachService(helpers.model(), helpers.runners(), Repository(":memory:"))
+        service = StudioService(coach, settings=Settings())
+        service.ai_factory = lambda: FakeAI(payload)
+        sid, _ = service.create(condition="known")
+        return service, sid, coach
+
+    def test_voice_runner_search_executes_database_navigation_with_query(self):
+        service, sid, _ = self.service(intent("runner_database", {"query": "Jamie Lee"}))
+        result = service.command(sid, "find Jamie Lee in the runner database", source="voice")
+        self.assertIn({"type": "runner_database", "query": "Jamie Lee"}, result["actions"])
+
+    def test_voice_familiarity_executes_existing_runner_condition(self):
+        service, sid, _ = self.service(intent("set_familiarity", {"value": "unfamiliar"}))
+        result = service.command(sid, "I don't know this runner", source="voice")
+        self.assertEqual(result["adapt"]["ui"]["condition"], "unknown")
+        self.assertEqual(result["actions"], [{"type": "condition", "value": "unknown"}])
+
+    def test_voice_runner_selection_uses_verified_database_id(self):
+        service, sid, coach = self.service(intent("none"))
+        runner = coach.runners[0]
+        name = CoachService._summary(runner, False).get("name") or runner.runner_id
+        service.ai_factory = lambda: FakeAI(intent("select_runner", {"runner": name}))
+        result = service.command(sid, f"open {name}", source="voice")
+        self.assertEqual(result["actions"], [{"type": "runner", "id": runner.runner_id}])
+
+    def test_ambiguous_runner_selection_does_not_execute(self):
+        service, sid, _ = self.service(intent("select_runner", {"runner": "Alex Smith"}))
+        result = service.command(sid, "open Alex Smith", source="voice")
+        self.assertEqual(result["actions"], [])
+        self.assertIn("more than one", result["reply"])
+
+
 
 
 if __name__ == "__main__":
