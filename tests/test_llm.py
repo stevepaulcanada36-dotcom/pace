@@ -151,6 +151,12 @@ class ServiceTests(unittest.TestCase):
         self.repo.set_setting("transcription_backend", "boson")
         self.ai = AIService(self.repo, env={}, client=self.fake.client())
 
+    def test_blank_boson_key_is_treated_as_missing(self):
+        for value in ("", "   "):
+            ai = AIService(self.repo, env={"BOSON_API_KEY": value})
+            self.assertFalse(ai.online)
+            self.assertIn("No BOSON_API_KEY", ai.why_offline())
+
     def test_offline_without_key(self):
         self.repo.set_setting("transcription_backend", "boson")
         ai = AIService(self.repo, env={})
