@@ -151,6 +151,11 @@ class ClarifyLoop(FeedbackLoop):
         races = ctx.session.state.get("races") or []
         if not m or not races:
             return []
+        # A cue explicitly attached to a trial/training run or relay is not ambiguous marathon history.
+        # Let the conversation assistant discuss it as context instead of asking which old marathon it was.
+        if re.search(r"\b(trial run|training run|training session|relay|time trial|track session|parkrun)\b",
+                     ev.text or "", re.IGNORECASE):
+            return []
         cue = m.group(0)
         choices = [{"label": f"{r['event']} {r['year']}", "say": f"{r['event']} {r['year']}: {ev.text}"} for r in races]
         return [self.adapt("prompt", f'Which race was "{cue}"?', "a cue was heard but no race was named",
