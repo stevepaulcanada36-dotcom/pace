@@ -8,7 +8,6 @@ from __future__ import annotations
 import math
 from typing import Any, Iterable
 
-from .commands import PANELS
 
 MIN_CONFIDENCE = 0.78
 PROFILES = {"on_plan", "fast_start", "late_fade"}
