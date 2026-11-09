@@ -14,12 +14,13 @@ dependencies = ["numpy>=1.24", "pandas>=2.0", "scipy>=1.10", "PyYAML>=6.0", "web
 [project.optional-dependencies]
 # The Streamlit dashboard. 1.40 is the oldest Streamlit with every feature the pages use
 # (st.navigation, st.fragment(run_every=...), st.page_link, bordered containers).
+# PyAV decodes the dashboard's supported upload formats for Boson transcription.
+dashboard = ["streamlit>=1.40", "matplotlib>=3.7", "av>=11,<19"]
 # PaceSense Studio, the production web app (pacesense studio).
-studio = ["starlette>=0.37", "uvicorn[standard]>=0.29", "pydantic>=2.5"]
-dashboard = ["streamlit>=1.40", "matplotlib>=3.7"]
+studio = ["starlette>=0.37", "uvicorn[standard]>=0.29", "pydantic>=2.5", "av>=11,<19"]
 serve = ["gunicorn>=21"]
 local-stt = ["faster-whisper>=1.1", "av>=11,<19"]
-dev = ["pytest>=7", "matplotlib>=3.7", "starlette>=0.37", "uvicorn>=0.29", "pydantic>=2.5", "ruff>=0.5", "mypy>=1.10"]
+dev = ["pytest>=7", "matplotlib>=3.7", "starlette>=0.37", "uvicorn>=0.29", "pydantic>=2.5", "ruff>=0.5", "mypy>=1.10", "av>=11,<19"]
 
 [project.scripts]
 pacesense = "pacesense.cli:main"
