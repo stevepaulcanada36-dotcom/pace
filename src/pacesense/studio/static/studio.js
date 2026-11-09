@@ -666,6 +666,7 @@
         if (a.panel === "similar") selectTab("tab-similar"); else if (a.panel === "pacing") selectTab("tab-pacing");
         focusPanel(PANEL[a.panel]);
       } else if (a.type === "runner") openRunner(a.id, a.id === "demo" ? null : $("#holdout-check").checked);
+      else if (a.type === "runner_database") openRunnerDatabase("");
       else if (a.type === "reveal") focusPanel("#kpi-acc");
     }
   }
@@ -795,11 +796,21 @@
 
   // ---------------------------------------------------------------- runner picker
   const dlg = $("#runner-dialog");
+  function openRunnerDatabase(query = "") {
+    dlg.showModal();
+    $("#runner-search").value = query;
+    searchRunners(query);
+    $("#runner-search").focus();
+  }
   const searchRunners = debounce(async (q) => {
     const list = clear($("#runner-list"));
+    $("#runner-db-count").textContent = "Searching the existing runner database…";
     try {
       const rows = await api("GET", `/runners?q=${encodeURIComponent(q)}`);
-      if (!rows.length) list.append(h("li", { class: "muted", text: "No runners match." }));
+      $("#runner-db-count").textContent = rows.length
+        ? `Showing ${rows.length} matching existing runner records. Select one to open it; no new data is added.`
+        : "No existing runners match that search.";
+      if (!rows.length) list.append(h("li", { class: "muted", text: "No runners match. Try another name or runner ID." }));
       for (const r of rows) {
         const b = h("button", { type: "button", role: "option" },
           h("span", null, h("b", { text: r.runner_id === "demo" ? "Demo runner" : r.name }), r.runner_id === "demo" ? h("span", { class: "tag", text: "  recommended" }) : ""),
@@ -872,7 +883,7 @@
     $("#undo-btn").addEventListener("click", undo);
     $("#export-btn").addEventListener("click", exportSession);
     $("#help-btn").addEventListener("click", () => $("#help-dialog").showModal());
-    $("#runner-btn").addEventListener("click", () => { dlg.showModal(); $("#runner-search").value = ""; searchRunners(""); $("#runner-search").focus(); });
+    $("#runner-btn").addEventListener("click", () => openRunnerDatabase(""));
     $("#runner-search").addEventListener("input", (e) => searchRunners(e.target.value));
 
     $$(".tabs [role=tab]").forEach((t) => {
