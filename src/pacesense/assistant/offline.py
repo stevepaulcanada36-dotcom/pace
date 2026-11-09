@@ -64,10 +64,14 @@ class OfflineModel:
         has_non_marathon_event = bool(re.search(
             r"\b(trial run|training run|training session|relay|time trial|track session|parkrun)\b", conversation))
         has_injury = bool(re.search(r"\b(injur\w*|pain|hurt|sore|strain|sprain|fracture)\b", conversation))
-        asks_about_injury_impact = bool(re.search(r"\b(injur\w*|pain|hurt|sore|strain|sprain|fracture)\b", t)
-                                        or (has_injury and re.search(
-                                            r"\b(performance|affect|impact|recovery|recover|training)\b", t)))
-        if has_non_marathon_event and asks_about_injury_impact:
+        asks_about_injury_impact = bool(
+            re.search(r"\b(injur\w*|pain|hurt|sore|strain|sprain|fracture)\b", t)
+            or (has_injury and re.search(r"\b(performance|affect|impact|recovery|recover|training)\b", t))
+        )
+        mentions_non_marathon_event = bool(re.search(
+            r"\b(trial run|training run|training session|relay|time trial|track session|parkrun)\b", t))
+        if has_non_marathon_event and (asks_about_injury_impact or mentions_non_marathon_event):
+            if asks_about_injury_impact:
                 return ModelReply(
                     "A trial run or relay is not one of her marathon records, so I won't change those race weights. "
                     "A leg injury could affect her marathon performance depending on its severity, when it happened, "
