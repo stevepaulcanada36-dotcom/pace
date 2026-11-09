@@ -62,6 +62,7 @@ class VoiceIntentValidationTests(unittest.TestCase):
     def test_panel_and_simulation_bounds_are_checked(self):
         self.assertEqual(validate_voice_intent(intent("focus_panel", {"panel": "races"}), RUNNERS)["status"], "action")
         self.assertEqual(validate_voice_intent(intent("focus_panel", {"panel": "secrets"}), RUNNERS)["status"], "clarify")
+        self.assertEqual(validate_voice_intent(intent("focus_panel", {"panel": "hologram"}), RUNNERS)["status"], "clarify")
         self.assertEqual(validate_voice_intent(intent("simulate", {"temp_c": 41, "wind_kmh": 0}), RUNNERS)["status"], "clarify")
         self.assertEqual(validate_voice_intent(intent("simulate", {"temp_c": 22, "wind_kmh": 15, "profile": "fast_start"}), RUNNERS)["status"], "action")
 
@@ -116,7 +117,8 @@ class VoiceIntentExecutionTests(unittest.TestCase):
         target = runner.runner_id
         service.ai_factory = lambda: FakeAI(intent("select_runner", {"runner": target}))
         result = service.command(sid, f"open runner {target}", source="voice")
-        self.assertEqual(result["actions"], [{"type": "runner", "id": runner.runner_id}])
+        name = CoachService._summary(runner, False).get("name") or runner.runner_id
+        self.assertEqual(result["actions"], [{"type": "runner", "id": runner.runner_id, "name": name}])
 
     def test_ambiguous_runner_selection_does_not_execute(self):
         service, sid, _ = self.service(intent("select_runner", {"runner": "Alex Smith"}))
