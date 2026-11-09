@@ -128,7 +128,7 @@ class AIService:
 
     # ---- tasks ---------------------------------------------------------------------------------
     def chat_model(self, model: str | None = None):
-        """The model for Ask PaceSense: OpenRouter with the assistant task's settings, or the offline helper."""
+        """The model for Ask PaceSense: Boson Higgs Realtime, or the offline helper."""
         from ..assistant.chat import BosonModel
         from ..assistant.offline import OfflineModel
         if not self.online:
@@ -138,12 +138,11 @@ class AIService:
 
     @property
     def transcription_backend(self) -> str:
-        """The dashboard defaults to local Whisper; Model lab can pass a model to test OpenRouter."""
+        """Boson handles voice by default; local Whisper is an explicit offline fallback."""
         return str(self.repo.get_setting("transcription_backend", self.env.get("PACESENSE_TRANSCRIBE_BACKEND", "boson")))
 
     def transcribe(self, audio: bytes, fmt: str = "wav", model: str | None = None) -> Transcript:
-        # An explicit model is used by the Model lab to compare OpenRouter models. Ordinary voice input
-        # follows the selected backend and defaults to local transcription to avoid API charges.
+        # Voice uses Boson by default. Local Whisper is available only when explicitly selected as the backend.
         if model is None and self.transcription_backend == "local":
             from .local_whisper import transcribe as local_transcribe
             return local_transcribe(audio, fmt, self.language)
