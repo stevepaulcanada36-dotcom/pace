@@ -52,6 +52,10 @@ class VoiceIntentValidationTests(unittest.TestCase):
     def test_runner_search_preserves_query(self):
         r = validate_voice_intent(intent("runner_database", {"query": "Jamie Lee"}), RUNNERS)
         self.assertEqual(r["arguments"]["query"], "Jamie Lee")
+        filtered = validate_voice_intent(intent("runner_database", {"query": "", "gender": "F", "min_races": 4}), RUNNERS)
+        self.assertEqual(filtered["arguments"], {"query": "", "gender": "F", "min_races": 4})
+        self.assertEqual(validate_voice_intent(intent("runner_database", {"gender": "X"}), RUNNERS)["status"], "clarify")
+        self.assertEqual(validate_voice_intent(intent("runner_database", {"min_races": 21}), RUNNERS)["status"], "clarify")
 
     def test_panel_and_simulation_bounds_are_checked(self):
         self.assertEqual(validate_voice_intent(intent("focus_panel", {"panel": "races"}), RUNNERS)["status"], "action")
@@ -94,7 +98,7 @@ class VoiceIntentExecutionTests(unittest.TestCase):
     def test_voice_runner_search_executes_database_navigation_with_query(self):
         service, sid, _ = self.service(intent("runner_database", {"query": "Jamie Lee"}))
         result = service.command(sid, "find Jamie Lee in the runner database", source="voice")
-        self.assertIn({"type": "runner_database", "query": "Jamie Lee"}, result["actions"])
+        self.assertIn({"type": "runner_database", "query": "Jamie Lee", "gender": "", "min_races": 0}, result["actions"])
 
     def test_voice_familiarity_executes_existing_runner_condition(self):
         service, sid, _ = self.service(intent("set_familiarity", {"value": "unfamiliar"}))
