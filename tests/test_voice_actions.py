@@ -13,6 +13,7 @@ from tests.asgi import Client
 from tests import helpers
 
 from pacesense.hud.voice_actions import MIN_CONFIDENCE, validate_voice_intent
+from pacesense.hud.commands import ui_commands
 
 
 RUNNERS = [
@@ -119,6 +120,33 @@ class VoiceIntentValidationTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "clarify")
         self.assertLess(result["confidence"], MIN_CONFIDENCE)
+
+    def test_rule_fallback_requires_explicit_personal_familiarity_language(self):
+        self.assertEqual(ui_commands("unknown runner")[0], [])
+        self.assertEqual(ui_commands("find an unknown runner")[0], [])
+        self.assertEqual(ui_commands("I don't know this runner")[0], [{"type": "condition", "value": "unknown"}])
+        self.assertEqual(ui_commands("mark this runner unfamiliar to me")[0], [{"type": "condition", "value": "unknown"}])
+        self.assertEqual(ui_commands("I am familiar with this runner")[0], [{"type": "condition", "value": "known"}])
+
+    def test_familiarity_filter_words_are_not_active_runner_changes(self):
+        unfamiliar = validate_voice_intent(
+            intent("set_familiarity", {"value": "unfamiliar"}, evidence=["find unfamiliar runners"]),
+            RUNNERS, utterance="find unfamiliar runners",
+        )
+        known = validate_voice_intent(
+            intent("set_familiarity", {"value": "known"}, evidence=["show familiar runners"]),
+            RUNNERS, utterance="show familiar runners",
+        )
+        self.assertEqual(unfamiliar["status"], "clarify")
+        self.assertEqual(known["status"], "clarify")
+
+    def test_unknown_runner_search_is_not_misread_as_familiarity(self):
+        utterance = "find an unknown runner"
+        result = validate_voice_intent(
+            intent("set_familiarity", {"value": "unknown"}, evidence=[utterance]),
+            RUNNERS, utterance=utterance,
+        )
+        self.assertEqual(result["status"], "clarify")
 
     def test_unknown_and_known_wording_maps_to_familiarity_values(self):
         unknown = validate_voice_intent(
@@ -255,6 +283,7 @@ class VoiceIntentExecutionTests(unittest.TestCase):
         ))
         result = service.command(sid, "show the races panel", source="voice")
         self.assertEqual(result["voice_intent"]["status"], "action")
+        self.assertEqual(result["voice_intent"]["arguments"]["panel"], "races")
         self.assertTrue(result["voice_action_pending"])
         self.assertEqual(result["adapt"]["speak"], "")
 
@@ -276,6 +305,13 @@ class VoiceIntentExecutionTests(unittest.TestCase):
         self.assertEqual(result["actions"], [])
         self.assertFalse(result["voice_action_pending"])
         self.assertIn("more than one request", result["reply"])
+
+    def test_voice_steering_change_returns_a_confirmable_refresh_action(self):
+        service, sid, _ = self.service(intent("none"))
+        result = service.command(sid, "trust the recent races more", source="voice")
+        self.assertTrue(result["voice_action_pending"])
+        self.assertIn({"type": "refresh"}, result["actions"])
+        self.assertTrue(result["turn"]["applied"])
 
     def test_rule_fallback_voice_action_still_defers_confirmation(self):
         service, sid, _ = self.service(intent("none"))

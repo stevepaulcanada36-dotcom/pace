@@ -232,11 +232,22 @@ def validate_voice_intent(
         if utterance is not None:
             if value == "unfamiliar":
                 cue = re.search(
-                    r"\b(unfamiliar|unknown runner|unknown to me|new to me|don't know|dont know|do not know|not familiar|not known to me|haven't coached|have not coached|mark (?:this|the) runner as unknown)\b",
+                    r"\b(unfamiliar\s+(?:to me|with\s+(?:this\s+)?runner)|unknown\s+to\s+me|"
+                    r"(?:this\s+)?runner\s+(?:is\s+)?new\s+to\s+me|new\s+runner\s+to\s+me|"
+                    r"(?:i\s+)?(?:do\s+not|don't|dont)\s+know\s+(?:this\s+|the\s+)?runner|"
+                    r"not\s+familiar\s+with\s+(?:this\s+)?runner|not\s+known\s+to\s+me|"
+                    r"haven't\s+coached\s+(?:this\s+)?runner|have\s+not\s+coached\s+(?:this\s+)?runner|"
+                    r"mark\s+(?:this\s+|the\s+)?runner\s+(?:as\s+)?(?:unknown|unfamiliar))\b",
                     utterance, re.IGNORECASE,
                 )
             else:
-                cue = re.search(r"\b(i know|know this runner|familiar|known to me|i coach|personally know|mark (?:this|the) runner as known)\b", utterance, re.IGNORECASE)
+                cue = re.search(
+                    r"\b(i\s+know\s+(?:this\s+|the\s+)?runner|i\s+coach\s+(?:this\s+)?runner|"
+                    r"i\s+am\s+familiar\s+with\s+(?:this\s+)?runner|familiar\s+with\s+(?:this\s+)?runner|"
+                    r"runner\s+(?:is\s+)?known\s+to\s+me|known\s+to\s+me|"
+                    r"mark\s+(?:this\s+|the\s+)?runner\s+(?:as\s+)?known)\b",
+                    utterance, re.IGNORECASE,
+                )
             if not cue:
                 return _clarify("Do you know this runner personally, or are they unfamiliar to you?", confidence, evidence)
         target = _text(args.get("runner"), 100).casefold()

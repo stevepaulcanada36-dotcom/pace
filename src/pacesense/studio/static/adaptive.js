@@ -314,12 +314,14 @@
     // ------------------------------------------------------------ coach profile
     async function openProfile() {
       if (!$("#profile-dialog").open) $("#profile-dialog").showModal();
-      await renderProfile();
+      const loaded = await renderProfile();
       api("POST", `/sessions/${app.sid}/events`, { kind: "panel", panel: "profile" }).catch(() => {});
+      return loaded;
     }
     async function renderProfile() {
       let prof;
-      try { prof = await api("GET", `/coaches/${P.coachId()}/profile`); } catch (e) { toast(e.message, "error"); return; }
+      try { prof = await api("GET", `/coaches/${P.coachId()}/profile`); }
+      catch (e) { toast(e.message, "error"); return false; }
       const p = prof.persona;
       clear($("#arch")).append(
         h("div", { class: "arch-name" }, h("b", { text: p.archetype.name }), h("span", { class: "muted", text: ` · ${Math.round(100 * p.confidence)}% sure, from ${p.signals} signals` })),
@@ -365,6 +367,7 @@
       if (!entries.length) log.append(h("li", { class: "muted", text: "Nothing has adapted yet." }));
       entries.forEach((e) => log.append(h("li", null, h("b", { text: loopLabel(e.loop) }), " ", e.message,
         e.why ? h("small", { class: "muted", text: ` (because ${e.why})` }) : "")));
+      return true;
     }
     function renderRecord(out) {
       const box = clear($("#record"));

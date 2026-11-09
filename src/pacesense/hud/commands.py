@@ -72,8 +72,17 @@ REVEAL_RE = re.compile(r"\b(reveal|show me the (?:real|actual|true) (?:best|resu
                        re.I)
 # These phrases refer to existing database records, not adding new runners.
 DATABASE_RE = re.compile(r"\b(?:open|show|view|browse|search)\s+(?:the\s+)?(?:runner\s+)?(?:database|directory|roster)\b|\bshow\s+(?:me\s+)?all\s+runners\b", re.I)
-UNKNOWN_RE = re.compile(r"\b(?:i\s+(?:do\s+not|don't|dont)\s+know\s+(?:this\s+)?(?:the\s+)?runner|i\s+have\s+not\s+coached\s+(?:this\s+)?runner|i\s+haven't\s+coached\s+(?:this\s+)?runner|i\s+have\s+never\s+coached\s+(?:this\s+)?runner|not\s+familiar\s+with\s+(?:this\s+)?runner|unfamiliar\s+runner|unknown\s+runner|new\s+to\s+me|new\s+runner\s+to\s+me|runner\s+is\s+new\s+to\s+me|mark\s+(?:this\s+)?runner\s+as\s+unknown)\b", re.I)
-KNOWN_RE = re.compile(r"\b(?:i\s+know\s+(?:this\s+)?runner|i\s+coach\s+(?:this\s+)?runner|familiar\s+runner|known\s+runner|my\s+runner|mark\s+(?:this\s+)?runner\s+as\s+known)\b", re.I)
+UNKNOWN_RE = re.compile(
+    r"\b(?:i\s+(?:do\s+not|don't|dont)\s+know\s+(?:this\s+)?(?:the\s+)?runner|"
+    r"i\s+have\s+not\s+coached\s+(?:this\s+)?runner|i\s+haven't\s+coached\s+(?:this\s+)?runner|"
+    r"i\s+have\s+never\s+coached\s+(?:this\s+)?runner|not\s+familiar\s+with\s+(?:this\s+)?runner|"
+    r"unfamiliar\s+(?:to\s+me|with\s+(?:this\s+)?runner)|unknown\s+to\s+me|"
+    r"runner\s+(?:is\s+)?new\s+to\s+me|new\s+runner\s+to\s+me|"
+    r"mark\s+(?:this\s+)?runner\s+(?:as\s+)?(?:unknown|unfamiliar)(?:\s+to\s+me)?)\b", re.I)
+KNOWN_RE = re.compile(
+    r"\b(?:i\s+know\s+(?:this\s+)?runner|i\s+coach\s+(?:this\s+)?runner|"
+    r"i\s+am\s+familiar\s+with\s+(?:this\s+)?runner|familiar\s+with\s+(?:this\s+)?runner|"
+    r"runner\s+is\s+known\s+to\s+me|known\s+to\s+me|mark\s+(?:this\s+)?runner\s+as\s+known)\b", re.I)
 
 
 def _panel_key(word: str) -> str:

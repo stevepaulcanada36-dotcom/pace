@@ -687,9 +687,9 @@
         outcome.confirmation = `Updated the race-day simulation to ${a.temp_c} °C, ${a.wind_kmh} km/h headwind, ${a.profile.replace("_", " ")}.`;
       } else if ((a.type === "focus" || a.type === "open") && (PANEL[a.panel] || a.panel === "similar" || a.panel === "log" || a.panel === "record")) {
         if (a.panel === "log" || a.panel === "record") {
-          if (hooks.profile) await hooks.profile();
+          const loaded = hooks.profile ? await hooks.profile() : false;
           const target = $(a.panel === "log" ? "#why-log" : "#record");
-          outcome.success = !!target;
+          outcome.success = !!loaded && !!target;
           if (target) target.scrollIntoView({ behavior: "smooth", block: "nearest" });
           outcome.confirmation = a.panel === "log"
             ? "Opened the change log in the coach profile."
@@ -736,10 +736,15 @@
         if (outcome.success) focusPanel("#kpi-acc");
         outcome.confirmation = "Revealed the hidden demo result.";
         outcome.message = "There is no hidden demo result to reveal in this session.";
-      } else if (a.type === "refresh" && result.turn && result.turn.source === "undo") {
-        outcome.success = !!(result.turn && result.turn.source === "undo");
-        outcome.confirmation = "Undid the last change.";
-        outcome.message = "I couldn't undo a change in this session.";
+      } else if (a.type === "refresh") {
+        const turn = result.turn || {};
+        const changed = turn.source === "undo" || (turn.applied && turn.applied.length)
+          || turn.estimate_s != null;
+        outcome.success = !!changed;
+        outcome.confirmation = turn.source === "undo" ? "Undid the last change."
+          : (turn.applied && turn.applied.length ? "Updated the race weights."
+            : "Saved the coach's estimate.");
+        outcome.message = result.reply || "I couldn't confirm a session change. Please clarify which race or adjustment you meant.";
       } else {
         outcome.success = false;
         outcome.message = "That PaceSense action could not be completed.";

@@ -345,7 +345,7 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                                "simulation": sim, "state": state, "turn": r.turn}
         if voice_intent:
             out["voice_intent"] = {key: voice_intent[key] for key in
-                                   ("status", "intent", "confidence", "evidence") if key in voice_intent}
+                                   ("status", "intent", "arguments", "confidence", "evidence") if key in voice_intent}
         turn = r.turn or {}
         data = {"applied": turn.get("applied", []), "turn": turn.get("n"), "estimate_s": turn.get("estimate_s"),
                 "notes": turn.get("notes", []),
@@ -353,7 +353,12 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
         self._observe(sid, live, Event(kind, text, source, data), out)
         # AI-interpreted UI actions are confirmed by the browser only after the action succeeds.
         # Do not let the adaptive TTS speak the optimistic route reply before that confirmation.
-        out["voice_action_pending"] = source == "voice" and bool(r.actions)
+        turn_changed = bool(turn) and (
+            turn.get("source") == "undo" or bool(turn.get("applied"))
+            or turn.get("estimate_s") is not None
+        )
+        ui_action_pending = any(action.get("type") != "refresh" for action in r.actions)
+        out["voice_action_pending"] = source == "voice" and (ui_action_pending or turn_changed)
         if out["voice_action_pending"] or (voice_intent and voice_intent.get("status") == "action"):
             out["adapt"]["speak"] = ""
         # Keep the assistant's answer visible even when an adaptive loop also asks a follow-up.
