@@ -5,7 +5,6 @@ existing application state and rejects unsupported or unsafe actions.
 """
 from __future__ import annotations
 
-import math
 from typing import Any, Iterable
 
 
@@ -37,13 +36,13 @@ def validate_voice_intent(
     if not isinstance(payload, dict):
         return _clarify("I couldn't confidently understand that command. Could you say it another way?")
     raw_conf = payload.get("confidence")
-    if isinstance(raw_conf, bool) or not isinstance(raw_conf, (int, float)) or not math.isfinite(raw_conf):
+    if isinstance(raw_conf, bool) or not isinstance(raw_conf, (int, float)):
         return _clarify("I couldn't assess that command confidently. Could you rephrase it?")
     confidence = float(raw_conf)
     if not 0.0 <= confidence <= 1.0:
         return _clarify("I couldn't assess that command confidently. Could you rephrase it?")
     evidence_raw = payload.get("evidence", [])
-    evidence = [_text(x, 180) for x in evidence_raw[:4] if isinstance(x, str)] if isinstance(evidence_raw, list) else []
+    evidence = [clean for x in evidence_raw[:4] if isinstance(x, str) and (clean := _text(x, 180))] if isinstance(evidence_raw, list) else []
     if confidence < MIN_CONFIDENCE:
         return _clarify(_text(payload.get("clarification"), 240) or
                         "I'm not certain what you want me to change. Could you clarify?", confidence, evidence)
@@ -63,14 +62,15 @@ def validate_voice_intent(
         gender = args.get("gender") or ""
         if not isinstance(gender, str):
             return _clarify("Should I filter by female or male runners, or show everyone?", confidence, evidence)
-        gender = {"female": "F", "Female": "F", "male": "M", "Male": "M", "all": ""}.get(gender, gender)
+        gender = gender.strip()
+        gender = {"female": "F", "male": "M", "all": ""}.get(gender.lower(), gender.upper())
         min_races = args.get("min_races", 0)
         if query and len(query) < 2:
             return _clarify("Please give me at least two letters or a runner ID to search for.", confidence, evidence)
         if gender not in ("", "F", "M"):
             return _clarify("Should I filter by female or male runners, or show everyone?", confidence, evidence)
         if (isinstance(min_races, bool) or not isinstance(min_races, (int, float))
-                or not math.isfinite(min_races) or int(min_races) != min_races or not 0 <= min_races <= 20):
+                or not 0 <= min_races <= 20 or int(min_races) != min_races):
             return _clarify("How many previous marathons should the runner have at minimum?", confidence, evidence)
         min_races = int(min_races)
         return {"status": "action", "intent": intent,
@@ -109,11 +109,9 @@ def validate_voice_intent(
     if intent == "simulate":
         temp, wind = args.get("temp_c", 12), args.get("wind_kmh", 0)
         profile = args.get("profile", "on_plan")
-        if (isinstance(temp, bool) or not isinstance(temp, (int, float)) or not math.isfinite(temp)
-                or not -10 <= temp <= 40):
+        if (isinstance(temp, bool) or not isinstance(temp, (int, float)) or not -10 <= temp <= 40):
             return _clarify("What race-day temperature should I use? It must be between -10 and 40 °C.", confidence, evidence)
-        if (isinstance(wind, bool) or not isinstance(wind, (int, float)) or not math.isfinite(wind)
-                or not 0 <= wind <= 60):
+        if (isinstance(wind, bool) or not isinstance(wind, (int, float)) or not 0 <= wind <= 60):
             return _clarify("What headwind should I use? It must be between 0 and 60 km/h.", confidence, evidence)
         if not isinstance(profile, str) or profile not in PROFILES:
             return _clarify("Should I use the planned pace, a fast start, or a late fade?", confidence, evidence)
