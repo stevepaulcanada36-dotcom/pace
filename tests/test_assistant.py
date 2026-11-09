@@ -200,6 +200,12 @@ class OfflineTests(unittest.TestCase):
         _, text = self.steps(f"Predict {self.rid}")
         self.assertIn(self.coach.predict(self.rid)["finish"], text)
 
+    def test_trial_run_injury_gets_contextual_offline_answer(self):
+        text = self.a.ask("I meant the 2026 trial run; she had a leg injury").text
+        self.assertIn("not one of her marathon records", text)
+        self.assertIn("won't change those race weights", text)
+        self.assertIn("fully recovered", text)
+
     def test_add_runner_conversation(self):
         names, text = self.steps("Add runner Anna de Vries, female, 34: Amsterdam 2023 3h35m48; Rotterdam 2024 3:33:11")
         self.assertEqual(names, ["check_runner_details", "propose_runner"])
