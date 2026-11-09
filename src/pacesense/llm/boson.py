@@ -213,6 +213,8 @@ class BosonClient:
             raise LLMError("the recording is empty")
         if len(audio) > MAX_AUDIO_BYTES:
             raise LLMError("the recording is larger than 25 MB")
+        if model and model not in (MODEL, "boson/higgs-realtime"):
+            raise LLMError(f"unsupported Boson model {model!r}; PaceSense uses {MODEL}")
         if fmt.lower() not in ("wav", "wave"):
             raise LLMError("Boson voice transcription requires WAV audio; convert the recording to PCM WAV first")
         pcm = self._wav_to_pcm24k(audio)
@@ -224,7 +226,7 @@ class BosonClient:
             with self._connect() as ws:
                 self._send(ws, {"type": "session.update", "session": {
                     "type": "realtime", "model": MODEL, "output_modalities": ["text"],
-                    "instructions": instructions, "input_audio_format": "pcm16"}})
+                    "instructions": instructions, "input_audio_format": "pcm16", "turn_detection": None}})
                 self._send(ws, {"type": "input_audio_buffer.append",
                                 "audio": base64.b64encode(pcm).decode("ascii")})
                 self._send(ws, {"type": "input_audio_buffer.commit"})
