@@ -104,7 +104,10 @@ class OfflineModel:
             mentioned = re.sub(rf"\b{year}\b", "", text, count=1, flags=re.I).strip(" ,.:;?-")
             mentioned = re.sub(r"\b(?:the|race|marathon|in|at|was|were)\b", " ", mentioned, flags=re.I)
             mentioned = " ".join(mentioned.split())
-            if len(mentioned) >= 3 and candidates and not any(
+            if (len(mentioned) >= 3
+                    and not re.search(r"\b(hot|heat|humid|injur\w*|sick|wind\w*|rain\w*|cold|weather|training|form)\b",
+                                      mentioned, re.I)
+                    and candidates and not any(
                     re.search(re.escape(re.sub(rf"\s+{year}\b", "", candidate, flags=re.I)), text, re.I)
                     for candidate in candidates):
                 if len(candidates) == 1:
