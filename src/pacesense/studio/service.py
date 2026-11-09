@@ -181,6 +181,14 @@ class StudioService:
         if races:
             lines.append("Existing marathon records: " + "; ".join(
                 f"{r.get('event', 'Marathon')} {r.get('year', '')}".strip() for r in races))
+            lines.append("Race details: " + "; ".join(
+                f"{r.get('event', 'Marathon')} {r.get('year', '')}: {r.get('finish', 'finish unavailable')}, "
+                f"current weight {float(r.get('weight', 0.5)):.2f}" for r in races))
+        prediction = state.get("prediction") or {}
+        if prediction.get("finish") and prediction.get("low_s") and prediction.get("high_s"):
+            lines.append("Current model target: " + str(prediction["finish"]))
+            lines.append("Current likely range: " + format_time(prediction["low_s"]) +
+                         " to " + format_time(prediction["high_s"]))
         notes = (live.engine.ctx.profile.get("runner_notes") or {}).get(hud.source_runner, [])
         if notes:
             lines.append("Previously captured coach context: " + " | ".join(
