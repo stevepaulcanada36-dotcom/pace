@@ -187,7 +187,7 @@ class OfflineTests(unittest.TestCase):
 
     def test_routes(self):
         cases = {f"Predict {self.rid}": ["predict"], "Is my plan realistic?": ["current_plan"],
-                 "What is the likely range?": ["predict", "explain"], "Explain the race weights": ["explain"],
+                 "What is the likely range?": ["predict"], "Explain the race weights": ["explain"],
                  "At 21.1 km in 1:41:00 am I on plan?": ["watch_moment"], "Show my saved plans": ["saved_plans"],
                  "Find runner R0001": ["find_runners"], f"Past races of {self.rid}": ["runner_details"]}
         for q, expected in cases.items():
@@ -199,6 +199,27 @@ class OfflineTests(unittest.TestCase):
     def test_numbers_come_from_functions(self):
         _, text = self.steps(f"Predict {self.rid}")
         self.assertIn(self.coach.predict(self.rid)["finish"], text)
+
+    def test_likely_range_uses_active_runner_and_explains_its_meaning(self):
+        context = ("Current runner: Demo runner (ID " + self.rid + ").\\n"
+                   "Existing marathon records: Amsterdam 2013; Eindhoven 2017; Eindhoven 2019")
+        answer = self.a.ask("What does the likely range mean?", context=context)
+        self.assertEqual([step.name for step in answer.steps], ["predict"])
+        self.assertIn(self.coach.predict(self.rid)["finish"], answer.text)
+        self.assertIn("middle 60 percent", answer.text.lower())
+
+    def test_unknown_race_name_with_matching_year_asks_before_assuming(self):
+        context = ("Current runner: Demo runner (ID " + self.rid + ").\\n"
+                   "Existing marathon records: Amsterdam 2013; Eindhoven 2017; Eindhoven 2019")
+        answer = self.a.ask("Edelman 2019", context=context)
+        self.assertIn("Eindhoven 2019", answer.text)
+        self.assertIn("Did you mean", answer.text)
+
+    def test_year_condition_note_is_not_misread_as_unknown_race_name(self):
+        context = ("Current runner: Demo runner (ID " + self.rid + ").\\n"
+                   "Existing marathon records: Amsterdam 2013; Eindhoven 2017; Eindhoven 2019")
+        answer = self.a.ask("2013 was a hot day", context=context)
+        self.assertNotIn("Did you mean", answer.text)
 
     def test_trial_run_injury_gets_contextual_offline_answer(self):
         text = self.a.ask("I meant the 2026 trial run; she had a leg injury").text
