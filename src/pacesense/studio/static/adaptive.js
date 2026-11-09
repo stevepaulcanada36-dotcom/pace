@@ -390,6 +390,7 @@
 
     // ------------------------------------------------------------ hooks + wiring
     P.hooks.apply = apply;
+    P.hooks.speak = (text) => { if (A.speakOn) say(text); };
     P.hooks.tts = () => TTS;
     P.hooks.bargeIn = bargeIn;
     P.hooks.silenceMs = () => ((A.adapt && A.adapt.ui && A.adapt.ui.voice_style) || {}).silence_ms || 1000;
