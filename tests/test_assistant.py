@@ -208,10 +208,14 @@ class OfflineTests(unittest.TestCase):
 
     def test_offline_assistant_carries_context_between_turns(self):
         history = [{"role": "user", "content": "I meant the 2026 trial run"},
-                   {"role": "assistant", "content": "Got it; I'll keep that separate from marathon history."}]
-        text = self.a.ask("She had a leg injury. Could it affect performance?", history=history).text
+                   {"role": "assistant", "content": "Got it; I'll keep that separate from marathon history."},
+                   {"role": "user", "content": "She had a leg injury"},
+                   {"role": "assistant", "content": "Noted."}]
+        text = self.a.ask("Could it affect her performance?", history=history).text
         self.assertIn("not one of her marathon records", text)
         self.assertIn("fully recovered", text)
+        other = self.a.ask("What does the likely range mean?", history=history).text
+        self.assertIn("middle 60 percent", other)
 
     def test_add_runner_conversation(self):
         names, text = self.steps("Add runner Anna de Vries, female, 34: Amsterdam 2023 3h35m48; Rotterdam 2024 3:33:11")
