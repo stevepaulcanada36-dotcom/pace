@@ -23,9 +23,10 @@ PCM_SAMPLE_RATE = 24000
 
 class BosonClient:
     def __init__(self, api_key: str, *, timeout: float = 90):
-        if not api_key:
+        normalized_key = api_key.strip() if isinstance(api_key, str) else ""
+        if not normalized_key:
             raise LLMError("a Boson API key is required")
-        self.api_key = api_key.strip()
+        self.api_key = normalized_key
         self.timeout = timeout
 
     def _connect(self):
@@ -202,13 +203,25 @@ class BosonClient:
             raise LLMError("audio conversion requires PyAV; install the PaceSense dashboard or studio dependencies") from exc
         try:
             chunks: list[bytes] = []
+            total_bytes = 0
+            max_pcm_bytes = PCM_SAMPLE_RATE * 2 * MAX_AUDIO_DURATION_S
             resampler = av.AudioResampler(format="s16", layout="mono", rate=PCM_SAMPLE_RATE)
+
+            def collect(frames) -> None:
+                nonlocal total_bytes
+                for frame in frames:
+                    chunk = frame.to_ndarray().tobytes()
+                    total_bytes += len(chunk)
+                    if total_bytes > max_pcm_bytes:
+                        raise LLMError("the decoded recording is longer than the 60-minute limit")
+                    chunks.append(chunk)
+
             with av.open(io.BytesIO(audio), mode="r") as container:
                 if not container.streams.audio:
                     raise LLMError("the recording contains no audio stream")
                 for frame in container.decode(audio=0):
-                    chunks.extend(out.to_ndarray().tobytes() for out in resampler.resample(frame))
-                chunks.extend(out.to_ndarray().tobytes() for out in resampler.resample(None))
+                    collect(resampler.resample(frame))
+                collect(resampler.resample(None))
         except LLMError:
             raise
         except Exception as exc:
@@ -216,8 +229,6 @@ class BosonClient:
         pcm = b"".join(chunks)
         if not pcm:
             raise LLMError("the recording contains no decodable audio")
-        if len(pcm) > PCM_SAMPLE_RATE * 2 * MAX_AUDIO_DURATION_S:
-            raise LLMError("the decoded recording is longer than the 60-minute limit")
         return pcm
 
     # Backwards-compatible helper retained for callers and existing tests.
