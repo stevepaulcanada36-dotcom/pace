@@ -10,6 +10,7 @@ import argparse
 import base64
 import getpass
 import json
+import os
 import time
 import wave
 from pathlib import Path
@@ -89,7 +90,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    api_key = getpass.getpass("Boson API key (input hidden): ").strip()
+    api_key = os.environ.get("BOSON_API_KEY", "").strip()
+    if not api_key:
+        api_key = getpass.getpass("Boson API key (input hidden): ").strip()
     if not api_key:
         parser.error("A Boson API key is required.")
 
