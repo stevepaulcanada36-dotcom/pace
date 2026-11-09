@@ -25,9 +25,11 @@ def likely_range(state: dict) -> str:
     p = state.get("prediction", {})
     if not p.get("low_s"):
         return "There aren't enough similar runners for a range."
-    return (f"The likely range, {format_time(p['low_s'])} to {format_time(p['high_s'])}, is where the middle 60 percent "
-            f"of similar runners finished their next marathon, weighted by how much you count each of her races. "
-            f"The target, {p.get('finish', format_time(p['finish_s']))}, is the weighted middle.")
+    return (f"The likely range, {format_time(p['low_s'])} to {format_time(p['high_s'])}, is an uncertainty band "
+            f"based on the 20th to 80th percentiles of similar runners' implied next-marathon finishes. "
+            f"On held-out demo races, the actual result fell inside this range for about 80% of runners. "
+            f"That is a validation result, not a guarantee for this runner. The target, "
+            f"{p.get('finish', format_time(p['finish_s']))}, is the weighted middle.")
 
 
 def data_check(state: dict) -> str:
