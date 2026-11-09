@@ -56,8 +56,11 @@
     }
 
     // ------------------------------------------------------------ known / unknown runner
-    const COND = { known: ["Known runner", "You lead; I check and remember"], unknown: ["Unknown runner", "The data leads; you say yes or no"],
-      ask: ["Runner: known?", "Tell me whether you know this runner"] };
+    const COND = {
+      known: ["Known to me", "You coach or personally know this runner. Your experience can steer the model."],
+      unknown: ["Unfamiliar to me", "This runner is already in the database, but you do not know them personally. The data leads; you review it."],
+      ask: ["Runner familiarity?", "Tell me whether you know this runner personally"]
+    };
     function renderCondition(a) {
       const c = (a.ui && a.ui.condition) || "ask", pill = $("#cond-pill");
       pill.textContent = COND[c][0]; pill.dataset.cond = c; pill.title = `${COND[c][1]}. Click to switch.`;
