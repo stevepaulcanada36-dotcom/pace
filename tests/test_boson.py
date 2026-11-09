@@ -78,6 +78,7 @@ class BosonAdapterTests(unittest.TestCase):
 
     def test_chat_uses_realtime_and_reads_text_response(self):
         socket = FakeSocket([
+            {"type": "session.updated", "session": {"type": "realtime"}},
             {"type": "response.output_text.delta", "delta": "Hello"},
             {"type": "response.done", "response": {
                 "status": "completed",
@@ -99,7 +100,9 @@ class BosonAdapterTests(unittest.TestCase):
         self.assertNotIn("temperature", socket.sent[-1].get("response", {}))
 
     def test_chat_clamps_temperature_in_session_configuration(self):
-        socket = FakeSocket([{
+        socket = FakeSocket([
+            {"type": "session.updated", "session": {"type": "realtime"}},
+            {
             "type": "response.done",
             "response": {"status": "completed", "output": []},
         }])
@@ -108,6 +111,17 @@ class BosonAdapterTests(unittest.TestCase):
         client.chat("higgs-realtime", [{"role": "user", "content": "hello"}], temperature=2.5)
         self.assertEqual(socket.sent[0]["session"]["temperature"], 2.0)
         self.assertNotIn("temperature", socket.sent[-1].get("response", {}))
+
+
+    def test_chat_rejects_session_configuration_error(self):
+        socket = FakeSocket([{
+            "type": "error",
+            "error": {"message": "invalid session configuration"},
+        }])
+        client = BosonClient("test-key")
+        client._connect = lambda: socket
+        with self.assertRaisesRegex(LLMError, "invalid session configuration"):
+            client.chat("higgs-realtime", [{"role": "user", "content": "hello"}])
 
     def test_chat_parses_function_call(self):
         socket = FakeSocket([{
@@ -124,7 +138,7 @@ class BosonAdapterTests(unittest.TestCase):
         self.assertEqual(result.tool_calls, [{"id": "call-1", "name": "predict", "arguments": {"runner_id": "R1"}}])
 
     def test_chat_rejects_incomplete_response(self):
-        socket = FakeSocket([{"type": "response.done", "response": {
+        socket = FakeSocket([{"type": "session.updated", "session": {"type": "realtime"}}, {"type": "response.done", "response": {
             "status": "incomplete", "status_details": {"reason": "max_output_tokens"},
         }}])
         client = BosonClient("test-key")
@@ -133,7 +147,7 @@ class BosonAdapterTests(unittest.TestCase):
             client.chat("higgs-realtime", [{"role": "user", "content": "hello"}])
 
     def test_chat_rejects_cancelled_response(self):
-        socket = FakeSocket([{"type": "response.done", "response": {"status": "cancelled"}}])
+        socket = FakeSocket([{"type": "session.updated", "session": {"type": "realtime"}}, {"type": "response.done", "response": {"status": "cancelled"}}])
         client = BosonClient("test-key")
         client._connect = lambda: socket
         with self.assertRaisesRegex(LLMError, "cancelled"):
@@ -150,6 +164,7 @@ class BosonAdapterTests(unittest.TestCase):
 
     def test_transcription_uses_documented_realtime_audio_configuration(self):
         socket = FakeSocket([
+            {"type": "session.updated", "session": {"type": "realtime"}},
             {"type": "response.output_text.delta", "delta": "runner transcript"},
             {"type": "response.done", "response": {"status": "completed"}},
         ])
@@ -166,7 +181,7 @@ class BosonAdapterTests(unittest.TestCase):
         self.assertEqual(result.usage.audio_seconds, 0.01)
 
     def test_transcription_rejects_incomplete_response(self):
-        socket = FakeSocket([{"type": "response.done", "response": {
+        socket = FakeSocket([{"type": "session.updated", "session": {"type": "realtime"}}, {"type": "response.done", "response": {
             "status": "incomplete", "status_details": {"reason": "content_filter"},
         }}])
         client = BosonClient("test-key")
@@ -182,6 +197,7 @@ class BosonAdapterTests(unittest.TestCase):
 
     def test_transcription_sends_audio_in_api_sized_chunks(self):
         socket = FakeSocket([
+            {"type": "session.updated", "session": {"type": "realtime"}},
             {"type": "response.done", "response": {"status": "completed"}},
         ])
         client = BosonClient("test-key")
