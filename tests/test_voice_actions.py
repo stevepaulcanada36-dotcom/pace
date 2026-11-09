@@ -4,6 +4,7 @@ import unittest
 from types import SimpleNamespace
 
 from pacesense.coach import CoachService
+from pacesense.assistant.chat import ModelReply
 from pacesense.storage import Repository
 from pacesense.studio import Settings, StudioService
 from pacesense.studio.app import create_app
@@ -84,14 +85,30 @@ class FakeIntentClient:
         return SimpleNamespace(text=json.dumps(self.payload))
 
 
+class FakeChatModel:
+    label = "fake Boson chat"
+
+    def __init__(self, answer):
+        self.answer = answer
+        self.messages = []
+
+    def complete(self, messages, tools):
+        self.messages = messages
+        return ModelReply(self.answer)
+
+
 class FakeAI:
     online = True
 
-    def __init__(self, payload):
+    def __init__(self, payload, chat_model=None):
         self.client = FakeIntentClient(payload)
+        self._chat_model = chat_model
 
     def config(self, task):
         return "higgs-realtime", 0.0
+
+    def chat_model(self):
+        return self._chat_model or FakeChatModel("I understood the request.")
 
 
 class VoiceIntentExecutionTests(unittest.TestCase):
@@ -101,6 +118,24 @@ class VoiceIntentExecutionTests(unittest.TestCase):
         sid, _ = service.create(condition="known")
         service.ai_factory = lambda: FakeAI(payload)
         return service, sid, coach
+
+    def test_voice_freeform_reply_keeps_pending_context_and_is_visible(self):
+        coach = CoachService(helpers.model(), helpers.runners(), Repository(":memory:"))
+        chat = FakeChatModel("A trial run is not one of her marathon records. A leg injury could affect performance "
+                             "depending on its severity and recovery, but I won't change marathon weights from it.")
+        ai = FakeAI(intent("none"), chat)
+        service = StudioService(coach, settings=Settings(), ai_factory=lambda: ai)
+        sid, _ = service.create(condition="unknown")
+        live = service.sessions.entry(sid).value
+        live.engine.pending = {"loop": "clarify", "message": "Which marathon was the injury?",
+                               "data": {"choices": [{"label": "None of them"}]}}
+        utterance = "I meant the 2026 trial run; she had a leg injury"
+        result = service.command(sid, utterance, source="voice")
+        self.assertIn("A trial run is not one of her marathon records", result["reply"])
+        self.assertIn("Which marathon was the injury?", chat.messages[0]["content"])
+        self.assertIn("Existing marathon records:", chat.messages[0]["content"])
+        self.assertEqual(live.hud.history[-2]["content"], utterance)
+        self.assertIn("leg injury", live.hud.history[-1]["content"])
 
     def test_voice_runner_search_executes_database_navigation_with_query(self):
         service, sid, _ = self.service(intent("runner_database", {"query": "Jamie Lee"}))
