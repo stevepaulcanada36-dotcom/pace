@@ -217,6 +217,14 @@
     <p class="muted small-print">Browse runners already in PaceSense. Search by name or ID, then choose a record. “Known” means you coach or personally know this runner; “unknown” means they are new to you, not new to the database.</p>
     <p class="muted small-print" id="runner-db-count" aria-live="polite">Loading existing runner records…</p>
     <input type="search" id="runner-search" placeholder="Search existing runners by ID or name…" aria-label="Search runners">
+    <div class="runner-filters">
+      <label><span>Gender</span><select id="runner-gender-filter" aria-label="Filter by gender">
+        <option value="">All</option><option value="F">Female</option><option value="M">Male</option>
+      </select></label>
+      <label><span>Previous marathons</span><select id="runner-min-races-filter" aria-label="Filter by minimum number of marathons">
+        <option value="0">Any number</option><option value="4">At least 4</option><option value="8">At least 8</option>
+      </select></label>
+    </div>
     <ul class="runner-list" id="runner-list" role="listbox" aria-label="Runners"></ul>
     <fieldset class="segmented cond-choice" id="cond-choice">
       <legend>Do you know this runner personally? <span class="muted">(the paper's familiar / unfamiliar conditions)</span></legend>
