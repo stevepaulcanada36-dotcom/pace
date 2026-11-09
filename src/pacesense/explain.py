@@ -125,7 +125,7 @@ HELP: dict[str, Explanation] = {
     "lab": Explanation(
         "Model lab",
         "The same test cases go to several AI models. Each answer is scored by code against a known right answer, "
-        "and the time and cost OpenRouter reports are recorded, so you can choose a model per task on evidence.",
+        "and the time and cost are recorded, so you can compare model quality on evidence.",
         "Added by PaceSense; not part of the paper.",
     ),
 }
