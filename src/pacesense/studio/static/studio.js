@@ -635,7 +635,9 @@
     render(r.state);
     if (r.choice) feed.append(h("li", { class: "uinote choice-note" }, h("span", { text: `You chose: ${r.choice.label}` })));
     if (r.card && r.card.items.length) addCard(r.card);
-    else if (r.reply && !(r.actions || []).some((a) => a.type === "runner")) addReply(r.reply);
+    // A feedback card explains the change visually; keep the assistant's spoken/text reply too.
+    // Only runner switches defer their reply until the new session has opened successfully.
+    if (r.reply && !(r.actions || []).some((a) => a.type === "runner")) addReply(r.reply);
     const sessionChanged = await handleActions(r.actions || [], r.simulation);
     if (!sessionChanged) adapt(r.adapt);
     if (!(r.simulation) && !sessionChanged) runSim();
