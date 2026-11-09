@@ -12,6 +12,7 @@ from .commands import PANELS
 
 MIN_CONFIDENCE = 0.78
 PROFILES = {"on_plan", "fast_start", "late_fade"}
+STUDIO_PANELS = {"races", "prediction", "pacing", "similar", "simulator", "feedback", "steering", "chat", "log"}
 INTENTS = {
     "runner_database", "select_runner", "set_familiarity",
     "focus_panel", "close_panel", "simulate", "reveal", "undo", "none",
@@ -102,7 +103,7 @@ def validate_voice_intent(
                 "confidence": confidence, "evidence": evidence}
     if intent in ("focus_panel", "close_panel"):
         panel = _text(args.get("panel"), 32).lower()
-        if panel not in PANELS:
+        if panel not in STUDIO_PANELS:
             return _clarify("Which PaceSense panel should I open or close?", confidence, evidence)
         return {"status": "action", "intent": intent, "arguments": {"panel": panel},
                 "confidence": confidence, "evidence": evidence}
@@ -131,4 +132,4 @@ def validate_voice_intent(
     return _clarify("I can't safely carry out that request yet.", confidence, evidence)
 
 
-__all__ = ["MIN_CONFIDENCE", "validate_voice_intent"]
+__all__ = ["MIN_CONFIDENCE", "STUDIO_PANELS", "validate_voice_intent"]
