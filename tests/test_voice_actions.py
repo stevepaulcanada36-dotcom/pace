@@ -121,6 +121,42 @@ class VoiceIntentValidationTests(unittest.TestCase):
         )
         self.assertEqual(invented_evidence["status"], "clarify")
 
+    def test_runner_search_cannot_drop_a_spoken_name_or_id(self):
+        utterance = "find Jamie Lee in the runner database"
+        result = validate_voice_intent(
+            intent("runner_database", {"query": ""}, evidence=[utterance]),
+            RUNNERS, utterance=utterance,
+        )
+        self.assertEqual(result["status"], "clarify")
+        self.assertIn("wasn't included in the search", result["message"])
+
+    def test_runner_search_cannot_drop_a_spoken_gender_filter(self):
+        utterance = "show female runners"
+        result = validate_voice_intent(
+            intent("runner_database", {"gender": ""}, evidence=[utterance]),
+            RUNNERS, utterance=utterance,
+        )
+        self.assertEqual(result["status"], "clarify")
+        self.assertIn("female-runner filter", result["message"])
+
+    def test_runner_search_cannot_drop_a_spoken_minimum_race_filter(self):
+        utterance = "show runners with at least six marathons"
+        result = validate_voice_intent(
+            intent("runner_database", {"min_races": 0}, evidence=[utterance]),
+            RUNNERS, utterance=utterance,
+        )
+        self.assertEqual(result["status"], "clarify")
+        self.assertIn("minimum of 6", result["message"])
+
+    def test_runner_database_does_not_use_familiarity_as_a_filter(self):
+        utterance = "find unfamiliar runners"
+        result = validate_voice_intent(
+            intent("runner_database", {}, evidence=[utterance]),
+            RUNNERS, utterance=utterance,
+        )
+        self.assertEqual(result["status"], "clarify")
+        self.assertIn("not a runner-database filter", result["message"])
+
     def test_model_cannot_invent_gender_or_minimum_race_filters(self):
         utterance = "find runners in the database"
         female = validate_voice_intent(

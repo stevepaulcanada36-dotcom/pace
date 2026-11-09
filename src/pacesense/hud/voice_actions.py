@@ -29,10 +29,20 @@ PANEL_TERMS = {
     "record": ("track record", "record", "results", "outcomes"),
 }
 QUERY_STOP_WORDS = {
-    "all", "browse", "database", "directory", "female", "find", "for", "in",
-    "least", "male", "marathon", "marathons", "men", "minimum", "of", "previous",
-    "race", "races", "runner", "runners", "search", "show", "the", "with", "women",
+    "a", "all", "an", "and", "are", "at", "browse", "by", "called", "can", "could",
+    "current", "database", "directory", "do", "existing", "female", "filter", "find",
+    "for", "from", "gender", "have", "has", "id", "in", "is", "least", "list", "male",
+    "man", "men", "marathon", "marathons", "me", "minimum", "min", "more", "named",
+    "name", "number", "of", "on", "only", "open", "or", "please", "previous", "race",
+    "races", "record", "records", "roster", "run", "runner", "runners", "search", "see",
+    "show", "the", "to", "view", "want", "we", "who", "with", "woman", "women", "you",
 }
+FAMILIARITY_FILTER_RE = re.compile(
+    r"\b(?:familiar|unfamiliar|known|unknown)\s+runners?\b|"
+    r"\brunners?\s+(?:(?:that|who)\s+)?(?:i\s+)?(?:know|don't know|do not know)\b|"
+    r"\brunners?\s+(?:that\s+are\s+)?(?:familiar|unfamiliar|known|unknown)\b",
+    re.IGNORECASE,
+)
 NUMBER_WORDS = {
     "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
     "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
@@ -70,6 +80,14 @@ def _number_is_mentioned(text: str, number: int) -> bool:
     if re.search(rf"(?<!\w){number}(?!\w)", text):
         return True
     return any(word in _tokens(text) for word, value in NUMBER_WORDS.items() if value == number)
+
+
+def _runner_search_terms(text: str) -> list[str]:
+    """Words left after removing supported database commands and filters."""
+    return [
+        word for word in _tokens(text)
+        if word not in QUERY_STOP_WORDS and word not in NUMBER_WORDS and not word.isdigit()
+    ]
 
 
 def _clarify(message: str, confidence: float = 0.0, evidence: list[str] | None = None) -> dict:
@@ -173,16 +191,55 @@ def validate_voice_intent(
         if utterance is not None:
             if not re.search(r"\b(open|show|view|browse|search|find|filter|list|see)\b", utterance, re.IGNORECASE):
                 return _clarify("Do you want me to open or search the existing runner database?", confidence, evidence)
+            if FAMILIARITY_FILTER_RE.search(utterance):
+                return _clarify(
+                    "Familiarity is a coach/session setting, not a runner-database filter. "
+                    "Should I search by runner name or ID, gender, or minimum marathon count?",
+                    confidence, evidence,
+                )
             if query:
                 query_words = _tokens(query)
                 if (not _contains_phrase(utterance, query)
                         or any(word in QUERY_STOP_WORDS for word in query_words)):
                     return _clarify("I couldn't verify that runner search text in what you said. Which name or ID should I search?", confidence, evidence)
+            search_terms = _runner_search_terms(utterance)
+            if search_terms and not query:
+                return _clarify(
+                    "I heard a runner name or ID, but it wasn't included in the search. Which existing runner should I look for?",
+                    confidence, evidence,
+                )
+            if query and search_terms and not set(search_terms).issubset(set(_tokens(query))):
+                return _clarify(
+                    "I couldn't include all the runner-name or ID words you said. Please repeat the exact name or ID.",
+                    confidence, evidence,
+                )
             heard_words = set(_tokens(utterance))
-            if gender == "F" and not heard_words.intersection({"female", "woman", "women"}):
+            heard_female = bool(heard_words.intersection({"female", "woman", "women"}))
+            heard_male = bool(heard_words.intersection({"male", "man", "men"}))
+            if heard_female and heard_male:
+                if gender:
+                    return _clarify("You asked for both female and male runners. Should I show everyone?", confidence, evidence)
+            elif heard_female and gender != "F":
+                return _clarify("I heard a female-runner filter, but it was missing from the search. Should I show female runners?", confidence, evidence)
+            elif heard_male and gender != "M":
+                return _clarify("I heard a male-runner filter, but it was missing from the search. Should I show male runners?", confidence, evidence)
+            elif gender == "F" and not heard_female:
                 return _clarify("I didn't hear a female-runner filter. Should I show female runners?", confidence, evidence)
-            if gender == "M" and not heard_words.intersection({"male", "man", "men"}):
+            elif gender == "M" and not heard_male:
                 return _clarify("I didn't hear a male-runner filter. Should I show male runners?", confidence, evidence)
+            minimum_match = re.search(
+                r"\b(?:at least|minimum(?: of)?|no fewer than|with)\s+"
+                r"(\d+|" + "|".join(NUMBER_WORDS) + r")\s+(?:previous\s+)?(?:marathons?|races?)\b",
+                utterance, re.IGNORECASE,
+            )
+            if minimum_match:
+                raw_minimum = minimum_match.group(1).lower()
+                requested_minimum = int(raw_minimum) if raw_minimum.isdigit() else NUMBER_WORDS[raw_minimum]
+                if int(min_races) != requested_minimum:
+                    return _clarify(
+                        f"I heard a minimum of {requested_minimum} previous marathons, but that filter wasn't applied. Should I use {requested_minimum}?",
+                        confidence, evidence,
+                    )
             if min_races and (
                 not _number_is_mentioned(utterance, int(min_races))
                 or not heard_words.intersection({"race", "races", "marathon", "marathons"})
