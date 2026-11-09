@@ -63,7 +63,7 @@ class OfflineModel:
         conversation = (history + "\n" + text).lower()
         has_non_marathon_event = bool(re.search(
             r"\b(trial run|training run|training session|relay|time trial|track session|parkrun)\b", conversation))
-        has_injury = bool(re.search(r"\b(injur\\w*|pain|hurt|sore|strain|sprain|fracture)\b", conversation))
+        has_injury = bool(re.search(r"\b(injur\w*|pain|hurt|sore|strain|sprain|fracture)\b", conversation))
         if has_non_marathon_event:
             if has_injury:
                 return ModelReply(
