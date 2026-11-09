@@ -109,7 +109,7 @@ class OfflineModel:
                                       mentioned, re.I)
                     and candidates and not any(
                     re.search(re.escape(re.sub(rf"\s+{year}\b", "", candidate, flags=re.I)), text, re.I)
-                    for candidate in candidates):
+                    for candidate in candidates)):
                 if len(candidates) == 1:
                     return ModelReply(f"I don't see “{mentioned} {year}” in her marathon records. "
                                       f"The record for {year} is {candidates[0]}. Did you mean that race?")
