@@ -665,13 +665,16 @@
       else if ((a.type === "focus" || a.type === "open") && (PANEL[a.panel] || a.panel === "similar")) {
         if (a.panel === "similar") selectTab("tab-similar"); else if (a.panel === "pacing") selectTab("tab-pacing");
         focusPanel(PANEL[a.panel]);
+      } else if (a.type === "close" && PANEL[a.panel]) {
+        const el = $(PANEL[a.panel]); if (el) el.hidden = true;
       } else if (a.type === "runner") openRunner(a.id, a.id === "demo" ? null : $("#holdout-check").checked);
-      else if (a.type === "runner_database") openRunnerDatabase("");
+      else if (a.type === "runner_database") openRunnerDatabase(a.query || "");
       else if (a.type === "reveal") focusPanel("#kpi-acc");
     }
   }
   function focusPanel(sel) {
     const el = $(sel); if (!el) return;
+    el.hidden = false;
     el.scrollIntoView({ behavior: "smooth", block: "nearest" });
     el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
   }
