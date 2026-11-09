@@ -52,10 +52,12 @@ def validate_voice_intent(
 
     intent = payload.get("intent")
     args = payload.get("arguments")
-    if intent not in INTENTS or not isinstance(args, dict):
+    if not isinstance(intent, str) or intent not in INTENTS or not isinstance(args, dict):
         return _clarify("That request doesn't map to a supported PaceSense action. Try opening a panel or searching the runner database.", confidence, evidence)
     if intent == "none":
-        return {"status": "fallback", "confidence": confidence, "evidence": evidence}
+        clarification = _text(payload.get("clarification"), 240)
+        return (_clarify(clarification, confidence, evidence) if clarification else
+                {"status": "fallback", "confidence": confidence, "evidence": evidence})
     if intent == "runner_database":
         query = _text(args.get("query"), 64)
         if query and len(query) < 2:
