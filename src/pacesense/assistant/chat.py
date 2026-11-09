@@ -76,12 +76,12 @@ class AssistantError(RuntimeError):
     """The AI service could not be reached or refused the request (bad key, quota, network)."""
 
 
-class OpenRouterModel:
-    """A chat model on OpenRouter, with function calling."""
+class BosonModel:
+    """Boson Higgs Realtime chat model, with PaceSense function calling."""
 
     def __init__(self, client: OpenRouterClient, model: str, temperature: float = 0.2):
         self.client, self.model, self.temperature = client, model, temperature
-        self.label = f"{model} via OpenRouter"
+        self.label = f"{model} via Boson"
 
     def complete(self, messages: list[dict], tools: list[dict]) -> ModelReply:
         try:
@@ -90,6 +90,10 @@ class OpenRouterModel:
             raise AssistantError(str(e)) from e
         return ModelReply(r.text, [ToolCall(c["id"], c["name"], c["arguments"]) for c in r.tool_calls],
                           r.usage, r.latency_s)
+
+
+# Backward-compatible name for older integrations; new deployments use BosonModel.
+OpenRouterModel = BosonModel
 
 
 @dataclass
