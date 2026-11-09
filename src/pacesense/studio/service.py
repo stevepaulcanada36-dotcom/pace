@@ -87,7 +87,11 @@ class StudioService:
     def from_settings(cls, settings: Settings) -> StudioService:
         coach, info = load_coach(settings)
         ai = None
-        if settings.ai_enabled:
+        from ..llm.config import boson_api_key
+        has_boson_key, _ = boson_api_key()
+        # A configured Boson key is sufficient to enable the assistant; PACESENSE_AI=1
+        # remains a compatibility opt-in. AIService still honors PACESENSE_AI=offline.
+        if settings.ai_enabled or has_boson_key:
             from ..llm.service import AIService
             ai = lambda: AIService(coach.repo)
         return cls(coach, info, settings, ai)
@@ -164,6 +168,32 @@ class StudioService:
         adapt["speak"] = live.engine.speak(out.get("card"), out.get("reply", ""))
         out["adapt"] = adapt
         return out
+
+    @staticmethod
+    def _assistant_context(live: Live) -> str:
+        """Ground free-form voice/chat turns in the active runner and any open adaptive question."""
+        hud = live.hud
+        state = hud.state()
+        runner = state.get("runner") or {}
+        lines = [f"Current runner: {runner.get('name') or hud.runner_id} (ID {hud.runner_id}).",
+                 f"Runner familiarity condition: {live.engine.ctx.session.condition}."]
+        races = state.get("races") or []
+        if races:
+            lines.append("Existing marathon records: " + "; ".join(
+                f"{r.get('event', 'Marathon')} {r.get('year', '')}".strip() for r in races))
+        notes = (live.engine.ctx.profile.get("runner_notes") or {}).get(hud.source_runner, [])
+        if notes:
+            lines.append("Previously captured coach context: " + " | ".join(
+                str(n.get("text", "")) for n in notes[-5:] if isinstance(n, dict)))
+        pending = live.engine.pending
+        if pending:
+            choices = pending.get("data", {}).get("choices") or []
+            labels = [str(choice.get("label", "")) for choice in choices if choice.get("label")]
+            lines.append("PaceSense's currently open follow-up question: " + str(pending.get("message", "")))
+            if labels:
+                lines.append("Available answers: " + "; ".join(labels))
+        lines.append("Treat trial runs, relays, training and injuries as coach-provided context, not marathon records.")
+        return "\n".join(lines)
 
     def _interpret_voice_intent(self, text: str, live: Live) -> dict | None:
         """Ask Boson to classify a voice command; validate every proposed action locally."""
@@ -252,6 +282,7 @@ Use only one intent. Do not invent runner IDs or names; choose select_runner onl
     def _run_command(self, sid: str, live: Live, text: str, source: str, kind: str = "utterance",
                      extra: dict | None = None) -> dict:
         s = live.hud
+        s.assistant_context = self._assistant_context(live)
         voice_intent = self._interpret_voice_intent(text, live) if source == "voice" else None
         if voice_intent and voice_intent.get("status") == "clarify":
             r = Routed(reply=voice_intent["message"], used=["prompt"])
@@ -279,11 +310,20 @@ Use only one intent. Do not invent runner IDs or names; choose select_runner onl
                 "notes": turn.get("notes", []),
                 "used": r.used, "ui_only": "ui" in r.used and "steer" not in r.used, **(extra or {})}
         self._observe(sid, live, Event(kind, text, source, data), out)
-        if r.used == ["assistant"] and live.engine.pending_new:   # a loop asked something better than the helper's
-            out["reply"] = ""                                        # generic answer: show and say the question instead
-            out["adapt"]["speak"] = live.engine.speak(None, "")
+        # Keep the assistant's answer visible even when an adaptive loop also asks a follow-up.
+        # The adaptation is rendered separately and included in the next AI context.
         if revealed:
             out["adapt"] = live.engine.process(self._reveal_event(live), state) | {"speak": out["adapt"]["speak"]}
+        if source in ("voice", "typed") and not (extra or {}).get("prompt_answer"):
+            response = out.get("reply") or ""
+            pending = live.engine.pending
+            if pending:
+                choices = pending.get("data", {}).get("choices") or []
+                labels = [str(choice.get("label", "")) for choice in choices if choice.get("label")]
+                response += "\nPaceSense follow-up: " + str(pending.get("message", ""))
+                if labels:
+                    response += " Answers: " + "; ".join(labels)
+            s.remember_turn(text, response)
         return out
 
     def command(self, sid: str, text: str, source: str = "typed", voice: dict | None = None) -> dict:
