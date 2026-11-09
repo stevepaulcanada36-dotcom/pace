@@ -39,10 +39,14 @@ jobs:
       - run: node --check src/pacesense/studio/static/adaptive.js
       - run: ruff check src/pacesense/llm/boson.py tests/test_boson.py scripts/check_boson_realtime.py
       - name: Boson Realtime live smoke test
-        if: ${{ secrets.BOSON_API_KEY != '' }}
         env:
           BOSON_API_KEY: ${{ secrets.BOSON_API_KEY }}
-        run: python scripts/check_boson_realtime.py --output /tmp/boson-realtime-test.wav
+        run: |
+          if [ -n "$BOSON_API_KEY" ]; then
+            python scripts/check_boson_realtime.py --output /tmp/boson-realtime-test.wav
+          else
+            echo "SKIP: BOSON_API_KEY repository secret is not configured."
+          fi
       - name: Server smoke test
         run: |
           pacesense studio --no-browser --port 8765 --db /tmp/ci.sqlite3 &
