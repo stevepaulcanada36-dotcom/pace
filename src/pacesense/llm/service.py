@@ -1,9 +1,9 @@
-"""AIService: every AI feature in PaceSense goes through here, each task with its own OpenRouter model.
+"""AIService: every AI feature in PaceSense goes through here, each task through Boson Higgs Realtime.
 
     voice recording ──transcribe──> text ──extract──> form fields ──check──> fields shown to the coach
                                       └──refine──> clearer version + what changed + questions (coach decides)
 
-Without an OpenRouter key (or with PACESENSE_AI=offline) the text tasks fall back to simple rules and chat
+Without a Boson API key (or with PACESENSE_AI=offline) the text tasks fall back to simple rules and chat
 to the offline helper. Speech-to-text defaults to local Whisper, which is free to run but must be installed.
 """
 from __future__ import annotations
@@ -15,13 +15,14 @@ from typing import Any
 
 from ..storage import Repository
 from .forms import FORMS, FormCheck, fact_text, facts
-from .config import load_config, openrouter_api_key
-from .openrouter import LLMError, OpenRouterClient, Transcript, Usage, parse_json_answer
+from .config import load_config, boson_api_key
+from .openrouter import LLMError, Transcript, Usage, parse_json_answer
+from .boson import BosonClient
 from .tasks import TASKS, ModelSettings
 
 
 class AIUnavailable(LLMError):
-    """The feature needs an OpenRouter key."""
+    """The feature needs a Boson API key."""
 
 
 @dataclass
@@ -83,28 +84,23 @@ Return only JSON: {{"refined": "the refined text", "changes": ["what you changed
 
 class AIService:
     def __init__(self, repo: Repository, api_key: str | None = None, env: dict[str, str] | None = None,
-                 client: OpenRouterClient | None = None):
+                 client: Any | None = None):
         self.repo = repo
         self.env = dict(os.environ if env is None else env)
         self.settings = ModelSettings(repo, self.env)
         self.offline_forced = self.env.get("PACESENSE_AI", "auto") == "offline"
         config = load_config()
-        configured_key, configured_source = openrouter_api_key()
-        key = api_key or self.env.get("OPENROUTER_API_KEY") or configured_key
+        configured_key, configured_source = boson_api_key(self.env)
+        key = api_key or self.env.get("BOSON_API_KEY") or configured_key
         self.key_source = ("browser session" if api_key else
                            "environment" if self.env.get("OPENROUTER_API_KEY") else configured_source)
-        provider = config.get("openrouter", {})
+        provider = config.get("boson", {})
         if self.offline_forced:
             self.client = None
         elif client is not None:
             self.client = client
         else:
-            self.client = (OpenRouterClient(
-                key,
-                base_url=str(provider.get("base_url") or "https://openrouter.ai/api/v1"),
-                app_name=str(provider.get("app_name") or "PaceSense"),
-                app_url=self.env.get("PACESENSE_APP_URL") or provider.get("app_url"),
-            ) if key else None)
+            self.client = (BosonClient(key) if key else None)
         self.language = self.env.get("PACESENSE_LANGUAGE") or config.get("voice", {}).get("language") or None
 
     @property
@@ -116,34 +112,34 @@ class AIService:
             return None
         if self.offline_forced:
             return "AI is set to offline (PACESENSE_AI=offline)."
-        return "No OpenRouter key: chat and form tasks use offline rules; local Whisper can transcribe voice if installed."
+        return "No BOSON_API_KEY: PaceSense uses offline rules. Set BOSON_API_KEY in the server environment to enable Boson."
 
     def config(self, task: str, model: str | None = None) -> tuple[str, float]:
         c = self.settings.get(task)
         return model or c["model"], c["temperature"]
 
     def label(self, task: str) -> str:
-        return f"{self.config(task)[0]} via OpenRouter" if self.online else "offline rules (no AI)"
+        return f"{self.config(task)[0]} via Boson" if self.online else "offline rules (no AI)"
 
-    def _need(self, what: str) -> OpenRouterClient:
+    def _need(self, what: str) -> Any:
         if self.client is None:
-            raise AIUnavailable(f"{what} needs an OpenRouter key (OPENROUTER_API_KEY, or paste one in Settings)")
+            raise AIUnavailable(f"{what} needs a Boson API key (set BOSON_API_KEY in the server environment)")
         return self.client
 
     # ---- tasks ---------------------------------------------------------------------------------
     def chat_model(self, model: str | None = None):
         """The model for Ask PaceSense: OpenRouter with the assistant task's settings, or the offline helper."""
-        from ..assistant.chat import OpenRouterModel
+        from ..assistant.chat import BosonModel
         from ..assistant.offline import OfflineModel
         if not self.online:
             return OfflineModel()
         m, temp = self.config("assistant", model)
-        return OpenRouterModel(self.client, m, temp)
+        return BosonModel(self.client, m, temp)
 
     @property
     def transcription_backend(self) -> str:
         """The dashboard defaults to local Whisper; Model lab can pass a model to test OpenRouter."""
-        return str(self.repo.get_setting("transcription_backend", self.env.get("PACESENSE_TRANSCRIBE_BACKEND", "local")))
+        return str(self.repo.get_setting("transcription_backend", self.env.get("PACESENSE_TRANSCRIBE_BACKEND", "boson")))
 
     def transcribe(self, audio: bytes, fmt: str = "wav", model: str | None = None) -> Transcript:
         # An explicit model is used by the Model lab to compare OpenRouter models. Ordinary voice input
