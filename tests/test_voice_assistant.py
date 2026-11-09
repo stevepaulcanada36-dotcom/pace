@@ -3,6 +3,7 @@ persona from how the coach speaks, turn-taking, and the spoken replies."""
 import unittest
 
 from pacesense.adaptive import AdaptiveEngine, Event, Persona
+from pacesense.adaptive.loops import ClarifyLoop, LoopContext, SessionContext
 from pacesense.adaptive.answers import is_bare_answer, match_choice
 from pacesense.adaptive.explain import explain
 from pacesense.coach import CoachService
@@ -90,6 +91,12 @@ class ConditionTests(unittest.TestCase):
         msg = next(a["message"] for a in r["adaptations"] if a["loop"] == "knowledge")
         self.assertIn("knee injury", msg)
         self.assertIn("training really well", msg)
+
+    def test_trial_run_injury_is_not_misassigned_to_a_marathon(self):
+        ctx = LoopContext(Persona(), {}, {}, SessionContext(
+            state={"races": [{"event": "Amsterdam", "year": 2016}]}, condition="unknown"))
+        out = ClarifyLoop().observe(utter("She did a trial run in 2026 and had a leg injury"), ctx)
+        self.assertEqual(out, [])
 
     def test_switching_condition_mid_session(self):
         e, r = self.engine("known")
