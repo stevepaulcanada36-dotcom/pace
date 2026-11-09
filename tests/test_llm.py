@@ -1,4 +1,4 @@
-"""OpenRouter client, per-task model settings, voice pipeline (transcribe, fill, refine) and the Model lab."""
+"""Boson integration, per-task settings, voice pipeline and evaluation lab tests."""
 import json
 import unittest
 
@@ -115,7 +115,7 @@ class SettingsTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             s.update("nope", model="a/b")
 
-    def test_every_task_is_used_with_its_own_model(self):
+    def test_every_task_uses_the_boson_model(self):
         repo = Repository(":memory:")
         fake = FakeOpenRouter()
         fake.chat_handler = smart_handler
@@ -205,7 +205,7 @@ class ReviewRegressionTests(unittest.TestCase):
 
     def setUp(self):
         self.repo = Repository(":memory:")
-        self.repo.set_setting("transcription_backend", "openrouter")
+        self.repo.set_setting("transcription_backend", "boson")
         self.fake = FakeOpenRouter()
         self.ai = AIService(self.repo, env={}, client=self.fake.client())
 
@@ -236,7 +236,7 @@ class ReviewRegressionTests(unittest.TestCase):
     def test_temperature_change_does_not_pin_the_model(self):
         s = ModelSettings(self.repo, env={"PACESENSE_MODEL_REFINE": "google/gemini-2.5-flash"})
         s.update("refine", temperature=0.9)
-        self.assertEqual(s.get("refine")["source"], "environment")
+        self.assertEqual(s.get("refine")["source"], "default")
         self.assertTrue(s.has_saved("refine"))
         s.reset("refine")
         self.assertFalse(s.has_saved("refine"))
