@@ -58,6 +58,18 @@ class OfflineModel:
 
     def _decide(self, text: str, system: str) -> ModelReply:
         t = text.lower()
+        if re.search(r"\\b(trial run|training run|training session|relay|time trial|track session|parkrun)\\b", t):
+            if re.search(r"\\b(injur\\w*|pain|hurt|sore|strain|sprain|fracture)\\b", t):
+                return ModelReply(
+                    "A trial run or relay is not one of her marathon records, so I won't change those race weights. "
+                    "A leg injury could affect her marathon performance depending on its severity, when it happened, "
+                    "and how fully she has recovered. The current marathon estimate does not measure that injury. "
+                    "Is she fully recovered and training normally now?"
+                )
+            return ModelReply(
+                "Got it — that was a trial or training event, not a marathon record in this database. "
+                "I'll keep it separate and won't change the marathon weights. What would you like to know about it?"
+            )
         rid_m = RUNNER_ID.search(text)
         open_m = re.search(r"runner_id (\S+?)\)", system)
         rid = rid_m.group(1).upper() if rid_m else (open_m.group(1) if open_m else None)
