@@ -15,6 +15,10 @@ services:
         value: /data/pacesense.sqlite3
       - key: PACESENSE_LOG_FORMAT
         value: json
+      - key: PACESENSE_AI
+        value: "1"
+      - key: BOSON_API_KEY
+        sync: false
       - key: PACESENSE_ACCESS_USER
         sync: false
       - key: PACESENSE_ACCESS_PASSWORD
