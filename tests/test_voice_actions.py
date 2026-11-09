@@ -135,11 +135,11 @@ class VoiceIntentExecutionTests(unittest.TestCase):
         name = CoachService._summary(runner, False).get("name") or runner.runner_id
         self.assertEqual(result["actions"], [{"type": "runner", "id": runner.runner_id, "name": name}])
 
-    def test_ambiguous_runner_selection_does_not_execute(self):
-        service, sid, _ = self.service(intent("select_runner", {"runner": "Alex Smith"}))
-        result = service.command(sid, "open Alex Smith", source="voice")
+    def test_unmatched_runner_selection_does_not_execute(self):
+        service, sid, _ = self.service(intent("select_runner", {"runner": "Unknown Person"}))
+        result = service.command(sid, "open Unknown Person", source="voice")
         self.assertEqual(result["actions"], [])
-        self.assertIn("more than one", result["reply"])
+        self.assertIn("couldn't find an exact existing runner match", result["reply"])
 
     def test_runner_directory_filters_are_executed_by_the_api(self):
         coach = CoachService(helpers.model(), helpers.runners(), Repository(":memory:"))
