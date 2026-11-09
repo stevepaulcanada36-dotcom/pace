@@ -233,7 +233,7 @@ Amsterdam 2014 −0.6 ("hot day + injured")
 ```
 
 The rules are deterministic, so a session can be replayed exactly from its transcript (`steer.replay`). With an
-OpenRouter key and *AI reads paraphrases* ticked, an AI model reads what the rules miss; it may only propose
+Boson API key and *AI reads paraphrases* ticked, an AI model reads what the rules miss; it may only propose
 changes in a fixed JSON form, and code drops any proposal whose race does not exist or whose quoted reason was not
 actually said (`steer/llm_interpret.py`).
 
