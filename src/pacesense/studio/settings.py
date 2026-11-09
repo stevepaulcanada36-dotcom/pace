@@ -12,7 +12,7 @@ at start-up with a readable message instead of surfacing later as a 500.
     PACESENSE_SESSION_TTL        idle seconds before a session is dropped        (default: 3600)
     PACESENSE_MAX_SESSIONS       sessions kept in memory at once                 (default: 200)
     PACESENSE_CORS_ORIGINS       comma-separated origins allowed to call the API (default: none)
-    PACESENSE_AI                 1 to let the optional AI assistant answer questions (needs an OpenRouter key)
+    PACESENSE_AI                 1 to enable the optional AI assistant (needs BOSON_API_KEY; offline remains the default without a key)
 """
 from __future__ import annotations
 
