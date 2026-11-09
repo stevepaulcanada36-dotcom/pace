@@ -8,6 +8,7 @@ from pacesense.assistant.chat import ModelReply
 from pacesense.storage import Repository
 from pacesense.studio import Settings, StudioService
 from pacesense.studio.app import create_app
+from pacesense.studio.schemas import Command
 from tests.asgi import Client
 from tests import helpers
 
@@ -68,13 +69,124 @@ class VoiceIntentValidationTests(unittest.TestCase):
         self.assertEqual(validate_voice_intent(intent("focus_panel", {"panel": "races"}), RUNNERS)["status"], "action")
         self.assertEqual(validate_voice_intent(intent("focus_panel", {"panel": "secrets"}), RUNNERS)["status"], "clarify")
         self.assertEqual(validate_voice_intent(intent("focus_panel", {"panel": "hologram"}), RUNNERS)["status"], "clarify")
+        self.assertEqual(validate_voice_intent(intent("focus_panel", {"panel": "record"}), RUNNERS)["status"], "action")
+        close = validate_voice_intent(
+            intent("close_panel", {"panel": "races"}, evidence=["close the races panel"]),
+            RUNNERS, utterance="close the races panel",
+        )
+        self.assertEqual(close["status"], "action")
         self.assertEqual(validate_voice_intent(intent("simulate", {"temp_c": 41, "wind_kmh": 0}), RUNNERS)["status"], "clarify")
+        self.assertEqual(validate_voice_intent(intent("simulate", {"temp_c": 36, "wind_kmh": 0}), RUNNERS)["status"], "clarify")
+        self.assertEqual(validate_voice_intent(intent("simulate", {"temp_c": 22, "wind_kmh": 41}), RUNNERS)["status"], "clarify")
         self.assertEqual(validate_voice_intent(intent("simulate", {"temp_c": 22, "wind_kmh": 15, "profile": "fast_start"}), RUNNERS)["status"], "action")
 
     def test_state_dependent_actions_are_checked(self):
         self.assertEqual(validate_voice_intent(intent("undo"), RUNNERS, can_undo=False)["status"], "clarify")
         self.assertEqual(validate_voice_intent(intent("undo"), RUNNERS, can_undo=True)["status"], "action")
         self.assertEqual(validate_voice_intent(intent("reveal"), RUNNERS, can_reveal=False)["status"], "clarify")
+
+    def test_evidence_and_search_targets_must_be_grounded_in_transcript(self):
+        utterance = "find Jamie Lee in the runner database"
+        invented_query = validate_voice_intent(
+            intent("runner_database", {"query": "Alex Smith"}, evidence=[utterance]),
+            RUNNERS, utterance=utterance,
+        )
+        self.assertEqual(invented_query["status"], "clarify")
+        invented_evidence = validate_voice_intent(
+            intent("runner_database", {"query": "Jamie Lee"}, evidence=["open the database"]),
+            RUNNERS, utterance=utterance,
+        )
+        self.assertEqual(invented_evidence["status"], "clarify")
+
+    def test_model_cannot_invent_gender_or_minimum_race_filters(self):
+        utterance = "find runners in the database"
+        female = validate_voice_intent(
+            intent("runner_database", {"gender": "F"}, evidence=[utterance]),
+            RUNNERS, utterance=utterance,
+        )
+        races = validate_voice_intent(
+            intent("runner_database", {"min_races": 4}, evidence=[utterance]),
+            RUNNERS, utterance=utterance,
+        )
+        self.assertEqual(female["status"], "clarify")
+        self.assertEqual(races["status"], "clarify")
+
+    def test_asr_confidence_is_combined_with_model_confidence(self):
+        utterance = "find Jamie Lee in the runner database"
+        result = validate_voice_intent(
+            intent("runner_database", {"query": "Jamie Lee"}, evidence=[utterance]),
+            RUNNERS, utterance=utterance, transcript_confidence=0.42,
+        )
+        self.assertEqual(result["status"], "clarify")
+        self.assertLess(result["confidence"], MIN_CONFIDENCE)
+
+    def test_unknown_and_known_wording_maps_to_familiarity_values(self):
+        unknown = validate_voice_intent(
+            intent("set_familiarity", {"value": "unknown"}, evidence=["mark this runner as unknown"]),
+            RUNNERS, utterance="mark this runner as unknown",
+        )
+        known = validate_voice_intent(
+            intent("set_familiarity", {"value": "known"}, evidence=["mark this runner as known"]),
+            RUNNERS, utterance="mark this runner as known",
+        )
+        self.assertEqual(unknown["arguments"]["condition"], "unknown")
+        self.assertEqual(known["arguments"]["condition"], "known")
+
+    def test_demo_runner_alias_is_resolved_to_the_active_demo_session(self):
+        rows = RUNNERS + [{"runner_id": "demo", "name": "Demo runner"}]
+        utterance = "mark Demo runner unfamiliar to me"
+        result = validate_voice_intent(
+            intent("set_familiarity", {"value": "unfamiliar", "runner": "Demo runner"},
+                   evidence=[utterance]),
+            rows, utterance=utterance, current_runner_id="R00042",
+            current_runner_ids=["R00042", "R00044", "demo"],
+        )
+        self.assertEqual(result["status"], "action")
+        self.assertEqual(result["arguments"]["condition"], "unknown")
+
+    def test_familiarity_change_cannot_target_a_different_active_runner(self):
+        result = validate_voice_intent(
+            intent("set_familiarity", {"value": "unfamiliar", "runner": "Jamie Lee"},
+                   evidence=["mark Jamie Lee as unfamiliar to me"]),
+            RUNNERS, utterance="mark Jamie Lee as unfamiliar to me", current_runner_id="R00042",
+        )
+        self.assertEqual(result["status"], "clarify")
+        self.assertIn("open Jamie Lee first", result["message"])
+
+    def test_simulation_keeps_unspecified_current_ui_values(self):
+        ui_state = {"temp_c": 18, "wind_kmh": 12, "profile": "late_fade"}
+        utterance = "simulate at 25 degrees"
+        valid = validate_voice_intent(
+            intent("simulate", {"temp_c": 25, "wind_kmh": 12, "profile": "late_fade"},
+                   evidence=[utterance]),
+            RUNNERS, utterance=utterance, ui_state=ui_state,
+        )
+        invented = validate_voice_intent(
+            intent("simulate", {"temp_c": 25, "wind_kmh": 0, "profile": "on_plan"},
+                   evidence=[utterance]),
+            RUNNERS, utterance=utterance, ui_state=ui_state,
+        )
+        self.assertEqual(valid["status"], "action")
+        self.assertEqual(invented["status"], "clarify")
+
+    def test_weather_adjective_does_not_invent_a_temperature(self):
+        utterance = "simulate a hot day"
+        result = validate_voice_intent(
+            intent("simulate", {"temp_c": 27, "wind_kmh": 0, "profile": "on_plan"},
+                   evidence=[utterance]),
+            RUNNERS, utterance=utterance,
+        )
+        self.assertEqual(result["status"], "clarify")
+
+    def test_voice_schema_carries_current_ui_state(self):
+        request = Command.model_validate({
+            "text": "simulate at 25 degrees", "source": "voice",
+            "voice": {"confidence": 0.9, "ui_state": {
+                "temp_c": 18, "wind_kmh": 12, "profile": "late_fade",
+            }},
+        })
+        self.assertEqual(request.voice.ui_state.temp_c, 18)
+        self.assertEqual(request.voice.ui_state.profile, "late_fade")
 
 
 class FakeIntentClient:
@@ -137,26 +249,91 @@ class VoiceIntentExecutionTests(unittest.TestCase):
         self.assertEqual(live.hud.history[-2]["content"], utterance)
         self.assertIn("leg injury", live.hud.history[-1]["content"])
 
+    def test_voice_action_confirmation_is_deferred_until_execution(self):
+        service, sid, _ = self.service(intent(
+            "focus_panel", {"panel": "races"}, evidence=["show the races panel"],
+        ))
+        result = service.command(sid, "show the races panel", source="voice")
+        self.assertEqual(result["voice_intent"]["status"], "action")
+        self.assertTrue(result["voice_action_pending"])
+        self.assertEqual(result["adapt"]["speak"], "")
+
+    def test_low_transcript_confidence_does_not_execute_a_voice_action(self):
+        service, sid, _ = self.service(intent(
+            "focus_panel", {"panel": "races"}, evidence=["show the races panel"],
+        ))
+        result = service.command(
+            sid, "show the races panel", source="voice", voice={"confidence": 0.4},
+        )
+        self.assertEqual(result["voice_intent"]["status"], "clarify")
+        self.assertEqual(result["actions"], [])
+
+    def test_compound_voice_ui_actions_are_clarified_before_execution(self):
+        service, sid, _ = self.service(intent("none"))
+        result = service.command(
+            sid, "open the races panel and close the simulator", source="voice",
+        )
+        self.assertEqual(result["actions"], [])
+        self.assertFalse(result["voice_action_pending"])
+        self.assertIn("more than one request", result["reply"])
+
+    def test_rule_fallback_voice_action_still_defers_confirmation(self):
+        service, sid, _ = self.service(intent("none"))
+        result = service.command(sid, "show the races panel", source="voice")
+        self.assertTrue(result["voice_action_pending"])
+        self.assertEqual(result["adapt"]["speak"], "")
+
+    def test_voice_runner_search_preserves_explicit_gender_and_custom_minimum(self):
+        utterance = "show female runners with at least six marathons"
+        service, sid, _ = self.service(intent(
+            "runner_database", {"query": "", "gender": "F", "min_races": 6},
+            evidence=[utterance],
+        ))
+        result = service.command(sid, utterance, source="voice")
+        self.assertIn(
+            {"type": "runner_database", "query": "", "gender": "F", "min_races": 6},
+            result["actions"],
+        )
+
     def test_voice_runner_search_executes_database_navigation_with_query(self):
-        service, sid, _ = self.service(intent("runner_database", {"query": "Jamie Lee"}))
+        service, sid, _ = self.service(intent(
+            "runner_database", {"query": "Jamie Lee"},
+            evidence=["find Jamie Lee in the runner database"],
+        ))
         result = service.command(sid, "find Jamie Lee in the runner database", source="voice")
         self.assertIn({"type": "runner_database", "query": "Jamie Lee", "gender": "", "min_races": 0}, result["actions"])
         self.assertEqual(result["voice_intent"]["confidence"], 0.95)
         self.assertTrue(result["voice_intent"]["evidence"])
 
     def test_voice_familiarity_executes_existing_runner_condition(self):
-        service, sid, _ = self.service(intent("set_familiarity", {"value": "unfamiliar"}))
+        service, sid, _ = self.service(intent(
+            "set_familiarity", {"value": "unfamiliar"},
+            evidence=["I don't know this runner"],
+        ))
         result = service.command(sid, "I don't know this runner", source="voice")
         self.assertEqual(result["adapt"]["ui"]["condition"], "unknown")
         self.assertEqual(result["actions"], [{"type": "condition", "value": "unknown"}])
 
+    def test_voice_track_record_navigation_targets_the_profile_section(self):
+        utterance = "open the track record"
+        service, sid, _ = self.service(intent(
+            "focus_panel", {"panel": "record"}, evidence=[utterance],
+        ))
+        result = service.command(sid, utterance, source="voice")
+        self.assertEqual(result["actions"], [{"type": "focus", "panel": "record"}])
+
     def test_voice_panel_navigation_uses_a_real_studio_panel(self):
-        service, sid, _ = self.service(intent("focus_panel", {"panel": "races"}))
+        service, sid, _ = self.service(intent(
+            "focus_panel", {"panel": "races"}, evidence=["show the races panel"],
+        ))
         result = service.command(sid, "show the races panel", source="voice")
         self.assertEqual(result["actions"], [{"type": "focus", "panel": "races"}])
 
     def test_voice_simulation_executes_with_validated_parameters(self):
-        service, sid, _ = self.service(intent("simulate", {"temp_c": 25, "wind_kmh": 10, "profile": "on_plan"}))
+        service, sid, _ = self.service(intent(
+            "simulate", {"temp_c": 25, "wind_kmh": 10, "profile": "on_plan"},
+            evidence=["simulate at 25 degrees and 10 km/h headwind"],
+        ))
         result = service.command(sid, "simulate at 25 degrees and 10 km/h headwind", source="voice")
         self.assertEqual(result["simulation"]["summary"]["temp_c"], 25.0)
         self.assertEqual(result["actions"][0]["wind_kmh"], 10.0)
@@ -165,13 +342,17 @@ class VoiceIntentExecutionTests(unittest.TestCase):
         service, sid, coach = self.service(intent("none"))
         runner = coach.runners[0]
         target = runner.runner_id
-        service.ai_factory = lambda: FakeAI(intent("select_runner", {"runner": target}))
+        service.ai_factory = lambda: FakeAI(intent(
+            "select_runner", {"runner": target}, evidence=[f"open runner {target}"],
+        ))
         result = service.command(sid, f"open runner {target}", source="voice")
         name = CoachService._summary(runner, False).get("name") or runner.runner_id
         self.assertEqual(result["actions"], [{"type": "runner", "id": runner.runner_id, "name": name}])
 
     def test_unmatched_runner_selection_does_not_execute(self):
-        service, sid, _ = self.service(intent("select_runner", {"runner": "Unknown Person"}))
+        service, sid, _ = self.service(intent(
+            "select_runner", {"runner": "Unknown Person"}, evidence=["open Unknown Person"],
+        ))
         result = service.command(sid, "open Unknown Person", source="voice")
         self.assertEqual(result["actions"], [])
         self.assertIn("couldn't find an exact existing runner match", result["reply"])

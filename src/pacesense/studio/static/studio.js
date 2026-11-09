@@ -635,17 +635,31 @@
     render(r.state);
     if (r.choice) feed.append(h("li", { class: "uinote choice-note" }, h("span", { text: `You chose: ${r.choice.label}` })));
     if (r.card && r.card.items.length) addCard(r.card);
-    // A feedback card explains the change visually; keep the assistant's spoken/text reply too.
-    // Only runner switches defer their reply until the new session has opened successfully.
-    if (r.reply && !(r.actions || []).some((a) => a.type === "runner")) addReply(r.reply);
-    const sessionChanged = await handleActions(r.actions || [], r.simulation);
-    if (!sessionChanged) adapt(r.adapt);
-    if (!(r.simulation) && !sessionChanged) runSim();
+    const voiceAction = !!r.voice_action_pending || !!(r.voice_intent && r.voice_intent.status === "action");
+    const runnerAction = (r.actions || []).some((a) => a.type === "runner");
+    // AI-interpreted action replies are deferred until the browser confirms execution.
+    if (r.reply && !voiceAction && !runnerAction) addReply(r.reply);
+    const outcome = await handleActions(r.actions || [], r.simulation, r);
+    if (!outcome.sessionChanged) adapt(r.adapt);
+    if (voiceAction) {
+      const message = outcome.success
+        ? (outcome.confirmation || "Done.")
+        : (outcome.message || "I couldn't complete that action. Nothing was changed.");
+      addReply(message);
+      if (outcome.success && hooks.speak) hooks.speak(message);
+    } else if (runnerAction) {
+      const message = outcome.success
+        ? (outcome.confirmation || "Runner opened.")
+        : (outcome.message || "I couldn't open that runner. Please choose an existing record from the database.");
+      addReply(message);
+      if (outcome.success && hooks.speak) hooks.speak(message);
+    }
+    if (!r.simulation && !outcome.sessionChanged) runSim();
   }
   async function sendNow(text, source, signals) {
     text = text.trim();
     if (!text || !app.sid) return;
-    if (/^undo$/i.test(text) && !(app.pending)) return undo();
+    if (source === "typed" && /^undo$/i.test(text) && !(app.pending)) return undo();
     addSaid(text, source);
     const typing = h("li", { class: "typing", text: "Checking her data" }); feed.append(typing); scrollFeed();
     setBusy(true);
@@ -661,34 +675,85 @@
   }
 
   const PANEL = { races: "#panel-races", prediction: ".kpis", pacing: "#panel-analysis", similar: "#panel-analysis",
-    simulator: "#panel-sim", feedback: "#panel-notes", steering: ".kpi-steer", chat: "#panel-notes", log: "#panel-notes" };
-  async function handleActions(actions, sim) {
-    let sessionChanged = false;
+    simulator: "#panel-sim", feedback: "#loops-bar", steering: ".kpi-steer", chat: "#panel-notes" };
+  async function handleActions(actions, sim, result = {}) {
+    const outcome = { sessionChanged: false, success: false, confirmation: "", message: "" };
     for (const a of actions) {
-      if (a.type === "simulate") { setSim(a); if (sim) { app.sim = sim; renderSim(sim); } focusPanel("#panel-sim"); }
-      else if ((a.type === "focus" || a.type === "open") && (PANEL[a.panel] || a.panel === "similar")) {
-        if (a.panel === "similar") selectTab("tab-similar"); else if (a.panel === "pacing") selectTab("tab-pacing");
-        focusPanel(PANEL[a.panel]);
-      } else if (a.type === "close" && PANEL[a.panel]) {
-        const el = $(PANEL[a.panel]); if (el) el.hidden = true;
+      if (a.type === "simulate") {
+        setSim(a);
+        if (sim) { app.sim = sim; renderSim(sim); }
+        focusPanel("#panel-sim");
+        outcome.success = !!sim;
+        outcome.confirmation = `Updated the race-day simulation to ${a.temp_c} °C, ${a.wind_kmh} km/h headwind, ${a.profile.replace("_", " ")}.`;
+      } else if ((a.type === "focus" || a.type === "open") && (PANEL[a.panel] || a.panel === "similar" || a.panel === "log" || a.panel === "record")) {
+        if (a.panel === "log" || a.panel === "record") {
+          if (hooks.profile) await hooks.profile();
+          const target = $(a.panel === "log" ? "#why-log" : "#record");
+          outcome.success = !!target;
+          if (target) target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          outcome.confirmation = a.panel === "log"
+            ? "Opened the change log in the coach profile."
+            : "Opened the track record in the coach profile.";
+        } else {
+          if (a.panel === "similar") selectTab("tab-similar");
+          else if (a.panel === "pacing") selectTab("tab-pacing");
+          outcome.success = focusPanel(PANEL[a.panel]);
+          outcome.confirmation = `Opened the ${a.panel} panel.`;
+        }
+      } else if (a.type === "close" && (PANEL[a.panel] || a.panel === "log" || a.panel === "record")) {
+        if (a.panel === "log" || a.panel === "record") {
+          const dialog = $("#profile-dialog");
+          outcome.success = !!dialog;
+          if (dialog && dialog.open) dialog.close();
+        } else {
+          const el = $(PANEL[a.panel]);
+          outcome.success = !!el;
+          if (el) el.hidden = true;
+        }
+        outcome.confirmation = `Closed the ${a.panel} panel.`;
       } else if (a.type === "runner") {
-        sessionChanged = await openRunner(a.id, a.id === "demo" ? null : $("#holdout-check").checked);
-        if (sessionChanged) {
-          const confirmation = a.name ? `Opened ${a.name}.` : "Runner opened.";
-          addReply(confirmation);
-          if (hooks.speak) hooks.speak(confirmation);
-        } else addReply("I couldn't open that runner. Please choose an existing record from the database.");
+        outcome.sessionChanged = await openRunner(a.id, a.id === "demo" ? null : $("#holdout-check").checked);
+        outcome.success = outcome.sessionChanged;
+        outcome.confirmation = a.name ? `Opened ${a.name}.` : "Runner opened.";
+        outcome.message = "I couldn't open that runner. Please choose an existing record from the database.";
+      } else if (a.type === "runner_database") {
+        const loaded = await openRunnerDatabase(a.query || "", { gender: a.gender || "", min_races: a.min_races || 0 });
+        outcome.success = !!(loaded && loaded.ok);
+        outcome.confirmation = loaded && loaded.count === 0
+          ? "Opened the runner database. No existing runners matched those search filters."
+          : "Opened the runner database with the requested search and filters.";
+        outcome.message = loaded && loaded.error ? `I couldn't search the runner database: ${loaded.error}` : "I couldn't load the runner database.";
+      } else if (a.type === "condition") {
+        outcome.success = true; // The service applies this to the active session before returning.
+        storage.set("pacesense.condition", a.value);
+        const choice = $(`#cond-choice input[value="${a.value}"]`);
+        if (choice) choice.checked = true;
+        outcome.confirmation = a.value === "unknown"
+          ? "Marked this as a runner you are unfamiliar with. The runner remains in the database."
+          : "Marked this as a runner you know personally.";
+      } else if (a.type === "reveal") {
+        outcome.success = !!(result.state && result.state.holdout && result.state.holdout.truth_s != null);
+        if (outcome.success) focusPanel("#kpi-acc");
+        outcome.confirmation = "Revealed the hidden demo result.";
+        outcome.message = "There is no hidden demo result to reveal in this session.";
+      } else if (a.type === "refresh" && result.turn && result.turn.source === "undo") {
+        outcome.success = !!(result.turn && result.turn.source === "undo");
+        outcome.confirmation = "Undid the last change.";
+        outcome.message = "I couldn't undo a change in this session.";
+      } else {
+        outcome.success = false;
+        outcome.message = "That PaceSense action could not be completed.";
       }
-      else if (a.type === "runner_database") openRunnerDatabase(a.query || "", { gender: a.gender || "", min_races: a.min_races || 0 });
-      else if (a.type === "reveal") focusPanel("#kpi-acc");
     }
-    return sessionChanged;
+    if (!actions.length) outcome.message = "I couldn't map that request to an executable PaceSense action.";
+    return outcome;
   }
   function focusPanel(sel) {
-    const el = $(sel); if (!el) return;
+    const el = $(sel); if (!el) return false;
     el.hidden = false;
     el.scrollIntoView({ behavior: "smooth", block: "nearest" });
     el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+    return true;
   }
 
   async function setWeight(i, w) {
@@ -766,6 +831,11 @@
       fillers: (text.match(FILLER_RE) || []).length,
       confidence: confs.length ? +(confs.reduce((a, b) => a + b, 0) / confs.length).toFixed(2) : undefined,
       latency_ms: ended && voice.t0 > ended && voice.t0 - ended < 20000 ? Math.round(voice.t0 - ended) : undefined,
+      ui_state: {
+        temp_c: Number($("#sim-temp").value),
+        wind_kmh: Number($("#sim-wind").value),
+        profile: ($('input[name="profile"]:checked') || {}).value || "on_plan",
+      },
     };
     resetUtterance();
     $("#notes-input").value = "";
@@ -773,7 +843,15 @@
     send(text, "voice", signals);
   }
   function startVoice() {
-    const rec = new SR(); voice.rec = rec; voice.on = true; resetUtterance();
+    if (!SR) { toast("Speech recognition is unavailable in this browser. You can still type to PaceSense."); return; }
+    let rec;
+    try { rec = new SR(); }
+    catch {
+      toast("PaceSense could not start the microphone. You can still type your command.");
+      hooks.voice(false);
+      return;
+    }
+    voice.rec = rec; voice.on = true; resetUtterance();
     rec.lang = "en-US"; rec.continuous = true; rec.interimResults = true;
     const input = $("#notes-input");
     rec.onresult = (e) => {
@@ -790,9 +868,23 @@
       clearTimeout(voice.timer);
       if (voice.buf.length) voice.timer = setTimeout(flushUtterance, interim ? hooks.silenceMs() + 600 : hooks.silenceMs());
     };
-    rec.onerror = (e) => { if (e.error === "not-allowed") { toast("Microphone permission was refused.", "error"); stopVoice(); } };
+    rec.onerror = (e) => {
+      const messages = {
+        "not-allowed": "Microphone permission was refused.",
+        "service-not-allowed": "This browser does not allow speech recognition for this site.",
+        "audio-capture": "No working microphone was found.",
+        network: "Speech recognition is unavailable because of a network error.",
+      };
+      if (messages[e.error]) { toast(messages[e.error], "error"); stopVoice(); }
+    };
     rec.onend = () => { if (voice.on && !voice.paused) try { rec.start(); } catch { /* already started */ } };
-    try { rec.start(); } catch { /* ignore */ }
+    try { rec.start(); }
+    catch {
+      voice.on = false; voice.rec = null;
+      toast("PaceSense could not start speech recognition. You can still type your command.", "error");
+      hooks.voice(false);
+      return;
+    }
     $("#mic-btn").setAttribute("aria-pressed", "true");
     hooks.voice(true);
   }
@@ -811,21 +903,16 @@
 
   // ---------------------------------------------------------------- runner picker
   const dlg = $("#runner-dialog");
-  function openRunnerDatabase(query = "", filters = {}) {
-    dlg.showModal();
-    $("#runner-search").value = query;
-    $("#runner-gender-filter").value = filters.gender || "";
-    $("#runner-min-races-filter").value = String(filters.min_races || 0);
-    searchRunners(query);
-    $("#runner-search").focus();
-  }
-  const searchRunners = debounce(async (q) => {
+  let runnerSearchTimer = null, runnerSearchRequest = 0;
+  async function loadRunners(query) {
+    const request = ++runnerSearchRequest;
     const list = clear($("#runner-list"));
     $("#runner-db-count").textContent = "Searching the existing runner database…";
     try {
       const gender = $("#runner-gender-filter").value;
       const minRaces = $("#runner-min-races-filter").value || "0";
-      const rows = await api("GET", `/runners?q=${encodeURIComponent(q)}&gender=${encodeURIComponent(gender)}&min_races=${encodeURIComponent(minRaces)}`);
+      const rows = await api("GET", `/runners?q=${encodeURIComponent(query)}&gender=${encodeURIComponent(gender)}&min_races=${encodeURIComponent(minRaces)}`);
+      if (request !== runnerSearchRequest) return { ok: false, stale: true, count: rows.length, error: "The runner search changed before it finished." };
       $("#runner-db-count").textContent = rows.length
         ? `Showing ${rows.length} matching existing runner records. Select one to open it; no new data is added.`
         : "No existing runners match that search.";
@@ -842,8 +929,30 @@
         });
         list.append(h("li", null, b));
       }
-    } catch (e) { list.append(h("li", { class: "muted", text: e.message })); }
-  }, 160);
+      return { ok: true, count: rows.length };
+    } catch (e) {
+      if (request === runnerSearchRequest) list.append(h("li", { class: "muted", text: e.message }));
+      return { ok: false, error: e.message };
+    }
+  }
+  function searchRunners(query) {
+    clearTimeout(runnerSearchTimer);
+    runnerSearchTimer = setTimeout(() => loadRunners(query), 160);
+  }
+  async function openRunnerDatabase(query = "", filters = {}) {
+    if (!dlg.open) dlg.showModal();
+    $("#runner-search").value = query;
+    $("#runner-gender-filter").value = filters.gender || "";
+    const minSelect = $("#runner-min-races-filter");
+    const minValue = String(filters.min_races || 0);
+    if (![...minSelect.options].some((option) => option.value === minValue)) {
+      minSelect.append(h("option", { value: minValue, text: `At least ${minValue}` }));
+    }
+    minSelect.value = minValue;
+    $("#runner-search").focus();
+    clearTimeout(runnerSearchTimer);
+    return loadRunners(query);
+  }
 
   // ---------------------------------------------------------------- tabs
   function selectTab(id, byUser = false) {

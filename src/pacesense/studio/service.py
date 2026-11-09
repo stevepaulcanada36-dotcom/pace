@@ -23,7 +23,7 @@ from ..coach import CoachService
 from ..data import load_csv, synthetic_runners
 from ..domain import ValidationError, format_time, parse_time
 from ..hud import HudSession
-from ..hud.commands import Routed, route
+from ..hud.commands import Routed, route, ui_commands
 from ..repro import configured_seed
 from ..storage import Repository
 from ..tuning import configured_cbr
@@ -203,7 +203,7 @@ class StudioService:
         lines.append("Treat trial runs, relays, training and injuries as coach-provided context, not marathon records.")
         return "\n".join(lines)
 
-    def _interpret_voice_intent(self, text: str, live: Live) -> dict | None:
+    def _interpret_voice_intent(self, text: str, live: Live, voice_signals: dict | None = None) -> dict | None:
         """Ask Boson to classify a voice command; validate every proposed action locally."""
         if not self.ai_factory:
             return None
@@ -223,30 +223,54 @@ class StudioService:
             rows.append({"runner_id": "demo", "name": "Demo runner"})
             # The catalog is reference material only; the validator still resolves exact records.
             catalog = [{"runner_id": r["runner_id"], "name": r.get("name", "")} for r in rows[:150]]
-            system = """You interpret spoken commands for PaceSense, a marathon-coaching application.
-Return exactly one JSON object: {"intent": "...", "arguments": {}, "confidence": 0.0, "evidence": ["..."], "clarification": "..."}.
+            system = """You interpret one spoken command for PaceSense Studio.
+Return exactly one JSON object: {"intent":"...","arguments":{},"confidence":0.0,"evidence":["words from the transcript"],"clarification":""}.
 Allowed intents only:
-- runner_database: arguments {"query": "optional runner name or ID search text", "gender": "F|M|optional empty string", "min_races": integer 0-20}
-When the coach asks for female/male runners, set gender to F/M. When the coach asks for a minimum number of previous marathons, set min_races to that number. Do not invent a filter the coach did not request.
-- select_runner: arguments {"runner": "exact existing runner name or ID from the catalog"}
-- set_familiarity: arguments {"value": "known" or "unfamiliar"}
-- focus_panel or close_panel: arguments {"panel": "races|prediction|pacing|similar|simulator|feedback|steering|chat|log"}
-- simulate: arguments {"temp_c": number, "wind_kmh": number, "profile": "on_plan|fast_start|late_fade"}
-- reveal or undo: arguments {}
-- none: arguments {}
+- runner_database: {"query":"only a spoken runner name or ID, otherwise empty","gender":"F|M|empty","min_races":integer 0-20}
+- select_runner: {"runner":"the exact name or ID the coach actually said; the local validator resolves it against the full database"}
+- set_familiarity: {"value":"known|unfamiliar","runner":"optional exact current runner name or ID"}
+- focus_panel or close_panel: {"panel":"races|prediction|pacing|similar|simulator|feedback|steering|chat|log|record"}
+- simulate: {"temp_c":number,"wind_kmh":number,"profile":"on_plan|fast_start|late_fade"}
+- reveal or undo: {}
+- none: {}
 Rules:
-Use only one intent. Do not invent runner IDs or names; choose select_runner only when the coach explicitly asks to open, load, or switch to one unambiguous catalog entry. If the coach asks a question about a runner rather than asking to open them, use none. If the coach asks to find/search/browse runners, use runner_database and preserve their search words as query. Known/unfamiliar describes whether the coach personally knows an existing database runner; it never means create or add a runner. Do not invent filters or actions. If ambiguous, unsupported, or missing a necessary value, use none and explain the clarification. Confidence is your estimate that the intent and arguments faithfully match the utterance. Evidence must quote or briefly identify the words that support the intent. Do not execute anything; the application validates and executes separately."""
-            user = {"utterance": text, "current_runner_id": live.hud.runner_id,
-                    "can_undo": bool(live.hud.steer._undo),
-                    "can_reveal": live.hud.truth_s is not None,
-                    "existing_runner_catalog": catalog}
+Interpret the transcript, not assumptions. Use only one intent. A question about data is not a UI action: use none unless the coach explicitly asks to open, close, search, filter, select, simulate, reveal or undo. For runner_database, query contains only an actual name or ID spoken by the coach; set gender or min_races only when explicitly requested. Never invent a filter. For select_runner, require an explicit request to open/load/switch/select one name or ID actually spoken by the coach. The supplied catalog is only a preview; the local validator checks the full database. Never invent an ID or name. Both familiar and unfamiliar runners already exist in the database. Familiarity means whether the coach personally knows the currently selected runner; unfamiliar never means create a runner or add race data. If another runner is named for a familiarity change, include it in runner; do not change a different active runner. For simulate, use current_ui_state for every condition the coach did not explicitly change; never invent temperature, wind or pacing conditions. Unsupported, ambiguous or incomplete requests must use none and explain one focused clarification. Confidence is your estimate that intent and arguments match the actual words. Evidence must quote or closely identify words actually spoken. Never execute an action; local validation and the application do that separately."""
+            signals = voice_signals or {}
+            state = signals.get("ui_state") or {}
+            current_runner = self.coach.runner(live.hud.runner_id)
+            user = {
+                "utterance": text,
+                "current_runner": {
+                    "runner_id": live.hud.runner_id,
+                    "name": CoachService._summary(current_runner, False).get("name") or live.hud.runner_id,
+                    "familiarity": live.engine.ctx.session.condition,
+                },
+                "current_ui_state": {
+                    "temp_c": state.get("temp_c", 12.0),
+                    "wind_kmh": state.get("wind_kmh", 0.0),
+                    "profile": state.get("profile", "on_plan"),
+                },
+                "can_undo": bool(live.hud.steer._undo),
+                "can_reveal": live.hud.truth_s is not None,
+                "existing_runner_catalog": catalog,
+            }
             result = ai.client.chat(model, [
                 {"role": "system", "content": system},
                 {"role": "user", "content": json.dumps(user, ensure_ascii=False)},
             ], temperature=0.0, json_mode=True)
             payload = parse_json_answer(result.text)
-            return validate_voice_intent(payload, rows, can_undo=bool(live.hud.steer._undo),
-                                          can_reveal=live.hud.truth_s is not None)
+            return validate_voice_intent(
+                payload, rows, utterance=text,
+                transcript_confidence=signals.get("confidence"),
+                current_runner_id=live.hud.runner_id,
+                current_runner_ids=[
+                    live.hud.runner_id, live.hud.source_runner,
+                    *(["demo"] if live.hud.source_runner == demo_runner_id() else []),
+                ],
+                ui_state=state,
+                can_undo=bool(live.hud.steer._undo),
+                can_reveal=live.hud.truth_s is not None,
+            )
         except Exception as exc:
             log.warning("voice intent interpretation unavailable; using safe rule-based fallback: %s", exc)
             return None
@@ -271,7 +295,8 @@ Use only one intent. Do not invent runner IDs or names; choose select_runner onl
             return route(phrase, live.hud, source)
         if name in ("focus_panel", "close_panel"):
             verb = "open" if name == "focus_panel" else "close"
-            return route(f"{verb} {args['panel']}", live.hud, source)
+            panel = "track record" if args["panel"] == "record" else args["panel"]
+            return route(f"{verb} {panel}", live.hud, source)
         if name == "simulate":
             phrase = f"simulate {args['temp_c']:g} degrees"
             if args["wind_kmh"]:
@@ -291,13 +316,21 @@ Use only one intent. Do not invent runner IDs or names; choose select_runner onl
                      extra: dict | None = None) -> dict:
         s = live.hud
         s.assistant_context = self._assistant_context(live)
-        voice_intent = self._interpret_voice_intent(text, live) if source == "voice" else None
+        voice_signals = (extra or {}).get("voice") or {}
+        voice_intent = self._interpret_voice_intent(text, live, voice_signals) if source == "voice" else None
         if voice_intent and voice_intent.get("status") == "clarify":
             r = Routed(reply=voice_intent["message"], used=["prompt"])
         elif voice_intent and voice_intent.get("status") == "action":
             r = self._voice_route(text, source, live, voice_intent)
         else:
-            r = route(text, s, source)
+            if source == "voice":
+                ui_actions, _, remainder = ui_commands(text)
+                if len(ui_actions) > 1 or (ui_actions and remainder.strip()):
+                    r = Routed(reply="I heard more than one request. Which action should I do first?", used=["prompt"])
+                else:
+                    r = route(text, s, source)
+            else:
+                r = route(text, s, source)
         sim, revealed = None, False
         for a in r.actions:
             if a["type"] == "reveal" and s.truth_s is not None:
@@ -309,7 +342,7 @@ Use only one intent. Do not invent runner IDs or names; choose select_runner onl
         card = s.feedback_card(r.turn) if r.turn else None
         state = self.view(sid, live)
         out: dict[str, Any] = {"reply": r.reply, "actions": r.actions, "card": card, "used": r.used,
-                               "simulation": sim, "state": state}
+                               "simulation": sim, "state": state, "turn": r.turn}
         if voice_intent:
             out["voice_intent"] = {key: voice_intent[key] for key in
                                    ("status", "intent", "confidence", "evidence") if key in voice_intent}
@@ -318,6 +351,11 @@ Use only one intent. Do not invent runner IDs or names; choose select_runner onl
                 "notes": turn.get("notes", []),
                 "used": r.used, "ui_only": "ui" in r.used and "steer" not in r.used, **(extra or {})}
         self._observe(sid, live, Event(kind, text, source, data), out)
+        # AI-interpreted UI actions are confirmed by the browser only after the action succeeds.
+        # Do not let the adaptive TTS speak the optimistic route reply before that confirmation.
+        out["voice_action_pending"] = source == "voice" and bool(r.actions)
+        if out["voice_action_pending"] or (voice_intent and voice_intent.get("status") == "action"):
+            out["adapt"]["speak"] = ""
         # Keep the assistant's answer visible even when an adaptive loop also asks a follow-up.
         # The adaptation is rendered separately and included in the next AI context.
         if revealed:

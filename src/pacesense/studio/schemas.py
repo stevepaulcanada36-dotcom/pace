@@ -26,6 +26,13 @@ class CreateSession(_Body):
                                                    "(the paper's protocol). Defaults to true for the demo.")
 
 
+class VoiceUIState(_Body):
+    """Current simulator controls, supplied only as context for a voice command."""
+    temp_c: float = Field(12.0, ge=0, le=35)
+    wind_kmh: float = Field(0.0, ge=0, le=40)
+    profile: Literal["on_plan", "fast_start", "late_fade"] = "on_plan"
+
+
 class VoiceSignals(_Body):
     """How an utterance was spoken, measured in the browser (all optional)."""
     wpm: float | None = Field(None, ge=0, le=600, description="Words per minute")
@@ -34,6 +41,7 @@ class VoiceSignals(_Body):
     barge_in: bool = Field(False, description="The coach started talking while PaceSense was speaking")
     fillers: int = Field(0, ge=0, le=100)
     confidence: float | None = Field(None, ge=0, le=1, description="Speech recognition confidence")
+    ui_state: VoiceUIState | None = None
 
 
 class Command(_Body):
@@ -101,7 +109,7 @@ class ProfileEdit(_Body):
 BODIES = {"CreateSession": CreateSession, "Command": Command, "SetWeight": SetWeight, "Simulate": Simulate,
           "React": React, "Estimate": Estimate, "SessionEvent": SessionEvent,
           "InterviewAnswer": InterviewAnswer, "ProfileEdit": ProfileEdit, "Condition": Condition,
-          "Choose": Choose, "VoiceSignals": VoiceSignals}
+          "Choose": Choose, "VoiceSignals": VoiceSignals, "VoiceUIState": VoiceUIState}
 
 __all__ = ["BODIES", "COACH_ID", "Choose", "Command", "Condition", "CreateSession", "Estimate", "InterviewAnswer",
-           "ProfileEdit", "React", "SessionEvent", "SetWeight", "Simulate", "VoiceSignals"]
+           "ProfileEdit", "React", "SessionEvent", "SetWeight", "Simulate", "VoiceSignals", "VoiceUIState"]

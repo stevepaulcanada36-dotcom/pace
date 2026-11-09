@@ -313,7 +313,7 @@
 
     // ------------------------------------------------------------ coach profile
     async function openProfile() {
-      $("#profile-dialog").showModal();
+      if (!$("#profile-dialog").open) $("#profile-dialog").showModal();
       await renderProfile();
       api("POST", `/sessions/${app.sid}/events`, { kind: "panel", panel: "profile" }).catch(() => {});
     }
@@ -396,6 +396,7 @@
     P.hooks.silenceMs = () => ((A.adapt && A.adapt.ui && A.adapt.ui.voice_style) || {}).silence_ms || 1000;
     P.hooks.transcript = onTranscript;
     P.hooks.voice = (on) => setVoiceMode(on, { fromMic: true });
+    P.hooks.profile = openProfile;
     P.hooks.panel = (panel) => {
       if (!app.sid) return;
       api("POST", `/sessions/${app.sid}/events`, { kind: "panel", panel }).then((r) => apply(r.adapt, { fresh: true })).catch(() => {});
