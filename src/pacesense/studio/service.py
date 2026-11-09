@@ -111,8 +111,10 @@ class StudioService:
             out += self.coach.search(q, limit)
         else:
             # Browse the loaded database, not only runners with four or more races.
-            picks = sorted(self.coach.runners, key=lambda r: r.runner_id)
-            out += [CoachService._summary(r, False) for r in picks[: limit - len(out)]]
+            records = {r.runner_id: r for r in self.coach.runners}
+            records.update(self.coach._own())
+            picks = sorted(records.values(), key=lambda r: r.runner_id)
+            out += [CoachService._summary(r, r.runner_id in self.coach._own()) for r in picks[: limit - len(out)]]
         if gender:
             out = [r for r in out if r.get("gender") == gender]
         if min_races:
@@ -174,8 +176,11 @@ class StudioService:
             from ..llm.openrouter import parse_json_answer
 
             model, _ = ai.config("assistant")
-            rows = [{**CoachService._summary(r, False), "runner_id": r.runner_id}
-                    for r in sorted(self.coach.runners, key=lambda x: x.runner_id)]
+            records = {r.runner_id: r for r in self.coach.runners}
+            own = self.coach._own()
+            records.update(own)
+            rows = [{**CoachService._summary(r, r.runner_id in own), "runner_id": r.runner_id}
+                    for r in sorted(records.values(), key=lambda x: x.runner_id)]
             rows.append({"runner_id": "demo", "name": "Demo runner"})
             # The catalog is reference material only; the validator still resolves exact records.
             catalog = [{"runner_id": r["runner_id"], "name": r.get("name", "")} for r in rows[:150]]
