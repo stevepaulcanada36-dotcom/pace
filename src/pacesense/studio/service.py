@@ -327,6 +327,12 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
         actions, _, _ = ui_commands(text)
         if not any(action.get("type") == "simulate" for action in actions):
             return None
+        if not re.search(
+            r"\\b(simulate|run\\s+(?:the\\s+)?(?:race|simulation)|play\\s+the\\s+race|"
+            r"replay\\s+the\\s+race|what\\s+if)\\b",
+            text, re.IGNORECASE,
+        ):
+            return None
 
         signals = voice_signals or {}
         supplied = signals.get("ui_state") or {}
@@ -394,9 +400,9 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                     elif fallback_intent.get("status") == "action":
                         r = self._voice_route(text, source, live, fallback_intent)
                     else:
-                        r = route(text, s, source)
+                        r = Routed(reply="Do you want me to run the race-day simulation?", used=["prompt"])
                 else:
-                    r = route(text, s, source)
+                    r = Routed(reply="Do you want me to run the race-day simulation?", used=["prompt"])
             elif any(action.get("type") not in {
                 "runner_database", "condition", "focus", "close", "runner", "reveal"
             } for action in ui_actions):

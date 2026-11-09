@@ -402,6 +402,19 @@ class VoiceIntentExecutionTests(unittest.TestCase):
         }])
         self.assertEqual(result["simulation"]["summary"]["temp_c"], 25.0)
 
+    def test_offline_question_about_simulation_does_not_run_it(self):
+        service, sid, _ = self.service(intent("none"))
+        service.ai_factory = lambda: SimpleNamespace(online=False)
+        result = service.command(
+            sid, "what does the simulation do?", source="voice",
+            voice={"confidence": 0.95, "ui_state": {
+                "temp_c": 18, "wind_kmh": 12, "profile": "late_fade",
+            }},
+        )
+        self.assertEqual(result["actions"], [])
+        self.assertIsNone(result["simulation"])
+        self.assertIn("Do you want me to run", result["reply"])
+
     def test_boson_unavailable_does_not_guess_temperature_from_hot(self):
         service, sid, _ = self.service(intent("none"))
         service.ai_factory = lambda: SimpleNamespace(online=False)
@@ -414,6 +427,13 @@ class VoiceIntentExecutionTests(unittest.TestCase):
         self.assertEqual(result["actions"], [])
         self.assertIsNone(result["simulation"])
         self.assertIn("specific temperature", result["reply"])
+
+    def test_offline_fallback_rejects_unsupported_legacy_view_actions(self):
+        service, sid, _ = self.service(intent("none"))
+        service.ai_factory = lambda: SimpleNamespace(online=False)
+        result = service.command(sid, "switch to runner view", source="voice")
+        self.assertEqual(result["actions"], [])
+        self.assertIn("isn't available in PaceSense Studio", result["reply"])
 
     def test_voice_track_record_navigation_targets_the_profile_section(self):
         utterance = "open the track record"
