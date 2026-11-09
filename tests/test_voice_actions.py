@@ -1,0 +1,62 @@
+"""Validation tests for AI-interpreted voice actions."""
+import unittest
+
+from pacesense.hud.voice_actions import MIN_CONFIDENCE, validate_voice_intent
+
+
+RUNNERS = [
+    {"runner_id": "R00042", "name": "Alex Smith"},
+    {"runner_id": "R00043", "name": "Alex Smith"},
+    {"runner_id": "R00044", "name": "Jamie Lee"},
+]
+
+
+def intent(name, arguments=None, confidence=0.95, evidence=None):
+    return {"intent": name, "arguments": arguments or {}, "confidence": confidence,
+            "evidence": evidence if evidence is not None else ["The coach explicitly requested this action."]}
+
+
+class VoiceIntentValidationTests(unittest.TestCase):
+    def test_low_confidence_requires_clarification(self):
+        r = validate_voice_intent(intent("runner_database", {"query": "jamie"}, MIN_CONFIDENCE - 0.01), RUNNERS)
+        self.assertEqual(r["status"], "clarify")
+
+    def test_missing_evidence_requires_clarification(self):
+        r = validate_voice_intent(intent("runner_database", {"query": "jamie"}, evidence=[]), RUNNERS)
+        self.assertEqual(r["status"], "clarify")
+
+    def test_unsupported_intent_is_rejected(self):
+        r = validate_voice_intent(intent("delete_runner", {"runner": "Jamie Lee"}), RUNNERS)
+        self.assertEqual(r["status"], "clarify")
+
+    def test_runner_selection_requires_one_exact_database_match(self):
+        r = validate_voice_intent(intent("select_runner", {"runner": "Jamie Lee"}), RUNNERS)
+        self.assertEqual(r["arguments"]["runner_id"], "R00044")
+        self.assertEqual(validate_voice_intent(intent("select_runner", {"runner": "Alex Smith"}), RUNNERS)["status"], "clarify")
+        self.assertEqual(validate_voice_intent(intent("select_runner", {"runner": "Unknown Person"}), RUNNERS)["status"], "clarify")
+
+    def test_familiarity_is_personal_not_database_creation(self):
+        known = validate_voice_intent(intent("set_familiarity", {"value": "known"}), RUNNERS)
+        unfamiliar = validate_voice_intent(intent("set_familiarity", {"value": "unfamiliar"}), RUNNERS)
+        self.assertEqual(known["arguments"]["condition"], "known")
+        self.assertEqual(unfamiliar["arguments"]["condition"], "unknown")
+        self.assertNotIn("create_runner", unfamiliar["arguments"])
+
+    def test_runner_search_preserves_query(self):
+        r = validate_voice_intent(intent("runner_database", {"query": "Jamie Lee"}), RUNNERS)
+        self.assertEqual(r["arguments"]["query"], "Jamie Lee")
+
+    def test_panel_and_simulation_bounds_are_checked(self):
+        self.assertEqual(validate_voice_intent(intent("focus_panel", {"panel": "races"}), RUNNERS)["status"], "action")
+        self.assertEqual(validate_voice_intent(intent("focus_panel", {"panel": "secrets"}), RUNNERS)["status"], "clarify")
+        self.assertEqual(validate_voice_intent(intent("simulate", {"temp_c": 41, "wind_kmh": 0}), RUNNERS)["status"], "clarify")
+        self.assertEqual(validate_voice_intent(intent("simulate", {"temp_c": 22, "wind_kmh": 15, "profile": "fast_start"}), RUNNERS)["status"], "action")
+
+    def test_state_dependent_actions_are_checked(self):
+        self.assertEqual(validate_voice_intent(intent("undo"), RUNNERS, can_undo=False)["status"], "clarify")
+        self.assertEqual(validate_voice_intent(intent("undo"), RUNNERS, can_undo=True)["status"], "action")
+        self.assertEqual(validate_voice_intent(intent("reveal"), RUNNERS, can_reveal=False)["status"], "clarify")
+
+
+if __name__ == "__main__":
+    unittest.main()
