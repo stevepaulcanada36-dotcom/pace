@@ -206,7 +206,7 @@ class OfflineTests(unittest.TestCase):
         answer = self.a.ask("What does the likely range mean?", context=context)
         self.assertEqual([step.name for step in answer.steps], ["predict"])
         self.assertIn(self.coach.predict(self.rid)["finish"], answer.text)
-        self.assertIn("middle 60 percent", answer.text.lower())
+        self.assertIn("20th to 80th percentiles", answer.text.lower())
 
     def test_unknown_race_name_with_matching_year_asks_before_assuming(self):
         context = ("Current runner: Demo runner (ID " + self.rid + ").\n"
@@ -236,7 +236,7 @@ class OfflineTests(unittest.TestCase):
         self.assertIn("not one of her marathon records", text)
         self.assertIn("fully recovered", text)
         other = self.a.ask("What does the likely range mean?", history=history).text
-        self.assertIn("middle 60 percent", other)
+        self.assertIn("20th to 80th percentiles", other)
 
     def test_add_runner_conversation(self):
         names, text = self.steps("Add runner Anna de Vries, female, 34: Amsterdam 2023 3h35m48; Rotterdam 2024 3:33:11")
