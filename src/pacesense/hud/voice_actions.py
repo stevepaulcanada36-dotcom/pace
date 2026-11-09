@@ -6,7 +6,6 @@ existing application state and rejects unsupported or unsafe actions.
 from __future__ import annotations
 
 import math
-import re
 from typing import Any, Iterable
 
 from .commands import PANELS
