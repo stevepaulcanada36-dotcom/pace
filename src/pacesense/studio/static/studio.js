@@ -673,7 +673,7 @@
         sessionChanged = await openRunner(a.id, a.id === "demo" ? null : $("#holdout-check").checked);
         if (sessionChanged && hooks.speak) hooks.speak(a.name ? `Opened ${a.name}.` : "Runner opened.");
       }
-      else if (a.type === "runner_database") openRunnerDatabase(a.query || "");
+      else if (a.type === "runner_database") openRunnerDatabase(a.query || "", { gender: a.gender || "", min_races: a.min_races || 0 });
       else if (a.type === "reveal") focusPanel("#kpi-acc");
     }
     return sessionChanged;
@@ -805,9 +805,11 @@
 
   // ---------------------------------------------------------------- runner picker
   const dlg = $("#runner-dialog");
-  function openRunnerDatabase(query = "") {
+  function openRunnerDatabase(query = "", filters = {}) {
     dlg.showModal();
     $("#runner-search").value = query;
+    $("#runner-gender-filter").value = filters.gender || "";
+    $("#runner-min-races-filter").value = String(filters.min_races || 0);
     searchRunners(query);
     $("#runner-search").focus();
   }
@@ -815,7 +817,9 @@
     const list = clear($("#runner-list"));
     $("#runner-db-count").textContent = "Searching the existing runner database…";
     try {
-      const rows = await api("GET", `/runners?q=${encodeURIComponent(q)}`);
+      const gender = $("#runner-gender-filter").value;
+      const minRaces = $("#runner-min-races-filter").value || "0";
+      const rows = await api("GET", `/runners?q=${encodeURIComponent(q)}&gender=${encodeURIComponent(gender)}&min_races=${encodeURIComponent(minRaces)}`);
       $("#runner-db-count").textContent = rows.length
         ? `Showing ${rows.length} matching existing runner records. Select one to open it; no new data is added.`
         : "No existing runners match that search.";
@@ -894,6 +898,8 @@
     $("#help-btn").addEventListener("click", () => $("#help-dialog").showModal());
     $("#runner-btn").addEventListener("click", () => openRunnerDatabase(""));
     $("#runner-search").addEventListener("input", (e) => searchRunners(e.target.value));
+    $("#runner-gender-filter").addEventListener("change", () => searchRunners($("#runner-search").value));
+    $("#runner-min-races-filter").addEventListener("change", () => searchRunners($("#runner-search").value));
 
     $$(".tabs [role=tab]").forEach((t) => {
       t.addEventListener("click", () => selectTab(t.id, true));
