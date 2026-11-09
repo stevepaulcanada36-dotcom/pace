@@ -50,7 +50,7 @@ class BosonAdapterTests(unittest.TestCase):
 
     def test_model_and_endpoint(self):
         self.assertEqual(MODEL, "higgs-realtime")
-        self.assertEqual(REALTIME_URL, "wss://api.boson.ai/v1/realtime/")
+        self.assertEqual(REALTIME_URL, "wss://api.boson.ai/v1/realtime")
 
     def test_tool_specs_convert_chat_completions_shape_to_realtime_shape(self):
         specs = BosonClient._tool_specs([{
