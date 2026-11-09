@@ -61,6 +61,8 @@ def validate_voice_intent(
     if intent == "runner_database":
         query = _text(args.get("query"), 64)
         gender = args.get("gender") or ""
+        if not isinstance(gender, str):
+            return _clarify("Should I filter by female or male runners, or show everyone?", confidence, evidence)
         gender = {"female": "F", "Female": "F", "male": "M", "Male": "M", "all": ""}.get(gender, gender)
         min_races = args.get("min_races", 0)
         if query and len(query) < 2:
@@ -113,7 +115,7 @@ def validate_voice_intent(
         if (isinstance(wind, bool) or not isinstance(wind, (int, float)) or not math.isfinite(wind)
                 or not 0 <= wind <= 60):
             return _clarify("What headwind should I use? It must be between 0 and 60 km/h.", confidence, evidence)
-        if profile not in PROFILES:
+        if not isinstance(profile, str) or profile not in PROFILES:
             return _clarify("Should I use the planned pace, a fast start, or a late fade?", confidence, evidence)
         return {"status": "action", "intent": intent,
                 "arguments": {"temp_c": float(temp), "wind_kmh": float(wind), "profile": profile},
