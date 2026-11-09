@@ -30,6 +30,10 @@ class VoiceIntentValidationTests(unittest.TestCase):
         r = validate_voice_intent(intent("runner_database", {"query": "jamie"}, MIN_CONFIDENCE - 0.01), RUNNERS)
         self.assertEqual(r["status"], "clarify")
 
+    def test_confidence_at_threshold_is_accepted(self):
+        r = validate_voice_intent(intent("runner_database", {"query": "jamie"}, MIN_CONFIDENCE), RUNNERS)
+        self.assertEqual(r["status"], "action")
+
     def test_missing_evidence_requires_clarification(self):
         r = validate_voice_intent(intent("runner_database", {"query": "jamie"}, evidence=[]), RUNNERS)
         self.assertEqual(r["status"], "clarify")
@@ -110,6 +114,17 @@ class VoiceIntentExecutionTests(unittest.TestCase):
         result = service.command(sid, "I don't know this runner", source="voice")
         self.assertEqual(result["adapt"]["ui"]["condition"], "unknown")
         self.assertEqual(result["actions"], [{"type": "condition", "value": "unknown"}])
+
+    def test_voice_panel_navigation_uses_a_real_studio_panel(self):
+        service, sid, _ = self.service(intent("focus_panel", {"panel": "races"}))
+        result = service.command(sid, "show the races panel", source="voice")
+        self.assertEqual(result["actions"], [{"type": "focus", "panel": "races"}])
+
+    def test_voice_simulation_executes_with_validated_parameters(self):
+        service, sid, _ = self.service(intent("simulate", {"temp_c": 25, "wind_kmh": 10, "profile": "on_plan"}))
+        result = service.command(sid, "simulate at 25 degrees and 10 km/h headwind", source="voice")
+        self.assertEqual(result["simulation"]["summary"]["temp_c"], 25.0)
+        self.assertEqual(result["simulation"]["summary"]["wind_kmh"], 10.0)
 
     def test_voice_runner_selection_uses_verified_database_id(self):
         service, sid, coach = self.service(intent("none"))
