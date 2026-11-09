@@ -192,7 +192,7 @@ Allowed intents only:
 When the coach asks for female/male runners, set gender to F/M. When the coach asks for a minimum number of previous marathons, set min_races to that number. Do not invent a filter the coach did not request.
 - select_runner: arguments {"runner": "exact existing runner name or ID from the catalog"}
 - set_familiarity: arguments {"value": "known" or "unfamiliar"}
-- focus_panel or close_panel: arguments {"panel": "races|prediction|pacing|similar|simulator|feedback|steering|hologram|chat|log|record"}
+- focus_panel or close_panel: arguments {"panel": "races|prediction|pacing|similar|simulator|feedback|steering|chat|log"}
 - simulate: arguments {"temp_c": number, "wind_kmh": number, "profile": "on_plan|fast_start|late_fade"}
 - reveal or undo: arguments {}
 - none: arguments {}
