@@ -13,7 +13,7 @@ from typing import Any
 
 from .openrouter import ChatResult, LLMError, Transcript, Usage, MAX_AUDIO_BYTES
 
-REALTIME_URL = "wss://api.boson.ai/v1/realtime/"
+REALTIME_URL = "wss://api.boson.ai/v1/realtime"
 MODEL = "higgs-realtime"
 SUPPORTED_AUDIO_FORMATS = {"wav", "wave", "mp3", "m4a", "ogg", "webm", "flac"}
 AUDIO_CHUNK_BYTES = 5 * 1024 * 1024
