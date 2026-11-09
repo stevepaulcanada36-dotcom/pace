@@ -75,14 +75,11 @@ class ModelSettings:
         """{"model", "temperature", "source"} for one task."""
         t = TASKS[task]
         saved = self._saved().get(task, {})
-        if saved.get("model"):
-            model, source = saved["model"], "settings"
-        elif self.env.get(t.env_model):
-            model, source = self.env[t.env_model], "environment"
+        if saved.get("model") == "higgs-realtime":
+            model, source = "higgs-realtime", "settings"
         else:
-            configured = self.config.get("models", {}).get(task, {})
-            model = str(configured.get("model") or t.default_model)
-            source = "YAML config" if model != t.default_model else "default"
+            # Legacy OpenRouter model IDs migrate to Boson's single hosted model.
+            model, source = "higgs-realtime", "default"
         temp = saved.get("temperature")
         if temp is None:
             try:
@@ -103,8 +100,8 @@ class ModelSettings:
         entry = dict(saved.get(task, {}))
         if model is not None:
             model = model.strip()
-            if model and ("/" not in model or " " in model):
-                raise ValidationError("an Boson model id looks like provider/model, e.g. openai/gpt-4o-mini")
+            if model and model != "higgs-realtime":
+                raise ValidationError("PaceSense uses the Boson higgs-realtime model")
             entry["model"] = model or None
         if temperature is not None:
             if not 0 <= float(temperature) <= 2:
