@@ -105,9 +105,9 @@ class VoiceIntentExecutionTests(unittest.TestCase):
     def test_voice_runner_selection_uses_verified_database_id(self):
         service, sid, coach = self.service(intent("none"))
         runner = coach.runners[0]
-        name = CoachService._summary(runner, False).get("name") or runner.runner_id
-        service.ai_factory = lambda: FakeAI(intent("select_runner", {"runner": name}))
-        result = service.command(sid, f"open {name}", source="voice")
+        target = runner.runner_id
+        service.ai_factory = lambda: FakeAI(intent("select_runner", {"runner": target}))
+        result = service.command(sid, f"open runner {target}", source="voice")
         self.assertEqual(result["actions"], [{"type": "runner", "id": runner.runner_id}])
 
     def test_ambiguous_runner_selection_does_not_execute(self):
