@@ -22,7 +22,7 @@ Everything is Python: the model, the services, the analysis, and a **Streamlit d
 | **Voice input** (several pages) | Speak instead of typing: transcribed, fields filled in, a refined version suggested for review | PaceSense addition |
 | **PaceSense Live** (`steer/`, `pacesense live`, Plan step 2) | *Proposal.* Talk instead of dragging: what the coach says moves the race sliders, continuously; each move is checked against the data, and a live steering index shows whose view the model is taking | Proposed extension (answers the paper's open question on steering) |
 | **Reproducibility** (`repro.py`, `pacesense reproduce`) | One command rebuilds every reported number and writes a manifest of input and output hashes; `--check` proves a re-run matches | PaceSense addition |
-| **AI models per task** (`llm/`, Settings, Model lab) | Chat, field filling and refining use per-task OpenRouter models; speech-to-text defaults to local Whisper and can optionally use OpenRouter | PaceSense addition |
+| **AI models per task** (`llm/`, Settings, Model lab) | Chat, field filling and refining use per-task Boson Higgs Realtime; speech-to-text defaults to local Whisper and can optionally use Boson | PaceSense addition |
 
 ## PaceSense Studio (start here)
 
@@ -285,17 +285,17 @@ or use the Docker image, which copies the config and pins the Python version. Th
 
 ## One central YAML configuration (recommended)
 
-PaceSense keeps model IDs and temperatures in one file: `config/pacesense.yaml`. Edit the `models` section there to choose a different OpenRouter model for each task (`assistant`, `extract`, `refine`, and `transcribe`). This replaces having to hunt through Python files for model IDs.
+PaceSense keeps the Boson model and task temperatures in `config/pacesense.yaml`. The hosted model is fixed to `higgs-realtime`; task-specific temperatures can be tuned in Settings.
 
-To configure your OpenRouter key once instead of pasting it into Settings each time:
+For local development, you can configure your Boson key in a private local config file:
 
 1. Copy `config/local.example.yaml` to `config/local.yaml`.
 2. Put your key in `config/local.yaml` under `boson.api_key`.
 3. Restart PaceSense.
 
-`config/local.yaml` is ignored by Git and is not included as a real secrets file in the ZIP. **Do not commit or share it**. The key lookup order is temporary key entered in Settings, `BOSON_API_KEY` environment variable, then `config/local.yaml`. You can instead set `PACESENSE_CONFIG_DIR` to point at a different config folder. The public defaults contain no secrets.
+`config/local.yaml` is ignored by Git and is not included as a real secrets file in the ZIP. **Do not commit or share it**. The key lookup order is `BOSON_API_KEY` environment variable, then `config/local.yaml`. Render should use the environment variable. You can instead set `PACESENSE_CONFIG_DIR` to point at a different config folder. The public defaults contain no secrets.
 
-Local Whisper remains the default voice transcription method, so recordings are transcribed locally. The `transcribe` OpenRouter model is used only if you select OpenRouter transcription or test models in Model lab.
+Boson is the default voice transcription method. Local Whisper is an optional fallback that can be selected in Settings.
 
 ## The dashboard
 
@@ -336,14 +336,14 @@ The sidebar has three groups.
 
 - **Research study.** The study as the paper ran it (see below). Unchanged by the coach pages.
 - **Study results.** The Section 5 analyses and CSV exports, locked behind the admin token.
-- **Model lab.** Compare OpenRouter models task by task on test cases; see [AI models](#ai-models-through-openrouter).
+- **Boson evaluation lab.** Score the Boson model against repeatable test cases; see [AI models](#ai-models-through-boson).
 
 **Help**
 
 - **How it works.** Every function, where it is, and whether it comes from the paper; key terms; how the code
   is organised. Every heading and number also has a "?" tooltip with the same explanation.
 - **Settings.** Layout, explanations on or off, minutes per km or per mile, past-race overlay, and **AI models**:
-  the OpenRouter key and a model and temperature per AI task. Saved in the database (except the key), so they
+  the Boson connection status and temperature per AI task. The key stays in the server environment, so settings
   survive a reload.
 
 ## How the code is organised
@@ -358,7 +358,7 @@ src/pacesense/
     voice.py            voice input and "suggest a clearer version", used on several pages
     pages/              one file per page: plan, watch, assistant, lab, runners, saved, record, study, results, howitworks, settings
   assistant/            Ask PaceSense: input checks, functions for the AI, the chat loop, offline helper
-  llm/                  OpenRouter client, AI tasks and their models, forms voice can fill, AIService, evals
+  llm/                  Boson client, AI tasks and their models, forms voice can fill, AIService, evals
   steer/                PaceSense Live: intent.py (words → weight changes), evidence.py (data checks, influence,
                         steering index), recency.py, session.py (SteeringSession, undo, replay),
                         llm_interpret.py (checked AI reader), benchmark.py
@@ -415,17 +415,17 @@ every answer, *What PaceSense calculated* lists each call and its result, so eve
 | `check_runner_details`, `propose_runner` | checked and corrected runner details; a runner ready for you to add |
 | `explain` | PaceSense's own explanation of a term, and whether it is from the paper |
 
-Without an OpenRouter key (or with `--offline-ai`), an **offline helper** answers instead: no AI and no
+Without a Boson API key (or with `--offline-ai`), an **offline helper** answers instead: no AI and no
 network, just word rules that call the same functions. It understands the common questions above, one at a
 time.
 
 Limits, on purpose: the assistant cannot read the research study's data (the study must stay as the paper
 ran it, and participants' answers are not sent to an outside service), and it cannot save anything. With
-a key, questions and the runner data looked up for them are sent to OpenRouter and the provider of the
+a key, questions and the runner data looked up for them are sent to Boson and the provider of the
 model you chose.
 
 Code: `assistant/intake.py` (checks and corrections, no AI), `assistant/tools.py` (the functions and their
-descriptions for the AI), `assistant/chat.py` (the conversation loop and the OpenRouter chat model),
+descriptions for the AI), `assistant/chat.py` (the conversation loop and the Boson chat adapter),
 `assistant/offline.py` (the offline helper), `dashboard/views/assistant.py` (the page).
 
 ## AI models through Boson
@@ -568,7 +568,7 @@ seconds per km.
 
 ```bash
 docker build -t pacesense .
-docker run -p 8501:8501 -v pacesense-data:/data -e OPENROUTER_API_KEY pacesense
+docker run -p 8501:8501 -v pacesense-data:/data -e BOSON_API_KEY pacesense
 ```
 
 or without Docker:
@@ -576,7 +576,7 @@ or without Docker:
 ```bash
 export PACESENSE_DB=/var/lib/pacesense/pacesense.sqlite3 PACESENSE_DATA=/srv/races.csv
 export PACESENSE_ADMIN_TOKEN=$(openssl rand -hex 24)
-export OPENROUTER_API_KEY=your-boson-api-key            # optional: AI features; models are chosen in Settings
+export OPENROUTER_API_KEY=your-boson-api-key            # optional: AI features; Higgs Realtime is used
 streamlit run src/pacesense/dashboard/app.py --server.port 8501
 ```
 
@@ -609,8 +609,8 @@ python -m unittest discover -s tests -t .     # 245 tests
 They cover PaceSense Live (interpreter, evidence statistics, sessions, replay, benchmark floors, the checked AI
 reader, the HTTP routes and the Plan-page box), `reproduce` (two runs give identical hashes; a changed seed is
 detected), the model, measures and statistics, the study procedure, planning sessions, the race-day watch,
-the assistant, the OpenRouter client, voice input and the Model lab (against `tests/fake_openrouter.py`, a
-stand-in for OpenRouter's API, so no key or network is needed), every chart, and every
+the assistant, the OpenRouter client, voice input and the Model lab (against `tests/fake_boson.py`, a
+stand-in for Boson's Realtime API, so no key or network is needed), every chart, and every
 dashboard page. Pages are run against `tests/fake_streamlit.py`, a stand-in that takes
 Streamlit's own parameter names, rejects anything else, and plays back clicks and typed values. It checks
 the page logic and Streamlit calls, not how the page looks; for that, run the dashboard.
