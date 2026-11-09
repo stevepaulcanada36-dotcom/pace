@@ -1,8 +1,8 @@
 """Focused unit tests for the Boson Higgs Realtime adapter."""
 import io
-import wave
 import json
 import unittest
+import wave
 
 from pacesense.llm.boson import BosonClient, MODEL
 from pacesense.llm.openrouter import LLMError
