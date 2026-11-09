@@ -257,6 +257,9 @@ Use only one intent. Do not invent runner IDs or names; choose select_runner onl
         state = self.view(sid, live)
         out: dict[str, Any] = {"reply": r.reply, "actions": r.actions, "card": card, "used": r.used,
                                "simulation": sim, "state": state}
+        if voice_intent:
+            out["voice_intent"] = {key: voice_intent[key] for key in
+                                   ("status", "intent", "confidence", "evidence") if key in voice_intent}
         turn = r.turn or {}
         data = {"applied": turn.get("applied", []), "turn": turn.get("n"), "estimate_s": turn.get("estimate_s"),
                 "notes": turn.get("notes", []),
