@@ -14,7 +14,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from ..llm.openrouter import LLMError, OpenRouterClient, Usage
+from ..llm.openrouter import LLMError, Usage
 from .tools import AssistantTools
 
 SYSTEM_PROMPT = """You are the PaceSense assistant, helping a marathon coach (or a student learning how the system
@@ -79,7 +79,7 @@ class AssistantError(RuntimeError):
 class BosonModel:
     """Boson Higgs Realtime chat model, with PaceSense function calling."""
 
-    def __init__(self, client: OpenRouterClient, model: str, temperature: float = 0.2):
+    def __init__(self, client: Any, model: str, temperature: float = 0.2):
         self.client, self.model, self.temperature = client, model, temperature
         self.label = f"{model} via Boson"
 
