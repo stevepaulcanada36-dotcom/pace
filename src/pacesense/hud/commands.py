@@ -65,7 +65,7 @@ WIND_RE = re.compile(r"(\d{1,2})\s*(?:km/?h|kph|kilometres per hour|kilometers p
 CALM_RE = re.compile(r"\b(calm mode|focus mode|quiet mode|stop (?:rotating|spinning|moving)|pause the hologram|"
                      r"less motion|reduce motion)\b", re.I)
 SPIN_RE = re.compile(r"\b(start (?:rotating|spinning)|rotate (?:her|him|the (?:body|hologram|runner))|resume)\b", re.I)
-RUNNER_RE = re.compile(r"\b(?:open|load|switch to|show)\s+(?:runner\s+)?([RCK]-?[0-9A-Za-z]{5,12})\b")
+RUNNER_RE = re.compile(r"\b(?:open|load|switch to|show)\s+(?:runner\s+)?([RCK]-?[0-9A-Za-z]{4,12})\b")
 DEMO_RE = re.compile(r"\b(demo runner|new demo|another runner|next runner)\b", re.I)
 LAYOUT_RE = re.compile(r"\b(reset (?:the )?layout|tidy (?:up )?(?:the )?(?:screen|panels)|arrange (?:the )?panels)\b", re.I)
 REVEAL_RE = re.compile(r"\b(reveal|show me the (?:real|actual|true) (?:best|result)|how (?:close|accurate) (?:am i|was i|is it))\b",
