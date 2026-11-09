@@ -201,7 +201,7 @@ class OfflineTests(unittest.TestCase):
         self.assertIn(self.coach.predict(self.rid)["finish"], text)
 
     def test_likely_range_uses_active_runner_and_explains_its_meaning(self):
-        context = ("Current runner: Demo runner (ID " + self.rid + ").\\n"
+        context = ("Current runner: Demo runner (ID " + self.rid + ").\n"
                    "Existing marathon records: Amsterdam 2013; Eindhoven 2017; Eindhoven 2019")
         answer = self.a.ask("What does the likely range mean?", context=context)
         self.assertEqual([step.name for step in answer.steps], ["predict"])
@@ -209,14 +209,14 @@ class OfflineTests(unittest.TestCase):
         self.assertIn("middle 60 percent", answer.text.lower())
 
     def test_unknown_race_name_with_matching_year_asks_before_assuming(self):
-        context = ("Current runner: Demo runner (ID " + self.rid + ").\\n"
+        context = ("Current runner: Demo runner (ID " + self.rid + ").\n"
                    "Existing marathon records: Amsterdam 2013; Eindhoven 2017; Eindhoven 2019")
         answer = self.a.ask("Edelman 2019", context=context)
         self.assertIn("Eindhoven 2019", answer.text)
         self.assertIn("Did you mean", answer.text)
 
     def test_year_condition_note_is_not_misread_as_unknown_race_name(self):
-        context = ("Current runner: Demo runner (ID " + self.rid + ").\\n"
+        context = ("Current runner: Demo runner (ID " + self.rid + ").\n"
                    "Existing marathon records: Amsterdam 2013; Eindhoven 2017; Eindhoven 2019")
         answer = self.a.ask("2013 was a hot day", context=context)
         self.assertNotIn("Did you mean", answer.text)
