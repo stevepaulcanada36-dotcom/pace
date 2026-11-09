@@ -1,7 +1,7 @@
 # Tests on every push; lint + types for the web app; a real server smoke test; then proves the pipeline is
 # reproducible: two independent runs of `pacesense reproduce --quick` must produce identical output hashes.
 name: tests
-on: [push, pull_request]
+on: [push, pull_request, workflow_dispatch]
 jobs:
   test:
     runs-on: ${{ matrix.os }}
@@ -37,6 +37,12 @@ jobs:
       - run: mypy src/pacesense/studio src/pacesense/adaptive src/pacesense/hud/voice_actions.py
       - run: node --check src/pacesense/studio/static/studio.js
       - run: node --check src/pacesense/studio/static/adaptive.js
+      - run: ruff check src/pacesense/llm/boson.py tests/test_boson.py scripts/check_boson_realtime.py
+      - name: Boson Realtime live smoke test
+        if: ${{ secrets.BOSON_API_KEY != '' }}
+        env:
+          BOSON_API_KEY: ${{ secrets.BOSON_API_KEY }}
+        run: python scripts/check_boson_realtime.py --output /tmp/boson-realtime-test.wav
       - name: Server smoke test
         run: |
           pacesense studio --no-browser --port 8765 --db /tmp/ci.sqlite3 &
