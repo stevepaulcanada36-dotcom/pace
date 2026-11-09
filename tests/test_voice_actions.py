@@ -6,6 +6,8 @@ from types import SimpleNamespace
 from pacesense.coach import CoachService
 from pacesense.storage import Repository
 from pacesense.studio import Settings, StudioService
+from pacesense.studio.app import create_app
+from tests.asgi import Client
 from tests import helpers
 
 from pacesense.hud.voice_actions import MIN_CONFIDENCE, validate_voice_intent
@@ -119,6 +121,14 @@ class VoiceIntentExecutionTests(unittest.TestCase):
         result = service.command(sid, "open Alex Smith", source="voice")
         self.assertEqual(result["actions"], [])
         self.assertIn("more than one", result["reply"])
+
+    def test_runner_directory_filters_are_executed_by_the_api(self):
+        coach = CoachService(helpers.model(), helpers.runners(), Repository(":memory:"))
+        client = Client(create_app(StudioService(coach, settings=Settings())))
+        rows = client.get("/api/v1/runners?gender=F&min_races=4").json()
+        self.assertTrue(all(row["gender"] == "F" and row["n_races"] >= 4 for row in rows))
+        self.assertEqual(client.get("/api/v1/runners?gender=X").status, 422)
+        self.assertEqual(client.get("/api/v1/runners?min_races=21").status, 422)
 
 
 
