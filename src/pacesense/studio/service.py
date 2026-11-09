@@ -182,7 +182,8 @@ class StudioService:
             system = """You interpret spoken commands for PaceSense, a marathon-coaching application.
 Return exactly one JSON object: {"intent": "...", "arguments": {}, "confidence": 0.0, "evidence": ["..."], "clarification": "..."}.
 Allowed intents only:
-- runner_database: arguments {"query": "optional runner name or ID search text"}
+- runner_database: arguments {"query": "optional runner name or ID search text", "gender": "F|M|optional empty string", "min_races": integer 0-20}
+When the coach asks for female/male runners, set gender to F/M. When the coach asks for a minimum number of previous marathons, set min_races to that number. Do not invent a filter the coach did not request.
 - select_runner: arguments {"runner": "exact existing runner name or ID from the catalog"}
 - set_familiarity: arguments {"value": "known" or "unfamiliar"}
 - focus_panel or close_panel: arguments {"panel": "races|prediction|pacing|similar|simulator|feedback|steering|hologram|chat|log|record"}
@@ -218,6 +219,8 @@ Use only one intent. Do not invent runner IDs or names; choose select_runner onl
             for action in routed.actions:
                 if action.get("type") == "runner_database":
                     action["query"] = args["query"]
+                    action["gender"] = args["gender"]
+                    action["min_races"] = args["min_races"]
             return routed
         if name == "set_familiarity":
             phrase = "I know this runner" if args["condition"] == "known" else "I don't know this runner"
