@@ -47,6 +47,7 @@ class HudSession:
     revealed: bool = field(init=False, default=False)
     reactions: list[dict] = field(init=False, default_factory=list)
     history: list[dict] = field(init=False, default_factory=list)
+    assistant_context: str = field(init=False, default="")
     source_runner: str = field(init=False, default="")
 
     def __post_init__(self) -> None:
@@ -70,10 +71,20 @@ class HudSession:
         from ..assistant.offline import OfflineModel
         model = self.ai.chat_model() if self.ai is not None else OfflineModel()
         tools = AssistantTools(self.coach, plan=lambda: self.plan)
-        ans = Assistant(model, tools).ask(question, self.history)
-        self.history += [{"role": "user", "content": question}, {"role": "assistant", "content": ans.text}]
+        ans = Assistant(model, tools).ask(question, self.history, self.assistant_context)
+        self.remember_turn(question, ans.text)
         steps = [{"function": s.name, "arguments": s.arguments} for s in ans.steps]
         return ans.text, steps
+
+    def remember_turn(self, question: str, answer: str) -> None:
+        """Keep every coach turn, including actions and adaptive follow-up questions, in chat context."""
+        if (len(self.history) >= 2 and self.history[-2].get("role") == "user"
+                and self.history[-2].get("content") == question):
+            self.history[-1] = {"role": "assistant", "content": answer}
+        else:
+            self.history.extend([{"role": "user", "content": question},
+                                 {"role": "assistant", "content": answer}])
+        self.history = self.history[-24:]
 
     # ---- accuracy (demo mode) -------------------------------------------------------------------
     def error_pct(self, finish_s: float) -> float | None:
