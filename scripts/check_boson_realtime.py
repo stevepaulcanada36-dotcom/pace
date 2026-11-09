@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import base64
 import getpass
+import json
 import time
 import wave
 from pathlib import Path
@@ -47,8 +48,6 @@ def test_realtime_audio_output(client: BosonClient, output_path: Path) -> None:
         })
         client._send(ws, {"type": "response.create"})
         while time.monotonic() < deadline:
-            import json
-
             event = json.loads(ws.recv(timeout=max(1, min(10, deadline - time.monotonic()))))
             kind = event.get("type", "")
             if kind == "error":
