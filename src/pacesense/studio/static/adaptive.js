@@ -186,9 +186,15 @@
       if (on === A.voiceMode && !fromMic) return;
       A.voiceMode = on;
       $("#talk-btn").setAttribute("aria-pressed", String(on));
+      // A real click/tap is the browser permission gesture for speech output.
+      if (on) primeSpeech();
       if (on && !fromMic && P.hasMic && !P.voiceOn()) P.startVoice();
       if (!on && P.voiceOn()) P.stopVoice(true);
-      if (on && A.speakOn === null) A.speakOn = true;
+      // Voice conversations speak by default. Respect an explicit user opt-out.
+      if (on && storage.get("pacesense.speak") !== "0") {
+        A.speakOn = true;
+        storage.set("pacesense.speak", "1");
+      } else if (on && A.speakOn === null) A.speakOn = true;
       try {
         const r = await api("POST", `/sessions/${app.sid}/events`, { kind: on ? "voice_on" : "voice_off" });
         apply(r.adapt, { fresh: true });
@@ -241,18 +247,57 @@
       const v = storage.get("pacesense.speak");
       return v === null ? !!ui.speak : v === "1";
     }
-    const TTS = { speaking: false, text: "", endedAt: 0 };
+    const TTS = { speaking: false, text: "", endedAt: 0, error: "" };
+    function preferredVoice() {
+      const voices = speechSynthesis.getVoices();
+      const english = voices.filter((v) => /^en([-_]|$)/i.test(v.lang));
+      // Prefer a locally installed enhanced/natural English voice; fall back to the OS default.
+      return english.find((v) => /natural|neural|enhanced|premium|samantha|aria|jenny|ava|google us english/i.test(v.name))
+        || english.find((v) => /^en[-_]US$/i.test(v.lang)) || english[0] || null;
+    }
+    function primeSpeech() {
+      if (!("speechSynthesis" in window)) return;
+      try {
+        const u = new SpeechSynthesisUtterance(" ");
+        u.volume = 0;
+        speechSynthesis.speak(u);
+        speechSynthesis.cancel();
+      } catch { /* browser speech is optional */ }
+    }
     function say(text) {
-      if (!("speechSynthesis" in window) || !text) return;
+      if (!("speechSynthesis" in window) || !text) {
+        if (text) toast("Spoken replies are not supported by this browser.", "error");
+        return;
+      }
       try {
         speechSynthesis.cancel();
         const vs = (A.adapt && A.adapt.ui && A.adapt.ui.voice_style) || {};
         const u = new SpeechSynthesisUtterance(text.replace(/[“”]/g, ""));
-        u.rate = vs.rate || 1.03; u.lang = "en-US";
-        u.onstart = () => { Object.assign(TTS, { speaking: true, text }); $("#orb").classList.add("speaking"); };
-        u.onend = u.onerror = () => { Object.assign(TTS, { speaking: false, endedAt: performance.now() }); $("#orb").classList.remove("speaking"); };
+        u.lang = "en-US"; u.voice = preferredVoice();
+        u.rate = vs.rate || 1.0; u.pitch = 1.0; u.volume = 1.0;
+        u.onstart = () => {
+          Object.assign(TTS, { speaking: true, text, error: "" });
+          $("#orb").classList.add("speaking");
+          $("#stage-status").textContent = "PaceSense is speaking";
+        };
+        u.onend = () => {
+          Object.assign(TTS, { speaking: false, endedAt: performance.now() });
+          $("#orb").classList.remove("speaking");
+          if (A.voiceMode) $("#stage-status").textContent = "Listening…";
+        };
+        u.onerror = (e) => {
+          Object.assign(TTS, { speaking: false, endedAt: performance.now(), error: e.error || "speech error" });
+          $("#orb").classList.remove("speaking");
+          if (e.error !== "canceled" && e.error !== "interrupted") {
+            $("#stage-status").textContent = "Voice output unavailable — check your browser's speech settings";
+            toast("PaceSense could not play a spoken reply. Check your browser or device voice settings.", "error");
+          }
+        };
         speechSynthesis.speak(u);
-      } catch { /* speech is optional */ }
+      } catch (e) {
+        Object.assign(TTS, { speaking: false, error: String(e) });
+        toast("PaceSense could not start spoken output in this browser.", "error");
+      }
     }
     /** The coach talked over PaceSense: stop speaking at once (they are always allowed to interrupt). */
     function bargeIn() {
@@ -357,11 +402,14 @@
     $("#guide-btn").addEventListener("click", startInterview);
     $("#persona-btn").addEventListener("click", openProfile);
     $("#why-btn").addEventListener("click", openProfile);
+    $("#speak-btn").setAttribute("aria-label", "Toggle spoken replies");
+    $("#speak-btn").title = "Spoken replies: on or off";
     $("#speak-btn").addEventListener("click", () => {
       A.speakOn = !A.speakOn; storage.set("pacesense.speak", A.speakOn ? "1" : "0");
       $("#speak-btn").setAttribute("aria-pressed", String(A.speakOn));
       if (!A.speakOn && "speechSynthesis" in window) speechSynthesis.cancel();
-      toast(A.speakOn ? "Spoken replies on" : "Spoken replies off");
+      if (A.speakOn) { primeSpeech(); say("PaceSense spoken replies are on."); }
+      else toast("Spoken replies off");
     });
     $("#stage-form").addEventListener("submit", (e) => {
       e.preventDefault(); const v = $("#stage-input").value.trim(); if (!v) return;
