@@ -207,7 +207,7 @@ Use only one intent. Do not invent runner IDs or names; choose select_runner onl
         name, args = intent["intent"], intent["arguments"]
         if name == "select_runner":
             return Routed(reply=f"Opening {args['name']} from the existing runner database.",
-                          actions=[{"type": "runner", "id": args["runner_id"]}], used=["ui"])
+                          actions=[{"type": "runner", "id": args["runner_id"], "name": args["name"]}], used=["ui"])
         if name == "runner_database":
             routed = route("open the runner database", live.hud, source)
             for action in routed.actions:
