@@ -101,7 +101,7 @@ class BosonAdapterTests(unittest.TestCase):
             "type": "response.done",
             "response": {"status": "completed", "output": [{
                 "type": "function_call", "call_id": "call-1", "name": "predict",
-                "arguments": "{\\"runner_id\\": \\"R1\\"}",
+                "arguments": '{"runner_id": "R1"}',
             }]},
         }])
         client = BosonClient("test-key")
