@@ -60,9 +60,16 @@ def validate_voice_intent(
                 {"status": "fallback", "confidence": confidence, "evidence": evidence})
     if intent == "runner_database":
         query = _text(args.get("query"), 64)
+        gender = args.get("gender") or ""
+        min_races = args.get("min_races", 0)
         if query and len(query) < 2:
             return _clarify("Please give me at least two letters or a runner ID to search for.", confidence, evidence)
-        return {"status": "action", "intent": intent, "arguments": {"query": query},
+        if gender not in ("", "F", "M"):
+            return _clarify("Should I filter by female or male runners, or show everyone?", confidence, evidence)
+        if (isinstance(min_races, bool) or not isinstance(min_races, int) or not 0 <= min_races <= 20):
+            return _clarify("How many previous marathons should the runner have at minimum?", confidence, evidence)
+        return {"status": "action", "intent": intent,
+                "arguments": {"query": query, "gender": gender, "min_races": min_races},
                 "confidence": confidence, "evidence": evidence}
     if intent == "select_runner":
         target = _text(args.get("runner"), 100).casefold()
