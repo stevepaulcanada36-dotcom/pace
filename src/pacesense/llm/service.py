@@ -94,7 +94,6 @@ class AIService:
         key = api_key or self.env.get("BOSON_API_KEY") or configured_key
         self.key_source = ("browser session" if api_key else
                            "environment" if self.env.get("BOSON_API_KEY") else configured_source)
-        provider = config.get("boson", {})
         if self.offline_forced:
             self.client = None
         elif client is not None:
