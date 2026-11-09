@@ -387,7 +387,7 @@ Use only one intent. Do not invent runner IDs or names; choose select_runner onl
         response = out.get("reply") or ""
         pending = live.engine.pending
         if pending:
-            response += "\\nPaceSense follow-up: " + str(pending.get("message", ""))
+            response += "\nPaceSense follow-up: " + str(pending.get("message", ""))
         live.hud.remember_turn(said, response)
         return out
 
