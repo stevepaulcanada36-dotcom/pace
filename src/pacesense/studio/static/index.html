@@ -213,8 +213,10 @@
 <!-- Runner picker -->
 <dialog id="runner-dialog" class="dialog" aria-labelledby="runner-dialog-h">
   <form method="dialog" class="dialog-inner">
-    <header><h2 id="runner-dialog-h">Open a runner</h2><button class="btn icon ghost" value="close" aria-label="Close">✕</button></header>
-    <input type="search" id="runner-search" placeholder="Search by id or name…" aria-label="Search runners">
+    <header><h2 id="runner-dialog-h">Runner database</h2><button class="btn icon ghost" value="close" aria-label="Close">✕</button></header>
+    <p class="muted small-print">Browse runners already in PaceSense. Search by name or ID, then choose a record. “Known” means you coach or personally know this runner; “unknown” means they are new to you, not new to the database.</p>
+    <p class="muted small-print" id="runner-db-count" aria-live="polite">Loading existing runner records…</p>
+    <input type="search" id="runner-search" placeholder="Search existing runners by ID or name…" aria-label="Search runners">
     <ul class="runner-list" id="runner-list" role="listbox" aria-label="Runners"></ul>
     <fieldset class="segmented cond-choice" id="cond-choice">
       <legend>Do you know this runner? <span class="muted">(the paper's familiar / unfamiliar conditions)</span></legend>
