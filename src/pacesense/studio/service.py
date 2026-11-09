@@ -7,6 +7,7 @@ feedback loop, simulator); the methods here lock that session, call it, and retu
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import time
 from collections.abc import Callable
@@ -191,7 +192,7 @@ Use only one intent. Do not invent runner IDs or names; choose select_runner onl
                     "existing_runner_catalog": catalog}
             result = ai.client.chat(model, [
                 {"role": "system", "content": system},
-                {"role": "user", "content": __import__("json").dumps(user, ensure_ascii=False)},
+                {"role": "user", "content": json.dumps(user, ensure_ascii=False)},
             ], temperature=0.0, json_mode=True)
             payload = parse_json_answer(result.text)
             return validate_voice_intent(payload, rows, can_undo=bool(live.hud.steer._undo),
