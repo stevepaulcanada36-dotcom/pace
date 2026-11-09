@@ -1,4 +1,4 @@
-"""The AI tasks in PaceSense, and which OpenRouter model each one uses.
+"""The AI tasks in PaceSense, and which Boson model each one uses.
 
 Each task has its own model and temperature, so a cheap fast model can fill fields while a stronger model
 answers questions, and the Model lab can compare models task by task. Where a setting comes from, first
@@ -41,20 +41,20 @@ class Task:
 TASKS: dict[str, Task] = {t.key: t for t in (
     Task("assistant", "Ask PaceSense (chat)",
          "Answers questions about runners and plans by calling PaceSense functions. The model must support "
-         "function calling (tools).", "tools", "openai/gpt-4o-mini", 0.2,
-         ("openai/gpt-4o-mini", "google/gemini-2.5-flash", "meta-llama/llama-3.3-70b-instruct")),
+         "function calling (tools).", "tools", "higgs-realtime", 0.2,
+         ("higgs-realtime",)),
     Task("transcribe", "Speech to text",
          "Turns a voice recording into text. Use a transcription model (Whisper-style) or a chat model that "
-         "accepts audio.", "audio", "openai/whisper-1", 0.0,
-         ("openai/whisper-1", "openai/gpt-4o-mini-transcribe", "openai/gpt-4o-transcribe", "google/gemini-2.5-flash")),
+         "accepts audio.", "audio", "higgs-realtime", 0.0,
+         ("higgs-realtime",)),
     Task("extract", "Fill fields",
          "Reads what was said or typed and fills the fields of a form (runner details, plan details, a result). "
-         "Answers in JSON.", "text", "openai/gpt-4o-mini", 0.0,
-         ("openai/gpt-4o-mini", "google/gemini-2.5-flash", "meta-llama/llama-3.3-70b-instruct")),
+         "Answers in JSON.", "text", "higgs-realtime", 0.0,
+         ("higgs-realtime",)),
     Task("refine", "Suggest a refined version",
          "Rewrites the input as a clearer, more precise version without changing its facts, and lists what is "
-         "unclear. You choose whether to use it.", "text", "openai/gpt-4o-mini", 0.3,
-         ("openai/gpt-4o-mini", "google/gemini-2.5-flash", "meta-llama/llama-3.3-70b-instruct")),
+         "unclear. You choose whether to use it.", "text", "higgs-realtime", 0.3,
+         ("higgs-realtime",)),
 )}
 
 
@@ -104,7 +104,7 @@ class ModelSettings:
         if model is not None:
             model = model.strip()
             if model and ("/" not in model or " " in model):
-                raise ValidationError("an OpenRouter model id looks like provider/model, e.g. openai/gpt-4o-mini")
+                raise ValidationError("an Boson model id looks like provider/model, e.g. openai/gpt-4o-mini")
             entry["model"] = model or None
         if temperature is not None:
             if not 0 <= float(temperature) <= 2:
