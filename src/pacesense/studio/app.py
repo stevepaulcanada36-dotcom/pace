@@ -444,8 +444,15 @@ def openapi_document() -> dict:
             "info": {"title": "PaceSense Studio API", "version": __version__,
                      "description": "Case-based marathon prediction you can steer by talking (after Muijlwijk et al., IUI '24)."},
             "paths": {
-                "/api/v1/runners": {"get": {"summary": "Find runners", "parameters": [
-                    {"name": "q", "in": "query", "schema": {"type": "string"}}], "responses": {"200": {"description": "OK"}}}},
+                "/api/v1/runners": {"get": {"summary": "Find and filter existing runners", "parameters": [
+                    {"name": "q", "in": "query", "schema": {"type": "string", "maxLength": 64},
+                     "description": "Optional runner name or ID search."},
+                    {"name": "gender", "in": "query", "schema": {"type": "string", "enum": ["F", "M"]},
+                     "description": "Optional gender filter."},
+                    {"name": "min_races", "in": "query", "schema": {"type": "integer", "minimum": 0, "maximum": 20},
+                     "description": "Minimum number of previous marathons."}],
+                    "responses": {"200": {"description": "Matching existing runner records"},
+                                  "422": {"description": "Invalid filter (problem+json)"}}}},
                 "/api/v1/sessions": {"post": op("Open a runner", "CreateSession", "201", params=False)},
                 S: {"get": op("Session state"), "delete": op("Close a session", ok="204")},
                 S + "/commands": {"post": op("Say or type something", "Command")},
