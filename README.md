@@ -1,6 +1,6 @@
 # PaceSense: interactive marathon prediction, all in Python
 
-See [PaceSense-Guidebook.pdf](PaceSense-Guidebook.pdf) for the project workflow, architecture, OpenRouter setup,
+See [PaceSense-Guidebook.pdf](PaceSense-Guidebook.pdf) for the project workflow, architecture, Boson setup,
 voice pipeline, model evaluation, testing, privacy boundaries and deployment notes.
 
 PaceSense implements the system and study from:
@@ -290,10 +290,10 @@ PaceSense keeps model IDs and temperatures in one file: `config/pacesense.yaml`.
 To configure your OpenRouter key once instead of pasting it into Settings each time:
 
 1. Copy `config/local.example.yaml` to `config/local.yaml`.
-2. Put your key in `config/local.yaml` under `openrouter.api_key`.
+2. Put your key in `config/local.yaml` under `boson.api_key`.
 3. Restart PaceSense.
 
-`config/local.yaml` is ignored by Git and is not included as a real secrets file in the ZIP. **Do not commit or share it**. The key lookup order is temporary key entered in Settings, `OPENROUTER_API_KEY` environment variable, then `config/local.yaml`. You can instead set `PACESENSE_CONFIG_DIR` to point at a different config folder. The public defaults contain no secrets.
+`config/local.yaml` is ignored by Git and is not included as a real secrets file in the ZIP. **Do not commit or share it**. The key lookup order is temporary key entered in Settings, `BOSON_API_KEY` environment variable, then `config/local.yaml`. You can instead set `PACESENSE_CONFIG_DIR` to point at a different config folder. The public defaults contain no secrets.
 
 Local Whisper remains the default voice transcription method, so recordings are transcribed locally. The `transcribe` OpenRouter model is used only if you select OpenRouter transcription or test models in Model lab.
 
@@ -428,61 +428,55 @@ Code: `assistant/intake.py` (checks and corrections, no AI), `assistant/tools.py
 descriptions for the AI), `assistant/chat.py` (the conversation loop and the OpenRouter chat model),
 `assistant/offline.py` (the offline helper), `dashboard/views/assistant.py` (the page).
 
-## AI models through OpenRouter
+## AI models through Boson
 
-All AI calls go through [OpenRouter](https://openrouter.ai): one key, one API, models from many providers.
-There are four AI tasks, and **each has its own model and temperature**, so you can compare models and keep
-the best one for each:
+All hosted AI features use **Boson Higgs Realtime** through Boson's Realtime WebSocket API. PaceSense uses one
+hosted model for assistant chat and function calling, speech transcription, form extraction and refinement.
+Task-specific temperatures remain configurable; the model itself is fixed to `higgs-realtime`.
 
-| Task | Used for | Default model | Environment variable |
-|---|---|---|---|
-| Ask PaceSense (chat) | answering questions with PaceSense functions (needs function calling) | `openai/gpt-4o-mini` | `PACESENSE_MODEL_ASSISTANT` |
-| Speech to text | voice recordings to text | Local `faster-whisper/base` by default; OpenRouter model when selected | `PACESENSE_MODEL_TRANSCRIBE` (OpenRouter mode) |
-| Fill fields | text to form fields, as JSON | `openai/gpt-4o-mini` | `PACESENSE_MODEL_EXTRACT` |
-| Suggest a refined version | a clearer version of the input, facts unchanged | `openai/gpt-4o-mini` | `PACESENSE_MODEL_REFINE` |
+| Task | Used for | Model |
+|---|---|---|
+| Ask PaceSense (chat) | Answering questions with PaceSense functions | `higgs-realtime` |
+| Speech to text | Transcribing voice recordings | `higgs-realtime` (or optional local Whisper fallback) |
+| Fill fields | Turning text into checked form fields | `higgs-realtime` |
+| Suggest a refined version | Rewriting input without changing facts | `higgs-realtime` |
 
-A model set under **Settings › AI models** wins over the environment variable, which wins over the default.
-Temperatures work the same way (`PACESENSE_TEMPERATURE_<TASK>`). The defaults were picked as inexpensive
-starting points; use the Model lab to choose. *Load the model list* in Settings shows every OpenRouter model
-with its price, inputs (text, audio…) and whether it supports function calling.
+### Configure the Boson key
 
-Setup (Windows PowerShell; on macOS/Linux use `export OPENROUTER_API_KEY=...`):
+Set `BOSON_API_KEY` on the server. The key must never be committed to Git or entered into browser-side code.
+
+**Render:** open your PaceSense web service → **Environment** → add `BOSON_API_KEY` with your Boson key as its secret value. The Render Blueprint declares this variable as a secret placeholder. The deployment also sets `PACESENSE_AI=1` to enable the assistant.
+
+**Windows PowerShell (local development):**
 
 ```powershell
 pip install -e ".[dashboard,local-stt]"
-$env:OPENROUTER_API_KEY="sk-or-..."
+$env:BOSON_API_KEY="your-boson-api-key"
 pacesense dashboard --data data\races.csv
 ```
 
-The command above installs the dashboard plus local Whisper support. To install only the dashboard and use OpenRouter transcription instead, use `pip install -e ".[dashboard]"`. No extra package is needed for OpenRouter calls: the client (`llm/openrouter.py`) uses Python's standard library.
-A key can also be pasted under Settings for one browser session; it is never written to the database. The first local transcription downloads the Whisper model. No OpenRouter audio credits are used in local mode.
+**macOS/Linux:**
+
+```bash
+pip install -e ".[dashboard,local-stt]"
+export BOSON_API_KEY="your-boson-api-key"
+pacesense dashboard --data data/races.csv
+```
+
+The Boson client uses the Realtime WebSocket endpoint and the `higgs-realtime` model. The server keeps the
+permanent key; it is not exposed to the browser. If the key is absent, PaceSense falls back to its offline
+assistant and rule-based form handling.
 
 ### Voice input
 
-On **Ask PaceSense** (your question), **Runners** (a new runner), **Plan a race** step 5 (target race, date,
-notes) and **Saved plans** (the finish time), record with the microphone or upload a file:
+On **Ask PaceSense**, **Runners**, **Plan a race** and **Saved plans**, voice recordings can be transcribed,
+then used to fill and refine form fields. Boson voice transcription currently accepts PCM WAV recordings.
+The optional local Whisper fallback can be selected in Settings and requires
+`pip install -e ".[local-stt]"`.
 
-```
-recording ─► Speech to text ─► transcript ─► Fill fields ─► checked fields fill the page
-                                    └──────► Refine ─► suggested clearer version ─► you: "Use it" or "Keep my words"
-```
+### Boson evaluation lab
 
-1. The recording is transcribed as soon as it arrives (once per recording). By default, PaceSense uses local
-   `faster-whisper/base`, which has no per-recording API charge. Install it with `pip install -e ".[local-stt]"`;
-   the model downloads on first use. Choose OpenRouter under Settings if you prefer hosted transcription, which
-   may require credits. Recordings over 25 MB are rejected; trim or compress long recordings and retry.
-2. The fields are filled from the transcript and checked by code (`llm/forms.py`; runners by `assistant/intake.py`),
-   which also corrects formats like `3h33m11` to `3:33:11`. Problems and missing details are listed.
-3. A refined version is suggested. PaceSense compares the numbers and times in it with what you said and warns
-   if any were added or left out. *Use the refined version* fills the fields again from it.
-
-Typed text has the same suggestion: *Suggest a clearer version* (question, plan notes). In local mode, audio is
-processed on the computer after the model has been downloaded. In OpenRouter mode, speech-to-text uses its
-transcription endpoint; a chat model that accepts audio can instead be sent the recording in a chat message.
-
-### Model lab
-
-The **Model lab** page runs the same test cases through several models and scores each answer with code:
+The evaluation lab runs PaceSense's repeatable test cases against the single Boson model and scores the results:
 
 | Task | Built-in cases | Score |
 |---|---|---|
@@ -491,9 +485,8 @@ The **Model lab** page runs the same test cases through several models and score
 | Refine | 4 inputs | keeps every number and time without adding any (0.6) + keeps the key words (0.4) |
 | Speech to text | your own recording + what you said | 1 − word error rate |
 
-A case passes at 0.8. You can add your own case for each task. Results show score, cases passed, errors,
-seconds per case and the cost OpenRouter reported; *Use it* makes the chosen model the task's model. Every run
-is saved in the database and can be downloaded as CSV for your report. Code: `llm/evals.py`,
+A case passes at 0.8. You can add your own case for each task. Results show score, cases passed, errors and
+response time. Provider cost is not currently reported by this integration. Code: `llm/evals.py`,
 `dashboard/views/lab.py`.
 
 ## What the coach sees in the study (Sec. 4.1)
@@ -583,7 +576,7 @@ or without Docker:
 ```bash
 export PACESENSE_DB=/var/lib/pacesense/pacesense.sqlite3 PACESENSE_DATA=/srv/races.csv
 export PACESENSE_ADMIN_TOKEN=$(openssl rand -hex 24)
-export OPENROUTER_API_KEY=sk-or-...            # optional: AI features; models are chosen in Settings
+export OPENROUTER_API_KEY=your-boson-api-key            # optional: AI features; models are chosen in Settings
 streamlit run src/pacesense/dashboard/app.py --server.port 8501
 ```
 
