@@ -91,9 +91,11 @@ class AIService:
         self.offline_forced = self.env.get("PACESENSE_AI", "auto") == "offline"
         config = load_config()
         configured_key, configured_source = boson_api_key(self.env)
-        key = api_key or self.env.get("BOSON_API_KEY") or configured_key
-        self.key_source = ("browser session" if api_key else
-                           "environment" if self.env.get("BOSON_API_KEY") else configured_source)
+        session_key = api_key.strip() if isinstance(api_key, str) else ""
+        environment_key = (self.env.get("BOSON_API_KEY") or "").strip()
+        key = session_key or environment_key or configured_key
+        self.key_source = ("browser session" if session_key else
+                           "environment" if environment_key else configured_source)
         if self.offline_forced:
             self.client = None
         elif client is not None:
