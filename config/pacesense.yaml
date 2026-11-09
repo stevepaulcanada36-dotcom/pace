@@ -1,16 +1,14 @@
 # Central, non-secret PaceSense configuration.
 # Edit model IDs here instead of scattering them through Python files.
-openrouter:
-  base_url: "https://openrouter.ai/api/v1"
-  app_name: "PaceSense"
-  app_url: null
+boson:
+  model: "higgs-realtime"
 
 models:
   assistant:
-    model: "openai/gpt-4o-mini"
+    model: "higgs-realtime"
     temperature: 0.2
   transcribe:
-    model: "openai/whisper-1"
+    model: "higgs-realtime"
     temperature: 0.0
   extract:
     model: "openai/gpt-4o-mini"
@@ -20,7 +18,7 @@ models:
     temperature: 0.3
 
 voice:
-  transcription_backend: "local"
+  transcription_backend: "boson"
   local_whisper_model: "base"
   language: null
 
