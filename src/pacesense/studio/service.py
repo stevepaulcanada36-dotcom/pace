@@ -112,9 +112,10 @@ class StudioService:
         else:
             # Browse the loaded database, not only runners with four or more races.
             records = {r.runner_id: r for r in self.coach.runners}
-            records.update(self.coach._own())
+            own = self.coach._own()
+            records.update(own)
             picks = sorted(records.values(), key=lambda r: r.runner_id)
-            out += [CoachService._summary(r, r.runner_id in self.coach._own()) for r in picks[: limit - len(out)]]
+            out += [CoachService._summary(r, r.runner_id in own) for r in picks[: limit - len(out)]]
         if gender:
             out = [r for r in out if r.get("gender") == gender]
         if min_races:
