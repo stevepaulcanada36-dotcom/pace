@@ -87,8 +87,8 @@ class VoiceIntentExecutionTests(unittest.TestCase):
     def service(self, payload):
         coach = CoachService(helpers.model(), helpers.runners(), Repository(":memory:"))
         service = StudioService(coach, settings=Settings())
-        service.ai_factory = lambda: FakeAI(payload)
         sid, _ = service.create(condition="known")
+        service.ai_factory = lambda: FakeAI(payload)
         return service, sid, coach
 
     def test_voice_runner_search_executes_database_navigation_with_query(self):
