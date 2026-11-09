@@ -120,7 +120,8 @@
       renderFeedFromTurns(r.state);
       adapt(r.state.adapt, { fresh: true });
       runSim();
-    } catch (e) { toast(e.message, "error"); } finally { setBusy(false); }
+      return true;
+    } catch (e) { toast(e.message, "error"); return false; } finally { setBusy(false); }
   }
 
   async function resume() {
@@ -629,15 +630,15 @@
     return queue;
   }
   /** Everything a turn can bring back: new state (sliders animate), a card or reply, UI actions, adaptations. */
-  function applyTurn(r) {
+  async function applyTurn(r) {
     app.changed = new Set((r.card && r.card.items || []).map((it) => r.state.races.findIndex((x) => `${x.event} ${x.year}` === it.race)));
     render(r.state);
     if (r.choice) feed.append(h("li", { class: "uinote choice-note" }, h("span", { text: `You chose: ${r.choice.label}` })));
     if (r.card && r.card.items.length) addCard(r.card);
     else if (r.reply) addReply(r.reply);
-    handleActions(r.actions || [], r.simulation);
-    adapt(r.adapt);
-    if (!(r.simulation)) runSim();
+    const sessionChanged = await handleActions(r.actions || [], r.simulation);
+    if (!sessionChanged) adapt(r.adapt);
+    if (!(r.simulation) && !sessionChanged) runSim();
   }
   async function sendNow(text, source, signals) {
     text = text.trim();
@@ -649,7 +650,7 @@
     try {
       const r = await api("POST", `/sessions/${app.sid}/commands`, { text, source, ...(signals ? { voice: signals } : {}) });
       typing.remove();
-      applyTurn(r);
+      await applyTurn(r);
     } catch (e) {
       typing.remove();
       if (e.status === 404) { toast("That session expired; opening the runner again."); return openRunner("demo"); }
@@ -659,7 +660,8 @@
 
   const PANEL = { races: "#panel-races", prediction: ".kpis", pacing: "#panel-analysis", similar: "#panel-analysis",
     simulator: "#panel-sim", feedback: "#panel-notes", steering: ".kpi-steer", chat: "#panel-notes", log: "#panel-notes" };
-  function handleActions(actions, sim) {
+  async function handleActions(actions, sim) {
+    let sessionChanged = false;
     for (const a of actions) {
       if (a.type === "simulate") { setSim(a); if (sim) { app.sim = sim; renderSim(sim); } focusPanel("#panel-sim"); }
       else if ((a.type === "focus" || a.type === "open") && (PANEL[a.panel] || a.panel === "similar")) {
@@ -667,10 +669,14 @@
         focusPanel(PANEL[a.panel]);
       } else if (a.type === "close" && PANEL[a.panel]) {
         const el = $(PANEL[a.panel]); if (el) el.hidden = true;
-      } else if (a.type === "runner") openRunner(a.id, a.id === "demo" ? null : $("#holdout-check").checked);
+      } else if (a.type === "runner") {
+        sessionChanged = await openRunner(a.id, a.id === "demo" ? null : $("#holdout-check").checked);
+        if (sessionChanged && hooks.speak) hooks.speak(a.name ? `Opened ${a.name}.` : "Runner opened.");
+      }
       else if (a.type === "runner_database") openRunnerDatabase(a.query || "");
       else if (a.type === "reveal") focusPanel("#kpi-acc");
     }
+    return sessionChanged;
   }
   function focusPanel(sel) {
     const el = $(sel); if (!el) return;
