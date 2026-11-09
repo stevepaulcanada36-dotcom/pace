@@ -9,7 +9,7 @@ description = "Interactive case-based marathon prediction and study platform (af
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
-dependencies = ["numpy>=1.24", "pandas>=2.0", "scipy>=1.10", "PyYAML>=6.0"]
+dependencies = ["numpy>=1.24", "pandas>=2.0", "scipy>=1.10", "PyYAML>=6.0", "websockets>=14.2"]
 
 [project.optional-dependencies]
 # The Streamlit dashboard. 1.40 is the oldest Streamlit with every feature the pages use
