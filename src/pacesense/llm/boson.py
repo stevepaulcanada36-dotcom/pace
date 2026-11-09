@@ -9,13 +9,16 @@ import base64
 import io
 import json
 import time
-import wave
 from typing import Any
 
 from .openrouter import ChatResult, LLMError, Transcript, Usage, MAX_AUDIO_BYTES
 
-REALTIME_URL = "wss://api.boson.ai/v1/realtime"
+REALTIME_URL = "wss://api.boson.ai/v1/realtime/"
 MODEL = "higgs-realtime"
+SUPPORTED_AUDIO_FORMATS = {"wav", "wave", "mp3", "m4a", "ogg", "webm", "flac"}
+AUDIO_CHUNK_BYTES = 5 * 1024 * 1024
+MAX_AUDIO_DURATION_S = 60 * 60
+PCM_SAMPLE_RATE = 24000
 
 
 class BosonClient:
@@ -69,14 +72,34 @@ class BosonClient:
             text = message.get("content")
             if isinstance(text, list):
                 text = " ".join(str(x.get("text", "")) for x in text if isinstance(x, dict))
-            item_role = role
-            return {"type": "message", "role": item_role,
+            return {"type": "message", "role": role,
                     "content": [{"type": "input_text" if role == "user" else "text",
                                  "text": str(text or "")}]}
         if role == "tool":
             return {"type": "function_call_output", "call_id": message.get("tool_call_id"),
                     "output": str(message.get("content", ""))}
         return None
+
+    @staticmethod
+    def _require_completed(response: dict, operation: str) -> None:
+        """Do not treat cancelled, incomplete, failed, or unknown response states as success."""
+        status = response.get("status")
+        if status == "completed":
+            return
+        details = response.get("status_details") or {}
+        error = details.get("error") or {}
+        message = error.get("message") or details.get("reason")
+        suffix = f": {message}" if message else ""
+        raise LLMError(f"Boson {operation} did not complete (status: {status or 'unknown'}){suffix}")
+
+    @staticmethod
+    def _response_text(response: dict) -> str:
+        parts = []
+        for item in response.get("output", []):
+            for part in item.get("content", []):
+                if part.get("type") in ("text", "output_text") and part.get("text"):
+                    parts.append(part["text"])
+        return "".join(parts)
 
     def chat(self, model: str, messages: list[dict], *, tools: list[dict] | None = None,
              temperature: float = 0.2, max_tokens: int | None = None,
@@ -135,33 +158,28 @@ class BosonClient:
                     elif kind == "response.output_item.done":
                         item = event.get("item", {})
                         if item.get("type") == "function_call":
-                            calls[item.get("call_id") or item.get("id")] = {
-                                "id": item.get("call_id") or item.get("id"),
-                                "name": item.get("name", ""),
-                                "arguments": item.get("arguments", "{}"),
-                            }
+                            cid = item.get("call_id") or item.get("id")
+                            calls[cid] = {"id": cid, "name": item.get("name", ""),
+                                          "arguments": item.get("arguments", "{}")}
                     elif kind == "response.function_call_arguments.done":
                         cid = event.get("call_id") or event.get("item_id")
-                        calls[cid] = {"id": cid, "name": event.get("name", ""),
-                                      "arguments": event.get("arguments", "{}")}
+                        if cid:
+                            calls[cid] = {"id": cid, "name": event.get("name", ""),
+                                          "arguments": event.get("arguments", "{}")}
                     elif kind == "response.done":
                         response = event.get("response", {})
+                        self._require_completed(response, "chat response")
                         usage_data = response.get("usage") or {}
-                        if response.get("status") == "failed":
-                            details = response.get("status_details") or {}
-                            error = details.get("error") or {}
-                            raise LLMError(str(error.get("message") or "Boson response failed"))
+                        if not output:
+                            output.append(self._response_text(response))
                         for item in response.get("output", []):
                             if item.get("type") == "function_call":
                                 cid = item.get("call_id") or item.get("id")
                                 calls[cid] = {"id": cid, "name": item.get("name", ""),
                                               "arguments": item.get("arguments", "{}")}
-                            for part in item.get("content", []):
-                                if part.get("type") in ("text", "output_text") and not output:
-                                    output.append(part.get("text", ""))
                         break
                 else:
-                    raise LLMError("Boson response timed out")
+                    raise LLMError("Boson chat response timed out")
         except LLMError:
             raise
         except Exception as exc:
@@ -176,36 +194,36 @@ class BosonClient:
         return ChatResult("".join(output), parsed_calls, Usage.from_json(usage_data), time.perf_counter() - t0, MODEL)
 
     @staticmethod
-    def _wav_to_pcm24k(audio: bytes) -> bytes:
+    def _audio_to_pcm24k(audio: bytes, fmt: str = "wav") -> bytes:
+        """Decode supported audio containers and resample to mono, signed 16-bit, 24 kHz PCM."""
         try:
-            import numpy as np
-            with wave.open(io.BytesIO(audio), "rb") as wav:
-                channels, width, rate, frames = (wav.getnchannels(), wav.getsampwidth(),
-                                                 wav.getframerate(), wav.getnframes())
-                raw = wav.readframes(frames)
+            import av
+        except ImportError as exc:
+            raise LLMError("audio conversion requires PyAV; install the PaceSense dashboard or studio dependencies") from exc
+        try:
+            chunks: list[bytes] = []
+            resampler = av.AudioResampler(format="s16", layout="mono", rate=PCM_SAMPLE_RATE)
+            with av.open(io.BytesIO(audio), mode="r") as container:
+                if not container.streams.audio:
+                    raise LLMError("the recording contains no audio stream")
+                for frame in container.decode(audio=0):
+                    chunks.extend(out.to_ndarray().tobytes() for out in resampler.resample(frame))
+                chunks.extend(out.to_ndarray().tobytes() for out in resampler.resample(None))
+        except LLMError:
+            raise
         except Exception as exc:
-            raise LLMError("Boson voice input currently expects a PCM WAV recording") from exc
-        if width == 1:
-            samples = (np.frombuffer(raw, dtype=np.uint8).astype(np.float32) - 128) / 128
-        elif width == 2:
-            samples = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768
-        elif width == 3:
-            b = np.frombuffer(raw, dtype=np.uint8).reshape(-1, 3)
-            vals = b[:, 0].astype(np.int32) | (b[:, 1].astype(np.int32) << 8) | (b[:, 2].astype(np.int32) << 16)
-            vals = (vals ^ 0x800000) - 0x800000
-            samples = vals.astype(np.float32) / 8388608
-        elif width == 4:
-            samples = np.frombuffer(raw, dtype="<i4").astype(np.float32) / 2147483648
-        else:
-            raise LLMError("unsupported WAV sample width")
-        if channels > 1:
-            samples = samples.reshape(-1, channels).mean(axis=1)
-        if rate != 24000 and len(samples):
-            new_len = max(1, round(len(samples) * 24000 / rate))
-            old_x = np.arange(len(samples), dtype=np.float64)
-            new_x = np.linspace(0, max(0, len(samples) - 1), new_len)
-            samples = np.interp(new_x, old_x, samples)
-        return (np.clip(samples, -1, 1) * 32767).astype("<i2").tobytes()
+            raise LLMError(f"could not decode the {fmt.upper()} recording; check that it is a supported, valid audio file") from exc
+        pcm = b"".join(chunks)
+        if not pcm:
+            raise LLMError("the recording contains no decodable audio")
+        if len(pcm) > PCM_SAMPLE_RATE * 2 * MAX_AUDIO_DURATION_S:
+            raise LLMError("the decoded recording is longer than the 60-minute limit")
+        return pcm
+
+    # Backwards-compatible helper retained for callers and existing tests.
+    @staticmethod
+    def _wav_to_pcm24k(audio: bytes) -> bytes:
+        return BosonClient._audio_to_pcm24k(audio, "wav")
 
     def transcribe(self, model: str, audio: bytes, fmt: str = "wav",
                    language: str | None = None) -> Transcript:
@@ -213,11 +231,13 @@ class BosonClient:
             raise LLMError("the recording is empty")
         if len(audio) > MAX_AUDIO_BYTES:
             raise LLMError("the recording is larger than 25 MB")
+        normalized_fmt = fmt.lower().lstrip(".")
+        if normalized_fmt not in SUPPORTED_AUDIO_FORMATS:
+            supported = ", ".join(sorted(SUPPORTED_AUDIO_FORMATS - {"wave"}))
+            raise LLMError(f"unsupported audio format {fmt!r}; supported formats: {supported}")
         if model and model not in (MODEL, "boson/higgs-realtime"):
             raise LLMError(f"unsupported Boson model {model!r}; PaceSense uses {MODEL}")
-        if fmt.lower() not in ("wav", "wave"):
-            raise LLMError("Boson voice transcription requires WAV audio; convert the recording to PCM WAV first")
-        pcm = self._wav_to_pcm24k(audio)
+        pcm = self._audio_to_pcm24k(audio, normalized_fmt)
         t0 = time.perf_counter()
         instructions = "Transcribe the supplied speech exactly. Return only the recognized words, without commentary."
         if language:
@@ -226,9 +246,16 @@ class BosonClient:
             with self._connect() as ws:
                 self._send(ws, {"type": "session.update", "session": {
                     "type": "realtime", "model": MODEL, "output_modalities": ["text"],
-                    "instructions": instructions, "input_audio_format": "pcm16", "turn_detection": None}})
-                self._send(ws, {"type": "input_audio_buffer.append",
-                                "audio": base64.b64encode(pcm).decode("ascii")})
+                    "instructions": instructions,
+                    "audio": {"input": {
+                        "format": {"type": "audio/pcm", "rate": PCM_SAMPLE_RATE},
+                        "turn_detection": None,
+                    }},
+                }})
+                for offset in range(0, len(pcm), AUDIO_CHUNK_BYTES):
+                    chunk = pcm[offset:offset + AUDIO_CHUNK_BYTES]
+                    self._send(ws, {"type": "input_audio_buffer.append",
+                                    "audio": base64.b64encode(chunk).decode("ascii")})
                 self._send(ws, {"type": "input_audio_buffer.commit"})
                 self._send(ws, {"type": "response.create"})
                 output = []
@@ -244,6 +271,10 @@ class BosonClient:
                     elif kind in ("response.output_text.done", "response.text.done") and not output:
                         output.append(event.get("text", ""))
                     elif kind == "response.done":
+                        response = event.get("response", {})
+                        self._require_completed(response, "transcription")
+                        if not output:
+                            output.append(self._response_text(response))
                         break
                 else:
                     raise LLMError("Boson transcription timed out")
@@ -251,4 +282,9 @@ class BosonClient:
             raise
         except Exception as exc:
             raise LLMError(f"Boson voice transcription failed: {exc}") from exc
-        return Transcript("".join(output).strip(), Usage(audio_seconds=len(pcm) / 48000), time.perf_counter() - t0, MODEL, "realtime")
+        return Transcript("".join(output).strip(),
+                          Usage(audio_seconds=len(pcm) / (PCM_SAMPLE_RATE * 2)),
+                          time.perf_counter() - t0, MODEL, "realtime")
+
+
+__all__ = ["BosonClient", "MODEL", "REALTIME_URL", "SUPPORTED_AUDIO_FORMATS"]
