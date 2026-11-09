@@ -94,7 +94,20 @@ class BosonAdapterTests(unittest.TestCase):
         self.assertEqual(result.text, "Hello")
         self.assertEqual((result.usage.prompt_tokens, result.usage.completion_tokens), (3, 2))
         self.assertEqual(socket.sent[0]["type"], "session.update")
+        self.assertEqual(socket.sent[0]["session"]["temperature"], 0.2)
         self.assertEqual(socket.sent[-1]["type"], "response.create")
+        self.assertNotIn("temperature", socket.sent[-1].get("response", {}))
+
+    def test_chat_clamps_temperature_in_session_configuration(self):
+        socket = FakeSocket([{
+            "type": "response.done",
+            "response": {"status": "completed", "output": []},
+        }])
+        client = BosonClient("test-key")
+        client._connect = lambda: socket
+        client.chat("higgs-realtime", [{"role": "user", "content": "hello"}], temperature=2.5)
+        self.assertEqual(socket.sent[0]["session"]["temperature"], 2.0)
+        self.assertNotIn("temperature", socket.sent[-1].get("response", {}))
 
     def test_chat_parses_function_call(self):
         socket = FakeSocket([{
