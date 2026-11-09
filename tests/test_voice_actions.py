@@ -66,6 +66,28 @@ class VoiceIntentValidationTests(unittest.TestCase):
         self.assertEqual(validate_voice_intent(intent("runner_database", {"gender": "X"}), RUNNERS)["status"], "clarify")
         self.assertEqual(validate_voice_intent(intent("runner_database", {"min_races": 21}), RUNNERS)["status"], "clarify")
 
+    def test_panel_action_must_match_the_spoken_open_or_close_verb(self):
+        close_as_open = validate_voice_intent(
+            intent("focus_panel", {"panel": "races"}, evidence=["close the races panel"]),
+            RUNNERS, utterance="close the races panel",
+        )
+        open_as_close = validate_voice_intent(
+            intent("close_panel", {"panel": "races"}, evidence=["open the races panel"]),
+            RUNNERS, utterance="open the races panel",
+        )
+        opened = validate_voice_intent(
+            intent("focus_panel", {"panel": "races"}, evidence=["show the races panel"]),
+            RUNNERS, utterance="show the races panel",
+        )
+        closed = validate_voice_intent(
+            intent("close_panel", {"panel": "races"}, evidence=["hide the races panel"]),
+            RUNNERS, utterance="hide the races panel",
+        )
+        self.assertEqual(close_as_open["status"], "clarify")
+        self.assertEqual(open_as_close["status"], "clarify")
+        self.assertEqual(opened["status"], "action")
+        self.assertEqual(closed["status"], "action")
+
     def test_panel_and_simulation_bounds_are_checked(self):
         self.assertEqual(validate_voice_intent(intent("focus_panel", {"panel": "races"}), RUNNERS)["status"], "action")
         self.assertEqual(validate_voice_intent(intent("focus_panel", {"panel": "secrets"}), RUNNERS)["status"], "clarify")
@@ -349,6 +371,40 @@ class VoiceIntentExecutionTests(unittest.TestCase):
         result = service.command(sid, "I don't know this runner", source="voice")
         self.assertEqual(result["adapt"]["ui"]["condition"], "unknown")
         self.assertEqual(result["actions"], [{"type": "condition", "value": "unknown"}])
+
+    def test_voice_close_panel_is_mapped_to_a_close_action(self):
+        utterance = "hide the races panel"
+        service, sid, _ = self.service(intent(
+            "close_panel", {"panel": "races"}, evidence=[utterance],
+        ))
+        result = service.command(sid, utterance, source="voice")
+        self.assertEqual(result["actions"], [{"type": "close", "panel": "races"}])
+
+    def test_boson_unavailable_simulation_preserves_unspoken_controls(self):
+        service, sid, _ = self.service(intent("none"))
+        service.ai_factory = lambda: SimpleNamespace(online=False)
+        ui_state = {"temp_c": 18, "wind_kmh": 12, "profile": "late_fade"}
+        result = service.command(
+            sid, "simulate at 25 degrees", source="voice",
+            voice={"confidence": 0.95, "ui_state": ui_state},
+        )
+        self.assertEqual(result["actions"], [{
+            "type": "simulate", "temp_c": 25.0, "wind_kmh": 12.0, "profile": "late_fade",
+        }])
+        self.assertEqual(result["simulation"]["summary"]["temp_c"], 25.0)
+
+    def test_boson_unavailable_does_not_guess_temperature_from_hot(self):
+        service, sid, _ = self.service(intent("none"))
+        service.ai_factory = lambda: SimpleNamespace(online=False)
+        result = service.command(
+            sid, "simulate a hot day", source="voice",
+            voice={"confidence": 0.95, "ui_state": {
+                "temp_c": 18, "wind_kmh": 12, "profile": "late_fade",
+            }},
+        )
+        self.assertEqual(result["actions"], [])
+        self.assertIsNone(result["simulation"])
+        self.assertIn("specific temperature", result["reply"])
 
     def test_voice_track_record_navigation_targets_the_profile_section(self):
         utterance = "open the track record"

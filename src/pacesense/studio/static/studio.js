@@ -830,11 +830,11 @@
     const text = voice.buf.join(" ").replace(/\s+/g, " ").trim();
     if (!text) return resetUtterance();
     const now = performance.now(), dur = Math.max(300, now - voice.t0 - hooks.silenceMs()), n = wordsOf(text).length;
-    const confs = voice.conf.filter((c) => c > 0), ended = hooks.tts().endedAt;
+    const confs = voice.conf.filter((c) => Number.isFinite(c) && c >= 0 && c <= 1), ended = hooks.tts().endedAt;
     const signals = {
       wpm: Math.round(n / (dur / 60000)), duration_ms: Math.round(dur), barge_in: voice.barge,
       fillers: (text.match(FILLER_RE) || []).length,
-      confidence: confs.length ? +(confs.reduce((a, b) => a + b, 0) / confs.length).toFixed(2) : undefined,
+      confidence: confs.length ? +Math.min(...confs).toFixed(2) : undefined,
       latency_ms: ended && voice.t0 > ended && voice.t0 - ended < 20000 ? Math.round(voice.t0 - ended) : undefined,
       ui_state: {
         temp_c: Number($("#sim-temp").value),
@@ -866,7 +866,12 @@
         if (!t.trim() || isEcho(t)) continue;
         if (!voice.t0) voice.t0 = performance.now();
         if (hooks.tts().speaking && wordsOf(t).length >= 2) { voice.barge = true; hooks.bargeIn(); }   // talk over it
-        if (res.isFinal) { voice.buf.push(t.trim()); voice.conf.push(res[0].confidence || 0); } else interim += t;
+        if (res.isFinal) {
+          voice.buf.push(t.trim());
+          // Keep a genuine zero: it is a low-confidence transcript, not missing metadata.
+          const confidence = res[0].confidence;
+          if (Number.isFinite(confidence) && confidence >= 0 && confidence <= 1) voice.conf.push(confidence);
+        } else interim += t;
       }
       const shown = [...voice.buf, interim].join(" ").trim();
       if (shown) { input.value = shown; hooks.transcript(shown, false); }

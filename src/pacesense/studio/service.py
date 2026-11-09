@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -277,40 +278,98 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
 
     @staticmethod
     def _voice_route(text: str, source: str, live: Live, intent: dict) -> Routed:
-        """Convert one validated intent into the existing, tested command/action path."""
+        """Convert one validated intent into a structured Studio action; do not re-parse AI output."""
         name, args = intent["intent"], intent["arguments"]
         if name == "select_runner":
             return Routed(reply=f"Opening {args['name']} from the existing runner database.",
                           actions=[{"type": "runner", "id": args["runner_id"], "name": args["name"]}], used=["ui"])
         if name == "runner_database":
-            routed = route("open the runner database", live.hud, source)
-            for action in routed.actions:
-                if action.get("type") == "runner_database":
-                    action["query"] = args["query"]
-                    action["gender"] = args["gender"]
-                    action["min_races"] = args["min_races"]
-            return routed
+            return Routed(
+                reply="Searching the existing runner database.",
+                actions=[{"type": "runner_database", "query": args["query"],
+                          "gender": args["gender"], "min_races": args["min_races"]}],
+                used=["ui"],
+            )
         if name == "set_familiarity":
-            phrase = "I know this runner" if args["condition"] == "known" else "I don't know this runner"
-            return route(phrase, live.hud, source)
+            value = args["condition"]
+            return Routed(
+                reply="Updating how familiar you are with this existing runner.",
+                actions=[{"type": "condition", "value": value}],
+                used=["ui"],
+            )
         if name in ("focus_panel", "close_panel"):
-            verb = "open" if name == "focus_panel" else "close"
-            panel = "track record" if args["panel"] == "record" else args["panel"]
-            return route(f"{verb} {panel}", live.hud, source)
+            action_type = "focus" if name == "focus_panel" else "close"
+            verb = "Opening" if action_type == "focus" else "Closing"
+            return Routed(
+                reply=f"{verb} the {args['panel']} panel.",
+                actions=[{"type": action_type, "panel": args["panel"]}],
+                used=["ui"],
+            )
         if name == "simulate":
-            phrase = f"simulate {args['temp_c']:g} degrees"
-            if args["wind_kmh"]:
-                phrase += f" with {args['wind_kmh']:g} km/h headwind"
-            if args["profile"] == "fast_start":
-                phrase += " and starts too fast"
-            elif args["profile"] == "late_fade":
-                phrase += " and a late fade"
-            return route(phrase, live.hud, source)
+            return Routed(
+                reply="Running the race-day simulation with the validated settings.",
+                actions=[{"type": "simulate", **args}],
+                used=["ui"],
+            )
         if name == "reveal":
             return route("reveal", live.hud, source)
         if name == "undo":
             return route("undo", live.hud, source)
-        return route(text, live.hud, source)
+        return Routed(reply="I couldn't map that request to a supported PaceSense action.", used=["prompt"])
+
+    @staticmethod
+    def _fallback_voice_simulation(text: str, voice_signals: dict | None) -> dict | None:
+        """Safely handle a simple simulation command when Boson is unavailable.
+
+        Only explicitly spoken weather/profile values are changed. Missing values are
+        copied from the browser's current controls; adjectives never become guessed numbers.
+        """
+        actions, _, _ = ui_commands(text)
+        if not any(action.get("type") == "simulate" for action in actions):
+            return None
+
+        signals = voice_signals or {}
+        supplied = signals.get("ui_state") or {}
+        current = {
+            "temp_c": supplied.get("temp_c", 12.0),
+            "wind_kmh": supplied.get("wind_kmh", 0.0),
+            "profile": supplied.get("profile", "on_plan"),
+        }
+        for key, default in (("temp_c", 12.0), ("wind_kmh", 0.0), ("profile", "on_plan")):
+            if current[key] is None:
+                current[key] = default
+
+        temp_match = re.search(
+            r"(?<!\\w)(-?\\d+(?:\\.\\d+)?)\\s*(?:°\\s*c|degrees?(?:\\s+celsius)?|celsius|c\\b)",
+            text, re.IGNORECASE,
+        )
+        wind_match = re.search(
+            r"(?:(\\d+(?:\\.\\d+)?)\\s*(?:km/?h|kph|kilometres?\\s+per\\s+hour|kilometers?\\s+per\\s+hour)\\s*(?:head)?wind|"
+            r"(?:head)?wind\\s*(?:of\\s*)?(\\d+(?:\\.\\d+)?)\\s*(?:km/?h|kph)?)",
+            text, re.IGNORECASE,
+        )
+        profile = current["profile"]
+        if re.search(r"\\b(fast start|starts too fast|start too fast)\\b", text, re.IGNORECASE):
+            profile = "fast_start"
+        elif re.search(r"\\b(late fade|fade late|hits the wall|hit the wall)\\b", text, re.IGNORECASE):
+            profile = "late_fade"
+
+        payload = {
+            "intent": "simulate",
+            "arguments": {
+                "temp_c": float(temp_match.group(1)) if temp_match else current["temp_c"],
+                "wind_kmh": float(wind_match.group(1) or wind_match.group(2)) if wind_match else current["wind_kmh"],
+                "profile": profile,
+            },
+            "confidence": 1.0,
+            "evidence": [text],
+        }
+        from ..hud.voice_actions import validate_voice_intent
+        return validate_voice_intent(
+            payload, [], utterance=text,
+            transcript_confidence=signals.get("confidence"),
+            ui_state=current,
+        )
 
     def _run_command(self, sid: str, live: Live, text: str, source: str, kind: str = "utterance",
                      extra: dict | None = None) -> dict:
@@ -322,15 +381,44 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
             r = Routed(reply=voice_intent["message"], used=["prompt"])
         elif voice_intent and voice_intent.get("status") == "action":
             r = self._voice_route(text, source, live, voice_intent)
-        else:
-            if source == "voice":
-                ui_actions, _, remainder = ui_commands(text)
-                if len(ui_actions) > 1 or (ui_actions and remainder.strip()):
-                    r = Routed(reply="I heard more than one request. Which action should I do first?", used=["prompt"])
+        elif source == "voice":
+            ui_actions, _, remainder = ui_commands(text)
+            if len(ui_actions) > 1 or (ui_actions and remainder.strip()):
+                r = Routed(reply="I heard more than one request. Which action should I do first?", used=["prompt"])
+            elif ui_actions and ui_actions[0].get("type") == "simulate":
+                fallback_intent = self._fallback_voice_simulation(text, voice_signals)
+                if fallback_intent:
+                    voice_intent = fallback_intent
+                    if fallback_intent.get("status") == "clarify":
+                        r = Routed(reply=fallback_intent["message"], used=["prompt"])
+                    elif fallback_intent.get("status") == "action":
+                        r = self._voice_route(text, source, live, fallback_intent)
+                    else:
+                        r = route(text, s, source)
+                else:
+                    r = route(text, s, source)
+            elif any(action.get("type") not in {
+                "runner_database", "condition", "focus", "close", "runner", "reveal"
+            } for action in ui_actions):
+                r = Routed(
+                    reply="That control isn't available in PaceSense Studio yet. I haven't changed anything.",
+                    used=["prompt"],
+                )
+            elif ui_actions and ui_actions[0].get("type") == "runner" and ui_actions[0].get("id") != "demo":
+                target = str(ui_actions[0].get("id") or "")
+                try:
+                    self.coach.runner(target)
+                except Exception:
+                    r = Routed(
+                        reply="I couldn't find that exact runner ID in the existing database. Open the runner database to search.",
+                        used=["prompt"],
+                    )
                 else:
                     r = route(text, s, source)
             else:
                 r = route(text, s, source)
+        else:
+            r = route(text, s, source)
         sim, revealed = None, False
         for a in r.actions:
             if a["type"] == "reveal" and s.truth_s is not None:

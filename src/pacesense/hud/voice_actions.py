@@ -275,9 +275,14 @@ def validate_voice_intent(
         if panel not in STUDIO_PANELS:
             return _clarify("Which PaceSense panel should I open or close?", confidence, evidence)
         if utterance is not None:
-            verbs = r"\b(open|show|display|focus|bring up|pin|close|hide|remove|minimize|minimise)\b"
+            if intent == "focus_panel":
+                verbs = r"\b(open|show|display|focus|bring up|pin)\b"
+                prompt = "Do you want me to open a PaceSense panel?"
+            else:
+                verbs = r"\b(close|hide|remove|minimize|minimise)\b"
+                prompt = "Do you want me to close a PaceSense panel?"
             if not re.search(verbs, utterance, re.IGNORECASE):
-                return _clarify("Do you want me to open or close a PaceSense panel?", confidence, evidence)
+                return _clarify(prompt, confidence, evidence)
             if not any(_contains_phrase(utterance, term) for term in PANEL_TERMS[panel]):
                 return _clarify("I couldn't verify which panel you meant. Please name the panel.", confidence, evidence)
         return {
