@@ -6,14 +6,18 @@ JavaScript, HTML, a committed `.env` file, logs, screenshots, or chat messages.
 
 ## Automated checks
 
-Every push and pull request runs the Python unit-test matrix (Python 3.10, 3.12,
-and 3.13 on Ubuntu and Windows), the quality job (Ruff, mypy, and JavaScript
-syntax checks), the server smoke test, and the Docker build/startup smoke test.
+Pushes, pull requests, and manual workflow dispatches run the Python unit-test
+matrix (Python 3.10, 3.12, and 3.13 on Ubuntu and Windows), followed by the
+quality job (Ruff, mypy, JavaScript syntax checks, and a server smoke test), then
+the Docker build/startup smoke test. Matrix jobs run one at a time and dependent
+jobs run sequentially to limit simultaneous hosted-runner demand. New runs on the
+same branch cancel older in-progress runs.
 
 The optional live Boson test runs in the quality job only when the GitHub Actions
 repository secret `BOSON_API_KEY` is configured. It checks a real Realtime
 WebSocket text response and audio response. It writes the returned audio to a
-temporary WAV file and does not print the key.
+temporary WAV file and does not print the key. If the secret is absent, the step
+reports a clear skip rather than failing the rest of the workflow.
 
 ## Run the live test locally
 
