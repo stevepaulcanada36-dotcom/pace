@@ -635,7 +635,7 @@
     render(r.state);
     if (r.choice) feed.append(h("li", { class: "uinote choice-note" }, h("span", { text: `You chose: ${r.choice.label}` })));
     if (r.card && r.card.items.length) addCard(r.card);
-    else if (r.reply) addReply(r.reply);
+    else if (r.reply && !(r.actions || []).some((a) => a.type === "runner")) addReply(r.reply);
     const sessionChanged = await handleActions(r.actions || [], r.simulation);
     if (!sessionChanged) adapt(r.adapt);
     if (!(r.simulation) && !sessionChanged) runSim();
@@ -671,7 +671,11 @@
         const el = $(PANEL[a.panel]); if (el) el.hidden = true;
       } else if (a.type === "runner") {
         sessionChanged = await openRunner(a.id, a.id === "demo" ? null : $("#holdout-check").checked);
-        if (sessionChanged && hooks.speak) hooks.speak(a.name ? `Opened ${a.name}.` : "Runner opened.");
+        if (sessionChanged) {
+          const confirmation = a.name ? `Opened ${a.name}.` : "Runner opened.";
+          addReply(confirmation);
+          if (hooks.speak) hooks.speak(confirmation);
+        } else addReply("I couldn't open that runner. Please choose an existing record from the database.");
       }
       else if (a.type === "runner_database") openRunnerDatabase(a.query || "", { gender: a.gender || "", min_races: a.min_races || 0 });
       else if (a.type === "reveal") focusPanel("#kpi-acc");
