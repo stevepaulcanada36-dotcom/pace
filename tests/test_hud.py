@@ -38,6 +38,24 @@ class CommandParsingTests(unittest.TestCase):
         self.assertEqual(ui_commands("open runner R00042")[0], [{"type": "runner", "id": "R00042"}])
         self.assertEqual(types(ui_commands("reset the layout")[0]), ["layout"])
 
+    def test_runner_database_and_familiarity_commands(self):
+        a, said, rest = ui_commands("open the runner database")
+        self.assertEqual(a, [{"type": "runner_database"}])
+        self.assertEqual(rest, "")
+        self.assertIn("existing runner database", said[0])
+
+        a, _, rest = ui_commands("I don't know this runner")
+        self.assertEqual(a, [{"type": "condition", "value": "unknown"}])
+        self.assertEqual(rest, "")
+
+        a, _, rest = ui_commands("I know this runner")
+        self.assertEqual(a, [{"type": "condition", "value": "known"}])
+        self.assertEqual(rest, "")
+
+        a, _, rest = ui_commands("this runner is new to me")
+        self.assertEqual(a, [{"type": "condition", "value": "unknown"}])
+        self.assertEqual(rest, "")
+
     def test_race_talk_is_left_for_the_interpreter(self):
         a, _, rest = ui_commands("2016 was a hot day and she was injured")
         self.assertEqual(a, [])
