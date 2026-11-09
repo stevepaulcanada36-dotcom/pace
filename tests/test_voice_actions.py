@@ -124,7 +124,7 @@ class VoiceIntentExecutionTests(unittest.TestCase):
         service, sid, _ = self.service(intent("simulate", {"temp_c": 25, "wind_kmh": 10, "profile": "on_plan"}))
         result = service.command(sid, "simulate at 25 degrees and 10 km/h headwind", source="voice")
         self.assertEqual(result["simulation"]["summary"]["temp_c"], 25.0)
-        self.assertEqual(result["simulation"]["summary"]["wind_kmh"], 10.0)
+        self.assertEqual(result["actions"][0]["wind_kmh"], 10.0)
 
     def test_voice_runner_selection_uses_verified_database_id(self):
         service, sid, coach = self.service(intent("none"))
