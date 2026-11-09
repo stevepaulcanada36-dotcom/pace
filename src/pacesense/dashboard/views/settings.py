@@ -4,7 +4,6 @@ from __future__ import annotations
 import streamlit as st
 
 from ...domain import ValidationError
-from ...llm.openrouter import LLMError
 from ...llm.tasks import TASKS
 from .. import ui
 
@@ -66,7 +65,7 @@ def ai_models() -> None:
     for key, task in TASKS.items():
         cur = ai.settings.get(key)
         with st.container(border=True):
-            st.markdown(f"**{task.title}**  \\n{task.what}")
+            st.markdown(f"**{task.title}**  \n{task.what}")
             st.caption(f"Model: higgs-realtime · settings source: {cur['source']}")
             a, b = st.columns([2, 1])
             temp = a.number_input("Temperature", min_value=0.0, max_value=2.0,
