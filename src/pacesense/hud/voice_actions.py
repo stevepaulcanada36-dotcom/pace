@@ -239,9 +239,7 @@ def _compound_action_conflict(utterance: str, intent: str) -> bool:
             categories.add("assistant_question")
 
         database_cue = bool(_DATABASE_ACTION_RE.search(clause))
-        if _SEARCH_ACTION_RE.search(clause) and (
-            intent == "runner_database" or re.search(r"\b(?:runner|runners)\b", clause, re.IGNORECASE)
-        ):
+        if _SEARCH_ACTION_RE.search(clause):
             database_cue = True
         if intent == "runner_database" and re.search(
             r"\b(?:show|view|browse|search|find|filter|list)\b", clause, re.IGNORECASE
