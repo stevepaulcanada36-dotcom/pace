@@ -289,15 +289,15 @@ def _compound_action_conflict(utterance: str, intent: str) -> bool:
         if len({round(float(value), 2) for value in temperatures}) > 1:
             return True
         winds = re.findall(
-            r"(?<!\\w)(\\d+(?:\\.\\d+)?)\\s*(?:km/?h|kph|kilometres? per hour|kilometers? per hour)",
+            r"(?<!\w)(\d+(?:\.\d+)?)\s*(?:km/?h|kph|kilometres? per hour|kilometers? per hour)",
             utterance, re.IGNORECASE,
         )
         if len({round(float(value), 2) for value in winds}) > 1:
             return True
         profiles = set()
-        if re.search(r"\\b(?:fast start|starts too fast|start too fast)\\b", utterance, re.IGNORECASE):
+        if re.search(r"\b(?:fast start|starts too fast|start too fast)\b", utterance, re.IGNORECASE):
             profiles.add("fast_start")
-        if re.search(r"\\b(?:late fade|fade late|hits the wall|hit the wall)\\b", utterance, re.IGNORECASE):
+        if re.search(r"\b(?:late fade|fade late|hits the wall|hit the wall)\b", utterance, re.IGNORECASE):
             profiles.add("late_fade")
         if len(profiles) > 1:
             return True
