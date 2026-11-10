@@ -87,6 +87,7 @@ class VoiceIntentValidationTests(unittest.TestCase):
         )
         self.assertEqual(unfamiliar["arguments"]["condition"], "unknown")
         self.assertEqual(known["arguments"]["condition"], "known")
+
     def test_runner_search_preserves_query(self):
         r = validate_voice_intent(intent("runner_database", {"query": "Jamie Lee"}), RUNNERS)
         self.assertEqual(r["arguments"]["query"], "Jamie Lee")
