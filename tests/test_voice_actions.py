@@ -104,6 +104,7 @@ class VoiceIntentValidationTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "clarify")
         self.assertIn("different minimum", result["message"])
+
     def test_panel_action_must_match_the_spoken_open_or_close_verb(self):
         close_as_open = validate_voice_intent(
             intent("focus_panel", {"panel": "races"}, evidence=["close the races panel"]),
@@ -208,6 +209,7 @@ class VoiceIntentValidationTests(unittest.TestCase):
             RUNNERS, utterance=utterance,
         )
         self.assertEqual(result["status"], "clarify")
+
     def test_simulation_may_open_its_own_panel(self):
         utterance = "simulate at 25 degrees and open the simulator"
         result = validate_voice_intent(
