@@ -122,7 +122,10 @@ _REVEAL_ACTION_RE = re.compile(
     re.IGNORECASE,
 )
 _UNDO_ACTION_RE = re.compile(r"\bundo\b", re.IGNORECASE)
-_QUESTION_ACTION_RE = re.compile(r"\b(?:ask|explain|tell me|what|why|how)\b", re.IGNORECASE)
+_QUESTION_ACTION_RE = re.compile(r"\b(?:ask|explain|tell me|describe)\b", re.IGNORECASE)
+_QUESTION_START_RE = re.compile(r"^\s*(?:what|why|how)\b", re.IGNORECASE)
+_WHAT_IF_RE = re.compile(r"^\s*what\s+if\b", re.IGNORECASE)
+_REVEAL_QUESTION_RE = re.compile(r"^\s*how\s+(?:close|accurate)\b", re.IGNORECASE)
 _DATABASE_ACTION_RE = re.compile(
     r"\b(?:database|directory|roster)\b|\bshow\s+(?:me\s+)?(?:all|female|male)?\s+runners?\b",
     re.IGNORECASE,
@@ -211,7 +214,9 @@ def _compound_action_conflict(utterance: str, intent: str) -> bool:
             categories.add("reveal")
         if _UNDO_ACTION_RE.search(clause):
             categories.add("undo")
-        if _QUESTION_ACTION_RE.search(clause):
+        if (_QUESTION_ACTION_RE.search(clause)
+                or (_QUESTION_START_RE.search(clause) and not _WHAT_IF_RE.search(clause)
+                    and not (intent == "reveal" and _REVEAL_QUESTION_RE.search(clause)))):
             categories.add("assistant_question")
 
         database_cue = bool(_DATABASE_ACTION_RE.search(clause))
