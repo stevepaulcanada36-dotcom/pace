@@ -342,6 +342,25 @@ class VoiceIntentExecutionTests(unittest.TestCase):
         self.assertEqual(live.hud.history[-2]["content"], utterance)
         self.assertIn("leg injury", live.hud.history[-1]["content"])
 
+    def test_intent_classifier_runs_for_paraphrases_but_not_for_race_comments(self):
+        service, sid, _ = self.service(intent("none"))
+        live = service.sessions.entry(sid).value
+        seen = []
+        original = service._interpret_voice_intent
+
+        def spy(text, live_, signals):
+            seen.append(text)
+            return original(text, live_, signals)
+
+        service._interpret_voice_intent = spy
+        race = live.hud.steer.races[0]
+        service.command(sid, f"{race['event']} {race['year']} should count for less", source="voice")
+        self.assertEqual(seen, [])                       # one steering call, no second classifier call
+        service.command(sid, "could you look up Jamie Lee for me", source="voice")
+        self.assertEqual(seen, ["could you look up Jamie Lee for me"])
+        service.command(sid, "could you look up Jamie Lee for me", source="typed")
+        self.assertEqual(len(seen), 1)                   # typed text never uses the voice classifier
+
     def test_voice_action_confirmation_is_deferred_until_execution(self):
         service, sid, _ = self.service(intent(
             "focus_panel", {"panel": "races"}, evidence=["show the races panel"],

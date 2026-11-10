@@ -378,16 +378,33 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
             ui_state=current,
         )
 
+    @staticmethod
+    def _is_race_comment(text: str, live: Live) -> bool:
+        """True when the utterance names one of the current runner's races and is not a UI command."""
+        if ui_commands(text)[0]:
+            return False
+        lowered = text.casefold()
+        for race in getattr(live.hud.steer, "races", ()) or ():
+            event = str(race.get("event") or "").casefold()
+            if event and event in lowered:
+                return True
+            year = race.get("year")
+            if year is not None and re.search(rf"(?<!\d){int(year)}(?!\d)", text):
+                return True
+        return False
+
     def _run_command(self, sid: str, live: Live, text: str, source: str, kind: str = "utterance",
                      extra: dict | None = None) -> dict:
         s = live.hud
         s.assistant_context = self._assistant_context(live)
         voice_signals = (extra or {}).get("voice") or {}
-        # Race-weight language is handled by the validated steering interpreter below.
-        # Reserve this separate classifier for explicit UI actions to avoid two Boson calls
-        # for one spoken race comment.
-        has_ui_command = bool(ui_commands(text)[0])
-        voice_intent = self._interpret_voice_intent(text, live, voice_signals) if source == "voice" and has_ui_command else None
+        # A spoken comment about one of this runner's races is handled by the validated steering
+        # interpreter below, so skip the separate intent classifier for it and avoid two Boson calls
+        # for one sentence. Everything else spoken (runner search, navigation, paraphrased controls)
+        # still goes through the classifier; gating it on the fixed-phrase parser would switch the
+        # classifier off for exactly the paraphrases it exists to understand.
+        voice_intent = (self._interpret_voice_intent(text, live, voice_signals)
+                        if source == "voice" and not self._is_race_comment(text, live) else None)
         if voice_intent and voice_intent.get("status") == "clarify":
             r = Routed(reply=voice_intent["message"], used=["prompt"])
         elif voice_intent and voice_intent.get("status") == "action":
