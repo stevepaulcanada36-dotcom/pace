@@ -208,7 +208,14 @@ def _compound_action_conflict(utterance: str, intent: str) -> bool:
     for clause in clauses:
         categories: set[str] = set()
         panels: set[str] = set()
-        panel_terms = _COMPOUND_PANEL_TERMS if intent == "runner_database" else PANEL_TERMS
+        panel_terms = PANEL_TERMS
+        if intent == "runner_database":
+            panel_terms = _COMPOUND_PANEL_TERMS
+            if not re.search(r"\b(?:runner|runners)\b", clause, re.IGNORECASE):
+                panel_terms = {
+                    **_COMPOUND_PANEL_TERMS,
+                    "races": (*_COMPOUND_PANEL_TERMS["races"], "race", "races"),
+                }
         if _PANEL_ACTION_RE.search(clause):
             panels = {
                 key for key, terms in panel_terms.items()
