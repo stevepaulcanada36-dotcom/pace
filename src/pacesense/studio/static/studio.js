@@ -843,6 +843,15 @@
       },
     };
     resetUtterance();
+    if (signals.confidence != null && signals.confidence < 0.55) {
+      // Do not silently apply a potentially misheard race name or year.
+      // Leave the transcript editable so the coach can correct it before sending.
+      $("#notes-input").value = text;
+      hooks.transcript(text, false);
+      toast("I may have misheard that. Please correct the transcript, then press Send.", "error");
+      $("#notes-input").focus();
+      return;
+    }
     $("#notes-input").value = "";
     hooks.transcript("", true, text);
     send(text, "voice", signals);
@@ -857,7 +866,7 @@
       return;
     }
     voice.rec = rec; voice.on = true; resetUtterance();
-    rec.lang = "en-US"; rec.continuous = true; rec.interimResults = true;
+    rec.lang = "en-CA"; rec.continuous = true; rec.interimResults = true;
     const input = $("#notes-input");
     rec.onresult = (e) => {
       let interim = "";
