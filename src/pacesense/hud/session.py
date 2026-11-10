@@ -41,7 +41,7 @@ class HudSession:
     runner_id: str
     holdout: bool = False
     ai: object | None = None            # AIService (offline unless a key is configured)
-    ai_reader: bool = False             # let the AI read paraphrases for the sliders (checked by code)
+    ai_reader: bool = True              # use validated AI interpretation for natural-language race steering
     truth_s: float | None = field(init=False, default=None)
     truth_label: str = field(init=False, default="")
     revealed: bool = field(init=False, default=False)
