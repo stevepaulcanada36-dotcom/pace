@@ -236,7 +236,7 @@ Allowed intents only:
 - reveal or undo: {}
 - none: {}
 Rules:
-Interpret the transcript, not assumptions. Use only one intent. A question about data is not a UI action: use none unless the coach explicitly asks to open, close, search, filter, select, simulate, reveal or undo. For runner_database, query contains only an actual name or ID spoken by the coach; set gender or min_races only when explicitly requested. Do not treat familiar/unfamiliar/known/unknown as database filters: familiarity applies only to the currently selected runner. Never omit or invent a filter. For select_runner, require an explicit request to open/load/switch/select one name or ID actually spoken by the coach. The supplied catalog is only a preview; the local validator checks the full database. Never invent an ID or name. Both familiar and unfamiliar runners already exist in the database. Familiarity means whether the coach personally knows the currently selected runner; unfamiliar never means create a runner or add race data. If another runner is named for a familiarity change, include it in runner; do not change a different active runner. For simulate, use current_ui_state for every condition the coach did not explicitly change; never invent temperature, wind or pacing conditions. Unsupported, ambiguous or incomplete requests must use none and explain one focused clarification. Confidence is your estimate that intent and arguments match the actual words. Evidence must quote or closely identify words actually spoken. Never execute an action; local validation and the application do that separately."""
+Interpret the transcript, not assumptions. Use only one intent. A question about data is not a UI action: use none unless the coach explicitly asks to open, close, search, filter, select, simulate, reveal or undo. For runner_database, query contains only an actual name or ID spoken by the coach; set gender or min_races only when explicitly requested. Do not treat familiar/unfamiliar/known/unknown as database filters: familiarity applies only to the currently selected runner. Never omit or invent a filter. For select_runner, require an explicit request to open/load/switch/select one name or ID actually spoken by the coach. The supplied catalog is only a preview; the local validator checks the full database. Never invent an ID or name. Both familiar and unfamiliar runners already exist in the database. Familiarity means whether the coach personally knows the currently selected runner; unfamiliar never means create a runner or add race data. If another runner is named for a familiarity change, include it in runner; do not change a different active runner. When selecting a different runner, do not copy the current runner's familiarity: the UI asks the coach again. For simulate, use current_ui_state for every condition the coach did not explicitly change; never invent temperature, wind or pacing conditions. Unsupported, ambiguous or incomplete requests must use none and explain one focused clarification. Confidence is your estimate that intent and arguments match the actual words. Evidence must quote or closely identify words actually spoken. Never execute an action; local validation and the application do that separately."""
             signals = voice_signals or {}
             state = signals.get("ui_state") or {}
             current_runner = self.coach.runner(live.hud.runner_id)
@@ -282,8 +282,18 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
         """Convert one validated intent into a structured Studio action; do not re-parse AI output."""
         name, args = intent["intent"], intent["arguments"]
         if name == "select_runner":
-            return Routed(reply=f"Opening {args['name']} from the existing runner database.",
-                          actions=[{"type": "runner", "id": args["runner_id"], "name": args["name"]}], used=["ui"])
+            # Familiarity belongs to the selected runner/session. Never carry the previous runner's
+            # known/unknown choice across a voice-driven switch; ask again for a different runner.
+            condition = (
+                live.engine.ctx.session.condition
+                if args["runner_id"] == live.hud.runner_id else "ask"
+            )
+            return Routed(
+                reply=f"Opening {args['name']} from the existing runner database.",
+                actions=[{"type": "runner", "id": args["runner_id"], "name": args["name"],
+                          "condition": condition}],
+                used=["ui"],
+            )
         if name == "runner_database":
             return Routed(
                 reply="Searching the existing runner database.",
