@@ -110,7 +110,6 @@ def _exact_runner(target: str, runners: Iterable[dict[str, Any]]) -> list[dict[s
     ]
 
 
-
 _ACTION_SPLIT_RE = re.compile(r"\s*(?:[;,]|\b(?:and\s+then|then|and|also|but)\b)\s*", re.IGNORECASE)
 _PANEL_ACTION_RE = re.compile(r"\b(?:open|show|display|focus|bring\s+up|pin|close|hide|remove|minimi[sz]e)\b", re.IGNORECASE)
 _PANEL_OPEN_RE = re.compile(r"\b(?:open|show|display|focus|bring\s+up|pin)\b", re.IGNORECASE)
