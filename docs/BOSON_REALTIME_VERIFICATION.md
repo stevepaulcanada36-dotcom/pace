@@ -45,17 +45,29 @@ paste a production key into a terminal transcript that is being recorded.
 
 ## Current browser voice path
 
-The Studio browser voice control currently uses the browser's
-`SpeechRecognition` / `webkitSpeechRecognition` interface to produce text and
-then submits that text to the PaceSense command API. Speech playback is handled
-by the browser. This is browser speech recognition, not a direct microphone
-audio stream to Boson Realtime.
+The Studio voice control uses two things together:
 
-The Python Boson adapter supports server-side WebSocket chat and uploaded-audio
-transcription. A direct browser microphone stream requires a separately designed
-authenticated, bounded-lifetime audio relay (or a documented Boson client-secret
-flow). Do not expose the permanent API key to the browser. Do not describe the
-current browser voice path as direct Boson microphone streaming.
+1. The browser's `SpeechRecognition` / `webkitSpeechRecognition` interface paces the turn (it
+   detects when the coach starts and stops speaking) and produces a provisional transcript.
+2. On desktop browsers, when a Boson key is configured, the microphone is also captured as PCM.
+   When the coach pauses, that utterance is sent as a 16 kHz mono WAV to
+   `POST /api/v1/sessions/{sid}/transcribe`. The server asks Boson (`higgs-stt-3.1` input
+   transcription inside a Higgs Realtime session) for the transcript, and the browser uses it in
+   place of its own text.
+
+Browser recognition is the fallback: if Boson does not answer within 7 seconds, returns nothing,
+or fails twice in a row, the browser's transcript is used and Boson transcription is switched off
+for that page. Speech playback is still the browser's speech synthesis. The permanent API key
+never reaches the browser. This is per-utterance upload, not a live microphone stream to Boson.
+
+## Protocol notes (Higgs Realtime differs from OpenAI Realtime)
+
+- Boson sends nothing on connect. It acknowledges the first `session.update` with
+  `session.created`; the adapter accepts `session.created` or `session.updated`.
+- `response.create` is sent bare. A `response` body makes the model ignore the conversation.
+- `tool_choice` is only sent as `"auto"`, together with tools.
+- `input_audio_buffer.append` accepts at most 1 MiB of base64 per event, so audio is sent in
+  512 KiB chunks.
 
 ## Release gate
 

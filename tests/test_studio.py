@@ -224,5 +224,59 @@ class ApiTests(unittest.TestCase):
         self.assertEqual([round(w, 6) for w in again.plan.weights], [round(w, 6) for w in ex["final"]["weights"]])
 
 
+class TranscribeApiTests(unittest.TestCase):
+    """POST /sessions/{sid}/transcribe: Boson's transcript of one utterance, with the browser as the fallback."""
+
+    class FakeAI:
+        online = True
+
+        def __init__(self, text="reduce the weight for Rotterdam 2014", fail=False):
+            self.text, self.fail, self.calls = text, fail, []
+
+        def transcribe(self, audio, fmt="wav"):
+            self.calls.append((len(audio), fmt))
+            if self.fail:
+                raise RuntimeError("Boson Realtime did not acknowledge the session configuration")
+            from types import SimpleNamespace
+            return SimpleNamespace(text=self.text)
+
+    def make(self, ai=None):
+        coach = CoachService(helpers.model(), helpers.runners(), Repository(":memory:"))
+        service = StudioService(coach, settings=Settings(), ai_factory=(lambda: ai) if ai else None)
+        client = Client(create_app(service))
+        sid = client.post("/api/v1/sessions", json={}).json()["id"]
+        return client, sid
+
+    def send(self, client, sid, data=b"RIFFxxxxWAVE", content_type="audio/wav"):
+        return client.request("POST", f"/api/v1/sessions/{sid}/transcribe", data=data, content_type=content_type)
+
+    def test_returns_the_boson_transcript(self):
+        ai = self.FakeAI()
+        client, sid = self.make(ai)
+        r = self.send(client, sid, content_type="audio/wav; codecs=1")
+        self.assertEqual(r.status, 200)
+        self.assertEqual(r.json()["text"], "reduce the weight for Rotterdam 2014")
+        self.assertEqual(r.json()["source"], "boson")
+        self.assertEqual(ai.calls, [(12, "wav")])
+
+    def test_provider_failure_is_a_soft_fallback_not_an_error(self):
+        client, sid = self.make(self.FakeAI(fail=True))
+        r = self.send(client, sid)
+        self.assertEqual(r.status, 200)
+        self.assertEqual((r.json()["text"], r.json()["available"], r.json()["source"]), ("", True, "none"))
+
+    def test_without_a_key_it_reports_unavailable(self):
+        client, sid = self.make()
+        r = self.send(client, sid)
+        self.assertEqual((r.status, r.json()["available"]), (200, False))
+
+    def test_rejects_bad_uploads(self):
+        client, sid = self.make(self.FakeAI())
+        self.assertEqual(self.send(client, sid, data=b"").status, 400)
+        self.assertEqual(self.send(client, sid, content_type="text/plain").status, 415)
+        self.assertEqual(self.send(client, sid, data=b"0" * (4 * 1024 * 1024 + 1)).status, 413)
+        self.assertEqual(self.send(client, "nope").status, 404)
+
+
 if __name__ == "__main__":
     unittest.main()

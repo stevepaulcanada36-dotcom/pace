@@ -24,10 +24,11 @@ class Client:
     def __init__(self, app) -> None:
         self.app = app
 
-    def request(self, method: str, path: str, json=None, headers: dict | None = None) -> Resp:
+    def request(self, method: str, path: str, json=None, headers: dict | None = None,
+                data: bytes | None = None, content_type: str = "application/json") -> Resp:
         path, _, query = path.partition("?")
-        body = b"" if json is None else _json.dumps(json).encode()
-        hdrs = [(b"host", b"test"), (b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]
+        body = data if data is not None else (b"" if json is None else _json.dumps(json).encode())
+        hdrs = [(b"host", b"test"), (b"content-type", content_type.encode()), (b"content-length", str(len(body)).encode())]
         hdrs += [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()]
         scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": method, "scheme": "http",
                  "path": path, "raw_path": path.encode(), "query_string": query.encode(), "root_path": "",

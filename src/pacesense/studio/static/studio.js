@@ -842,7 +842,19 @@
         profile: ($('input[name="profile"]:checked') || {}).value || "on_plan",
       },
     };
+    const startedAt = voice.t0;
     resetUtterance();
+    // Prefer Boson's transcript of the recorded audio; the browser's text stays as the fallback.
+    const wav = sttReady() ? utteranceWav(startedAt - STT_LEAD_MS) : null;
+    if (wav) {
+      $("#notes-input").value = text; hooks.transcript(text, false);
+      voice.stt = (voice.stt || Promise.resolve()).then(() => deliverWithBoson(text, signals, wav)).catch(() => deliverUtterance(text, signals));
+      return;
+    }
+    deliverUtterance(text, signals);
+  }
+  /** Apply one finished utterance: hold a low-confidence browser transcript for correction, otherwise send it. */
+  function deliverUtterance(text, signals) {
     if (signals.confidence != null && signals.confidence < 0.55) {
       // Do not silently apply a potentially misheard race name or year.
       // Leave the transcript editable so the coach can correct it before sending.
@@ -857,6 +869,96 @@
     hooks.transcript("", true, text);
     send(text, "voice", signals);
   }
+  // ---- Boson transcription of the utterance audio --------------------------------------------
+  // The microphone is also captured as PCM. When the coach pauses, the audio of that utterance is sent to
+  // the server, which asks Boson to transcribe it. Browser recognition still paces the turn and remains the
+  // fallback: if Boson is slow, unavailable or unsure, the browser's text is used exactly as before.
+  const STT_LEAD_MS = 2000, STT_KEEP_MS = 45000, STT_MAX_S = 30, STT_RATE = 16000, STT_TIMEOUT_MS = 7000;
+  const cap = { ctx: null, node: null, src: null, stream: null, chunks: [], rate: 48000, fails: 0, off: false };
+  const sttReady = () => !cap.off && !!cap.ctx && cap.chunks.length > 0 && !!(app.st && app.st.ai);
+  async function startCapture() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (cap.ctx || cap.off || !AC || !navigator.mediaDevices || !(app.st && app.st.ai)) return;
+    if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) return;   // phones cannot share the microphone with recognition
+    try {
+      cap.stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+      if (!voice.on) { cap.stream.getTracks().forEach((t) => t.stop()); cap.stream = null; return; }
+      cap.ctx = new AC(); cap.rate = cap.ctx.sampleRate; cap.chunks = [];
+      cap.src = cap.ctx.createMediaStreamSource(cap.stream);
+      cap.node = cap.ctx.createScriptProcessor(4096, 1, 1);
+      cap.node.onaudioprocess = (e) => {
+        const now = performance.now();
+        cap.chunks.push({ t: now, data: new Float32Array(e.inputBuffer.getChannelData(0)) });
+        while (cap.chunks.length && cap.chunks[0].t < now - STT_KEEP_MS) cap.chunks.shift();
+      };
+      const mute = cap.ctx.createGain(); mute.gain.value = 0;              // keep the graph running without playback
+      cap.src.connect(cap.node); cap.node.connect(mute); mute.connect(cap.ctx.destination);
+    } catch { stopCapture(); cap.off = true; }
+  }
+  function stopCapture() {
+    try { if (cap.node) { cap.node.onaudioprocess = null; cap.node.disconnect(); } } catch { /* ignore */ }
+    try { if (cap.src) cap.src.disconnect(); } catch { /* ignore */ }
+    try { if (cap.stream) cap.stream.getTracks().forEach((t) => t.stop()); } catch { /* ignore */ }
+    try { if (cap.ctx) cap.ctx.close(); } catch { /* ignore */ }
+    Object.assign(cap, { ctx: null, node: null, src: null, stream: null, chunks: [] });
+  }
+  /** The captured audio since `fromMs` (performance.now clock) as a 16 kHz mono 16-bit WAV, or null. */
+  function utteranceWav(fromMs) {
+    const parts = cap.chunks.filter((c) => c.t >= fromMs);
+    let total = parts.reduce((n, c) => n + c.data.length, 0);
+    if (total < cap.rate * 0.3) return null;                              // under 0.3 s: nothing worth sending
+    const max = Math.floor(cap.rate * STT_MAX_S);
+    const all = new Float32Array(Math.min(total, max));
+    let skip = total - all.length, at = 0;                                  // keep the most recent audio
+    for (const c of parts) {
+      let d = c.data;
+      if (skip >= d.length) { skip -= d.length; continue; }
+      if (skip) { d = d.subarray(skip); skip = 0; }
+      all.set(d, at); at += d.length;
+    }
+    const step = cap.rate / STT_RATE, n = Math.floor(all.length / step);
+    const view = new DataView(new ArrayBuffer(44 + n * 2));
+    const str = (o, t) => { for (let i = 0; i < t.length; i++) view.setUint8(o + i, t.charCodeAt(i)); };
+    str(0, "RIFF"); view.setUint32(4, 36 + n * 2, true); str(8, "WAVE"); str(12, "fmt ");
+    view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+    view.setUint32(24, STT_RATE, true); view.setUint32(28, STT_RATE * 2, true);
+    view.setUint16(32, 2, true); view.setUint16(34, 16, true); str(36, "data"); view.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) {
+      const a = Math.floor(i * step), b = Math.min(all.length, Math.max(a + 1, Math.floor((i + 1) * step)));
+      let sum = 0; for (let j = a; j < b; j++) sum += all[j];              // average each window: a simple low-pass
+      const v = Math.max(-1, Math.min(1, sum / (b - a)));
+      view.setInt16(44 + i * 2, v < 0 ? v * 0x8000 : v * 0x7fff, true);
+    }
+    return new Blob([view], { type: "audio/wav" });
+  }
+  async function transcribeAudio(wav) {
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), STT_TIMEOUT_MS);
+    try {
+      const res = await fetch(`/api/v1/sessions/${app.sid}/transcribe`, {
+        method: "POST", headers: { "content-type": "audio/wav" }, body: wav, signal: ctl.signal,
+      });
+      return res.ok ? await res.json() : null;
+    } catch { return null; } finally { clearTimeout(timer); }
+  }
+  async function deliverWithBoson(browserText, signals, wav) {
+    const r = await transcribeAudio(wav);
+    const heard = r && r.source === "boson" ? String(r.text || "").trim() : "";
+    const plausible = heard && wordsOf(heard).length <= wordsOf(browserText).length * 3 + 5;
+    if (plausible) {
+      cap.fails = 0;
+      const s2 = { ...signals, fillers: (heard.match(FILLER_RE) || []).length };
+      delete s2.confidence;                                                 // that score described the browser's text
+      return deliverUtterance(heard, s2);
+    }
+    if (r && r.available === false) cap.off = true;                         // no Boson key on the server
+    else if (++cap.fails >= 2 && !cap.off) {
+      cap.off = true;
+      toast("Boson transcription is not responding, so PaceSense is using the browser's speech recognition.");
+    }
+    if (cap.off) stopCapture();
+    deliverUtterance(browserText, signals);
+  }
+
   function startVoice() {
     if (!SR) { toast("Speech recognition is unavailable in this browser. You can still type to PaceSense."); return; }
     let rec;
@@ -907,10 +1009,12 @@
     }
     $("#mic-btn").setAttribute("aria-pressed", "true");
     hooks.voice(true);
+    startCapture();
   }
   function stopVoice(silent = false) {
     voice.on = false; if (voice.rec) voice.rec.stop();
     if (voice.buf && voice.buf.length) flushUtterance();
+    stopCapture();
     $("#mic-btn").setAttribute("aria-pressed", "false");
     if (!silent) hooks.voice(false);
   }

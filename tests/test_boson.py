@@ -68,6 +68,62 @@ class BosonAdapterTests(unittest.TestCase):
         session = client._await_session_updated(DelayedSocket())
         self.assertEqual(session["type"], "realtime")
 
+    def test_session_created_acknowledges_the_first_session_update(self):
+        # Boson sends nothing on connect and answers the first session.update with session.created.
+        client = BosonClient("test-key", timeout=2)
+        session = client._await_session_updated(FakeSocket([{"type": "session.created", "session": {"type": "realtime"}}]))
+        self.assertEqual(session["type"], "realtime")
+
+    def test_session_error_is_reported_instead_of_waiting(self):
+        client = BosonClient("test-key", timeout=2)
+        with self.assertRaisesRegex(LLMError, "model is required"):
+            client._await_session_updated(FakeSocket([{"type": "error", "error": {"message": "model is required"}}]))
+
+    def test_chat_sends_a_bare_response_create_and_no_tool_choice_without_tools(self):
+        socket = FakeSocket([
+            {"type": "session.created", "session": {"type": "realtime"}},
+            {"type": "response.output_text.delta", "delta": "hello"},
+            {"type": "response.done", "response": {"status": "completed"}},
+        ])
+        client = BosonClient("test-key")
+        client._connect = lambda: socket
+        result = client.chat("higgs-realtime", [{"role": "system", "content": "be brief"},
+                                                {"role": "user", "content": "hi"}], max_tokens=50)
+        self.assertEqual(result.text, "hello")
+        self.assertEqual(socket.sent[-1], {"type": "response.create"})
+        self.assertNotIn("tool_choice", socket.sent[0]["session"])
+        self.assertNotIn("tools", socket.sent[0]["session"])
+
+    def test_transcription_prefers_the_speech_to_text_transcript(self):
+        socket = FakeSocket([
+            {"type": "session.created", "session": {"type": "realtime"}},
+            {"type": "response.output_text.delta", "delta": "Sure, I can help with that."},
+            {"type": "conversation.item.input_audio_transcription.completed", "transcript": "reduce Rotterdam 2014"},
+            {"type": "response.done", "response": {"status": "completed"}},
+        ])
+        client = BosonClient("test-key")
+        client._connect = lambda: socket
+        client._audio_to_pcm24k = lambda audio, fmt: b"\x00\x00" * 240
+        result = client.transcribe("higgs-realtime", b"audio", "webm", language="en")
+        self.assertEqual(result.text, "reduce Rotterdam 2014")
+        self.assertEqual(socket.sent[0]["session"]["audio"]["input"]["transcription"],
+                         {"model": "higgs-stt-3.1", "language": "en"})
+
+    def test_transcription_retries_without_speech_to_text_when_it_is_refused(self):
+        sockets = [
+            FakeSocket([{"type": "error", "error": {"message": "unknown field transcription"}}]),
+            FakeSocket([{"type": "session.created", "session": {"type": "realtime"}},
+                        {"type": "response.output_text.delta", "delta": "runner transcript"},
+                        {"type": "response.done", "response": {"status": "completed"}}]),
+        ]
+        used = []
+        client = BosonClient("test-key")
+        client._connect = lambda: used.append(sockets.pop(0)) or used[-1]
+        client._audio_to_pcm24k = lambda audio, fmt: b"\x00\x00" * 240
+        result = client.transcribe("higgs-realtime", b"audio", "wav")
+        self.assertEqual(result.text, "runner transcript")
+        self.assertNotIn("transcription", used[1].sent[0]["session"]["audio"]["input"])
+
     def test_tool_specs_convert_chat_completions_shape_to_realtime_shape(self):
         specs = BosonClient._tool_specs([{
             "type": "function",

@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import logging
 import time
 from typing import Any
 
@@ -16,7 +17,22 @@ from .openrouter import MAX_AUDIO_BYTES, ChatResult, LLMError, Transcript, Usage
 REALTIME_URL = "wss://api.boson.ai/v1/realtime"
 MODEL = "higgs-realtime"
 SUPPORTED_AUDIO_FORMATS = {"wav", "wave", "mp3", "m4a", "ogg", "webm", "flac"}
-AUDIO_CHUNK_BYTES = 5 * 1024 * 1024
+# Boson accepts at most 1 MiB of base64 per input_audio_buffer.append; 512 KiB raw is ~683 KiB encoded.
+AUDIO_CHUNK_BYTES = 512 * 1024
+STT_MODEL = "higgs-stt-3.1"
+SESSION_ACK_TIMEOUT_S = 15.0
+SESSION_ACK_EVENTS = ("session.created", "session.updated")
+TRANSCRIPT_GRACE_S = 2.0
+
+log = logging.getLogger("pacesense.llm.boson")
+
+
+class _AckTimeout(LLMError):
+    """Boson never acknowledged session.update."""
+
+
+class _SessionRefused(LLMError):
+    """Boson answered session.update with an error event."""
 MAX_AUDIO_DURATION_S = 60 * 60
 PCM_SAMPLE_RATE = 24000
 
@@ -50,16 +66,17 @@ class BosonClient:
         ws.send(json.dumps(event, ensure_ascii=False))
 
     def _await_session_updated(self, ws) -> dict[str, Any]:
-        """Wait until Boson confirms the requested Realtime session configuration."""
-        # Session configuration should be quick; do not let a missing acknowledgement
-        # stall a coach's turn for the full response timeout.
-        deadline = time.monotonic() + min(self.timeout, 30.0)
+        """Wait until Boson acknowledges the requested Realtime session configuration.
+
+        Boson sends nothing on connect; it acknowledges the first ``session.update`` with
+        ``session.created`` (OpenAI sends ``session.updated`` here). Accept either, so the
+        adapter also works against APIs that follow the OpenAI ordering.
+        """
+        deadline = time.monotonic() + min(self.timeout, SESSION_ACK_TIMEOUT_S)
         while time.monotonic() < deadline:
-            # A websocket receive timeout is only a polling interval, not proof that
-            # Boson failed to update the session. Keep waiting until the overall
-            # handshake deadline instead of aborting after the first 10 seconds.
+            # A receive timeout is only a polling interval; keep waiting until the deadline.
             try:
-                raw = ws.recv(timeout=max(1, min(10, deadline - time.monotonic())))
+                raw = ws.recv(timeout=max(1, min(5, deadline - time.monotonic())))
             except TimeoutError:
                 continue
             event = json.loads(raw)
@@ -67,9 +84,9 @@ class BosonClient:
             if kind == "error":
                 err = event.get("error", {})
                 raise LLMError(str(err.get("message") or err))
-            if kind == "session.updated":
+            if kind in SESSION_ACK_EVENTS:
                 return event.get("session", {})
-        raise LLMError("Boson Realtime session configuration timed out")
+        raise _AckTimeout("Boson Realtime did not acknowledge the session configuration")
 
     @staticmethod
     def _tool_specs(tools: list[dict] | None) -> list[dict]:
@@ -136,9 +153,11 @@ class BosonClient:
             "model": MODEL,
             "output_modalities": ["text"],
             "instructions": system,
-            "tools": self._tool_specs(tools),
-            "tool_choice": "auto" if tools else "none",
         }
+        # Only "auto" is honoured for tool_choice, so send tools when there are some and nothing otherwise.
+        if tools:
+            session["tools"] = self._tool_specs(tools)
+            session["tool_choice"] = "auto"
         # Higgs Realtime documents temperature as a session setting. Keeping it here
         # avoids sending an unsupported per-response field to compatible Realtime APIs.
         if temperature is not None:
@@ -164,13 +183,15 @@ class BosonClient:
                         item = self._conversation_item(message)
                         if item:
                             self._send(ws, {"type": "conversation.item.create", "item": item})
-                response_options: dict[str, Any] = {}
-                if max_tokens:
-                    response_options["max_output_tokens"] = int(max_tokens)
-                self._send(ws, {"type": "response.create", "response": response_options})
+                # Send response.create bare: any ``response`` body makes Higgs Realtime ignore the
+                # conversation and greet instead, so max_tokens is not forwarded.
+                self._send(ws, {"type": "response.create"})
                 deadline = time.monotonic() + self.timeout
                 while time.monotonic() < deadline:
-                    raw = ws.recv(timeout=max(1, deadline - time.monotonic()))
+                    try:
+                        raw = ws.recv(timeout=max(1, min(10, deadline - time.monotonic())))
+                    except TimeoutError:
+                        continue
                     event = json.loads(raw)
                     kind = event.get("type", "")
                     if kind == "error":
@@ -275,31 +296,69 @@ class BosonClient:
             raise LLMError(f"unsupported Boson model {model!r}; PaceSense uses {MODEL}")
         pcm = self._audio_to_pcm24k(audio, normalized_fmt)
         t0 = time.perf_counter()
+        try:
+            try:
+                text = self._transcribe_pcm(pcm, language, speech_to_text=True)
+            except _SessionRefused as first:
+                # If the dedicated speech-to-text configuration is refused, fall back to asking the
+                # realtime model to repeat the words, which needs no transcription settings.
+                log.warning("Boson speech-to-text configuration failed (%s); retrying without it", first)
+                text = self._transcribe_pcm(pcm, language, speech_to_text=False)
+        except LLMError:
+            raise
+        except Exception as exc:
+            raise LLMError(f"Boson voice transcription failed: {exc}") from exc
+        return Transcript(text.strip(),
+                          Usage(audio_seconds=len(pcm) / (PCM_SAMPLE_RATE * 2)),
+                          time.perf_counter() - t0, MODEL, "realtime")
+
+    def _transcribe_pcm(self, pcm: bytes, language: str | None, *, speech_to_text: bool) -> str:
+        """One Realtime session: upload the audio, then prefer Boson's own transcript of it.
+
+        With ``speech_to_text`` the session enables input transcription (higgs-stt-3.1) and the
+        result is the ``conversation.item.input_audio_transcription.completed`` transcript. The
+        model's text reply is kept only as a fallback when no transcript event arrives.
+        """
         instructions = "Transcribe the supplied speech exactly. Return only the recognized words, without commentary."
         if language:
             instructions += f" The spoken language is {language}."
+        audio_input: dict[str, Any] = {
+            "format": {"type": "audio/pcm", "rate": PCM_SAMPLE_RATE},
+            "turn_detection": None,
+        }
+        if speech_to_text:
+            audio_input["transcription"] = {"model": STT_MODEL, **({"language": language} if language else {})}
         try:
             with self._connect() as ws:
                 self._send(ws, {"type": "session.update", "session": {
                     "type": "realtime", "model": MODEL, "output_modalities": ["text"],
                     "instructions": instructions,
-                    "audio": {"input": {
-                        "format": {"type": "audio/pcm", "rate": PCM_SAMPLE_RATE},
-                        "turn_detection": None,
-                    }},
+                    "audio": {"input": audio_input},
                 }})
-                self._await_session_updated(ws)
+                try:
+                    self._await_session_updated(ws)
+                except _AckTimeout:
+                    raise
+                except LLMError as refused:
+                    raise _SessionRefused(str(refused)) from refused
                 for offset in range(0, len(pcm), AUDIO_CHUNK_BYTES):
                     chunk = pcm[offset:offset + AUDIO_CHUNK_BYTES]
                     self._send(ws, {"type": "input_audio_buffer.append",
                                     "audio": base64.b64encode(chunk).decode("ascii")})
                 self._send(ws, {"type": "input_audio_buffer.commit"})
                 self._send(ws, {"type": "response.create"})
-                output = []
+                output: list[str] = []
+                transcript: str | None = None
+                response_done_at: float | None = None
                 deadline = time.monotonic() + self.timeout
                 while time.monotonic() < deadline:
+                    if transcript is not None:
+                        break
+                    if response_done_at is not None and (
+                            not speech_to_text or time.monotonic() - response_done_at > TRANSCRIPT_GRACE_S):
+                        break
                     try:
-                        raw = ws.recv(timeout=max(1, min(10, deadline - time.monotonic())))
+                        raw = ws.recv(timeout=max(0.2, min(1 if response_done_at else 10, deadline - time.monotonic())))
                     except TimeoutError:
                         continue
                     event = json.loads(raw)
@@ -307,7 +366,9 @@ class BosonClient:
                     if kind == "error":
                         err = event.get("error", {})
                         raise LLMError(str(err.get("message") or err))
-                    if kind in ("response.output_text.delta", "response.text.delta"):
+                    if kind == "conversation.item.input_audio_transcription.completed":
+                        transcript = str(event.get("transcript") or "")
+                    elif kind in ("response.output_text.delta", "response.text.delta"):
                         output.append(event.get("delta", ""))
                     elif kind in ("response.output_text.done", "response.text.done") and not output:
                         output.append(event.get("text", ""))
@@ -316,16 +377,14 @@ class BosonClient:
                         self._require_completed(response, "transcription")
                         if not output:
                             output.append(self._response_text(response))
-                        break
+                        response_done_at = time.monotonic()
                 else:
                     raise LLMError("Boson transcription timed out")
         except LLMError:
             raise
         except Exception as exc:
             raise LLMError(f"Boson voice transcription failed: {exc}") from exc
-        return Transcript("".join(output).strip(),
-                          Usage(audio_seconds=len(pcm) / (PCM_SAMPLE_RATE * 2)),
-                          time.perf_counter() - t0, MODEL, "realtime")
+        return transcript if transcript else "".join(output)
 
 
 __all__ = ["MODEL", "REALTIME_URL", "SUPPORTED_AUDIO_FORMATS", "BosonClient"]

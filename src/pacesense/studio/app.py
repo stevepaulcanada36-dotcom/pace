@@ -15,6 +15,7 @@ Routes (all JSON under /api/v1; errors are RFC 9457 problem documents with a req
     GET    /api/v1/sessions/{sid}                                       -> state
     DELETE /api/v1/sessions/{sid}                                       -> 204
     POST   /api/v1/sessions/{sid}/commands     Command                  -> {reply, card, actions, simulation, state}
+    POST   /api/v1/sessions/{sid}/transcribe   audio bytes              -> {text, available, source, latency_s}
     PUT    /api/v1/sessions/{sid}/weights      SetWeight                -> {card, state}
     POST   /api/v1/sessions/{sid}/undo                                  -> {card, state}
     POST   /api/v1/sessions/{sid}/estimate     Estimate                 -> as commands
@@ -60,6 +61,9 @@ from .store import SessionNotFound
 log = logging.getLogger("pacesense.studio")
 access = logging.getLogger("pacesense.studio.access")
 MAX_BODY = 64 * 1024
+MAX_AUDIO_BODY = 4 * 1024 * 1024       # one spoken utterance: 16 kHz mono WAV is about 2 MB a minute
+AUDIO_TYPES = {"audio/wav": "wav", "audio/x-wav": "wav", "audio/wave": "wav", "audio/webm": "webm",
+               "audio/ogg": "ogg", "audio/mp4": "m4a", "audio/mpeg": "mp3", "audio/flac": "flac"}
 
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; "
        "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; "
@@ -293,6 +297,19 @@ def create_app(service: StudioService, settings: Settings | None = None) -> Star
         voice = b.voice.model_dump(exclude_none=True) if b.voice else None
         return JSON(await call(service.command, request.path_params["sid"], b.text, b.source, voice))
 
+    async def transcribe(request: Request):
+        """Raw utterance audio (WAV, WebM, Ogg or MP4) -> Boson's transcript, for the browser voice control."""
+        raw = await request.body()
+        if len(raw) > MAX_AUDIO_BODY:
+            raise Problem(413, "Recording too large", f"utterances are limited to {MAX_AUDIO_BODY // (1024 * 1024)} MB")
+        if not raw:
+            raise Problem(400, "Empty recording", "send the recorded audio as the request body")
+        kind = request.headers.get("content-type", "").split(";")[0].strip().lower()
+        fmt = AUDIO_TYPES.get(kind)
+        if fmt is None:
+            raise Problem(415, "Unsupported audio type", f"send one of: {', '.join(sorted(AUDIO_TYPES))}")
+        return JSON(await call(service.transcribe, request.path_params["sid"], raw, fmt))
+
     async def weights(request: Request):
         b = await body_of(request, schemas.SetWeight)
         return JSON(await call(service.set_weight, request.path_params["sid"], b.index, b.weight))
@@ -376,6 +393,7 @@ def create_app(service: StudioService, settings: Settings | None = None) -> Star
         Route("/api/v1/sessions", create, methods=["POST"]),
         Route(S, get_state, methods=["GET"]), Route(S, delete, methods=["DELETE"]),
         Route(S + "/commands", command, methods=["POST"]), Route(S + "/weights", weights, methods=["PUT"]),
+        Route(S + "/transcribe", transcribe, methods=["POST"]),
         Route(S + "/undo", undo, methods=["POST"]), Route(S + "/estimate", estimate, methods=["POST"]),
         Route(S + "/simulations", simulate, methods=["POST"]), Route(S + "/reveal", reveal, methods=["POST"]),
         Route(S + "/reactions", react, methods=["POST"]), Route(S + "/export", export, methods=["GET"]),

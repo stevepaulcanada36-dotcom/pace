@@ -493,6 +493,26 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
             s.remember_turn(text, response)
         return out
 
+    def transcribe(self, sid: str, audio: bytes, fmt: str = "wav") -> dict:
+        """Boson's transcript of one recorded utterance. Never raises for a provider problem: the browser
+        keeps its own speech recognition as the fallback, so an empty text simply means "use that"."""
+        self.sessions.entry(sid)                                  # 404 for an unknown or expired session
+        if not self.ai_factory:
+            return {"text": "", "available": False, "source": "none", "latency_s": 0.0}
+        t0 = time.perf_counter()
+        try:
+            ai = self.ai_factory()
+            if not getattr(ai, "online", False):
+                return {"text": "", "available": False, "source": "none", "latency_s": 0.0}
+            result = ai.transcribe(audio, fmt)
+        except Exception as exc:  # noqa: BLE001 - any provider or decoding failure falls back to the browser transcript
+            log.warning("Boson transcription unavailable; the browser transcript will be used: %s", exc)
+            return {"text": "", "available": True, "source": "none", "error": str(exc)[:200],
+                    "latency_s": round(time.perf_counter() - t0, 2)}
+        log.info("utterance transcribed", extra={"session": sid[:6], "ms": round((time.perf_counter() - t0) * 1000)})
+        return {"text": " ".join(str(result.text or "").split())[:1000], "available": True, "source": "boson",
+                "latency_s": round(time.perf_counter() - t0, 2)}
+
     def command(self, sid: str, text: str, source: str = "typed", voice: dict | None = None) -> dict:
         """What the coach said. If PaceSense has a question open and the words answer it ("yes", "the second
         one", "2010", "undo"), the answer is taken; otherwise it is a new sentence for the interpreter."""
