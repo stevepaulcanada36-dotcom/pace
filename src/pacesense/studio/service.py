@@ -383,7 +383,11 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
         s = live.hud
         s.assistant_context = self._assistant_context(live)
         voice_signals = (extra or {}).get("voice") or {}
-        voice_intent = self._interpret_voice_intent(text, live, voice_signals) if source == "voice" else None
+        # Race-weight language is handled by the validated steering interpreter below.
+        # Reserve this separate classifier for explicit UI actions to avoid two Boson calls
+        # for one spoken race comment.
+        has_ui_command = bool(ui_commands(text)[0])
+        voice_intent = self._interpret_voice_intent(text, live, voice_signals) if source == "voice" and has_ui_command else None
         if voice_intent and voice_intent.get("status") == "clarify":
             r = Routed(reply=voice_intent["message"], used=["prompt"])
         elif voice_intent and voice_intent.get("status") == "action":
