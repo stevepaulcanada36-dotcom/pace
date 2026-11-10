@@ -110,6 +110,167 @@ def _exact_runner(target: str, runners: Iterable[dict[str, Any]]) -> list[dict[s
     ]
 
 
+
+_ACTION_SPLIT_RE = re.compile(r"\\s*(?:[;,]|\\b(?:and\\s+then|then|and|also|but)\\b)\\s*", re.IGNORECASE)
+_PANEL_ACTION_RE = re.compile(r"\\b(?:open|show|display|focus|bring\\s+up|pin|close|hide|remove|minimi[sz]e)\\b", re.IGNORECASE)
+_PANEL_OPEN_RE = re.compile(r"\\b(?:open|show|display|focus|bring\\s+up|pin)\\b", re.IGNORECASE)
+_PANEL_CLOSE_RE = re.compile(r"\\b(?:close|hide|remove|minimi[sz]e)\\b", re.IGNORECASE)
+_SIMULATION_ACTION_RE = re.compile(r"\\b(?:simulate|simulation|run\\s+(?:the\\s+)?race|race[- ]day|what\\s+if)\\b", re.IGNORECASE)
+_REVEAL_ACTION_RE = re.compile(
+    r"\\b(?:reveal|show\\s+(?:me\\s+)?(?:the\\s+)?(?:real|actual|true)\\s+(?:best\\s+)?(?:result|finish)|"
+    r"how\\s+(?:close|accurate)\\s+(?:am\\s+i|was\\s+i|is\\s+it))\\b",
+    re.IGNORECASE,
+)
+_UNDO_ACTION_RE = re.compile(r"\\bundo\\b", re.IGNORECASE)
+_DATABASE_ACTION_RE = re.compile(
+    r"\\b(?:database|directory|roster)\\b|\\bshow\\s+(?:me\\s+)?(?:all|female|male)?\\s+runners?\\b",
+    re.IGNORECASE,
+)
+_SEARCH_ACTION_RE = re.compile(r"\\b(?:search|find|filter|list|browse)\\b", re.IGNORECASE)
+_SELECT_ACTION_RE = re.compile(
+    r"\\b(?:load|select)\\s+(?:the\\s+)?(?:runner\\s+)?(?!database\\b|directory\\b|roster\\b)\\w+|"
+    r"\\b(?:open|switch(?:\\s+to)?)\\s+(?:the\\s+)?(?:runner\\s+)?"
+    r"(?!database\\b|directory\\b|roster\\b|panel\\b|simulator\\b|prediction\\b|races?\\b|"
+    r"pacing\\b|similar\\b|feedback\\b|steering\\b|chat\\b|log\\b|record\\b)\\w+",
+    re.IGNORECASE,
+)
+_FAMILIARITY_ACTION_RE = re.compile(
+    r"\\b(?:i\\s+(?:do\\s+not|don't|dont)\\s+know\\s+(?:this\\s+|the\\s+)?runner|"
+    r"i\\s+know\\s+(?:this\\s+|the\\s+)?runner|i\\s+coach\\s+(?:this\\s+)?runner|"
+    r"i\\s+am\\s+familiar\\s+with\\s+(?:this\\s+|the\\s+)?runner|"
+    r"not\\s+familiar\\s+with\\s+(?:this\\s+|the\\s+)?runner|"
+    r"unfamiliar\\s+(?:to\\s+me|with\\s+(?:this\\s+|the\\s+)?runner)|"
+    r"unknown\\s+to\\s+me|mark\\s+(?:this\\s+|the\\s+)?runner\\s+(?:as\\s+)?(?:known|unknown|unfamiliar))\\b",
+    re.IGNORECASE,
+)
+_KNOWN_FAMILIARITY_RE = re.compile(
+    r"\\b(?:i\\s+know\\s+(?:this\\s+|the\\s+)?runner|i\\s+coach\\s+(?:this\\s+)?runner|"
+    r"i\\s+am\\s+familiar\\s+with\\s+(?:this\\s+|the\\s+)?runner|"
+    r"familiar\\s+with\\s+(?:this\\s+|the\\s+)?runner|mark\\s+(?:this\\s+|the\\s+)?runner\\s+(?:as\\s+)?known)\\b",
+    re.IGNORECASE,
+)
+_UNFAMILIAR_FAMILIARITY_RE = re.compile(
+    r"\\b(?:i\\s+(?:do\\s+not|don't|dont)\\s+know\\s+(?:this\\s+|the\\s+)?runner|"
+    r"not\\s+familiar\\s+with\\s+(?:this\\s+|the\\s+)?runner|"
+    r"unfamiliar\\s+(?:to\\s+me|with\\s+(?:this\\s+|the\\s+)?runner)|"
+    r"unknown\\s+to\\s+me|mark\\s+(?:this\\s+|the\\s+)?runner\\s+(?:as\\s+)?(?:unknown|unfamiliar))\\b",
+    re.IGNORECASE,
+)
+_COMPOUND_PANEL_TERMS = {
+    "races": ("race history", "past races", "races panel", "race panel", "weights panel"),
+    "prediction": ("prediction", "forecast", "target", "likely range", "range panel"),
+    "pacing": ("pacing plan", "pacing panel", "pace plan", "splits"),
+    "similar": ("similar runners", "similar panel", "neighbours", "neighbors"),
+    "simulator": ("simulator", "race-day simulator", "race day simulator"),
+    "feedback": ("feedback panel", "feedback loops", "evidence panel", "data checks"),
+    "steering": ("steering meter", "steering panel", "whose view"),
+    "chat": ("chat panel", "conversation panel", "coach notes"),
+    "log": ("change log", "log panel", "history of changes"),
+    "record": ("track record", "record panel", "results panel", "results"),
+}
+
+
+def _compound_action_conflict(utterance: str, intent: str) -> bool:
+    """Reject a one-action model proposal when the transcript contains another action clause."""
+    expected = {
+        "runner_database": "runner_database",
+        "select_runner": "select_runner",
+        "set_familiarity": "set_familiarity",
+        "focus_panel": "panel",
+        "close_panel": "panel",
+        "simulate": "simulate",
+        "reveal": "reveal",
+        "undo": "undo",
+    }.get(intent)
+    if expected is None:
+        return False
+
+    clauses = [part.strip() for part in _ACTION_SPLIT_RE.split(utterance) if part.strip()]
+    if len(clauses) < 2:
+        return False
+
+    classified: list[tuple[set[str], set[str], str]] = []
+    for clause in clauses:
+        categories: set[str] = set()
+        panels: set[str] = set()
+        panel_terms = PANEL_TERMS if intent in ("focus_panel", "close_panel") else _COMPOUND_PANEL_TERMS
+        if _PANEL_ACTION_RE.search(clause):
+            panels = {
+                key for key, terms in panel_terms.items()
+                if any(_contains_phrase(clause, term) for term in terms)
+            }
+            if panels:
+                categories.add("panel")
+
+        if _FAMILIARITY_ACTION_RE.search(clause):
+            categories.add("set_familiarity")
+        if _SIMULATION_ACTION_RE.search(clause):
+            categories.add("simulate")
+        if _REVEAL_ACTION_RE.search(clause):
+            categories.add("reveal")
+        if _UNDO_ACTION_RE.search(clause):
+            categories.add("undo")
+
+        database_cue = bool(_DATABASE_ACTION_RE.search(clause))
+        if _SEARCH_ACTION_RE.search(clause) and (
+            intent == "runner_database" or re.search(r"\\b(?:runner|runners)\\b", clause, re.IGNORECASE)
+        ):
+            database_cue = True
+        if intent == "runner_database" and re.search(
+            r"\\b(?:show|view|browse|search|find|filter|list)\\b", clause, re.IGNORECASE
+        ) and re.search(r"\\b(?:runner|runners)\\b", clause, re.IGNORECASE):
+            database_cue = True
+        if database_cue:
+            categories.add("runner_database")
+
+        if _SELECT_ACTION_RE.search(clause) and not panels and not database_cue:
+            categories.add("select_runner")
+
+        # "open Jamie Lee" has no explicit "runner" token, so classify it as a runner selection
+        # only when it is not already a panel/database/familiarity/simulation action.
+        if (not categories and re.search(r"\\b(?:open|load|switch|select)\\b", clause, re.IGNORECASE)
+                and not _PANEL_ACTION_RE.search(clause)):
+            categories.add("select_runner")
+
+        if categories:
+            classified.append((categories, panels, clause))
+
+    if not classified:
+        return False
+
+    # A simulator panel opened as part of a simulation is the same user action, not a second one.
+    for categories, panels, clause in classified:
+        unexpected = categories - {expected}
+        if intent == "simulate" and categories == {"panel"} and panels == {"simulator"}:
+            if _PANEL_OPEN_RE.search(clause):
+                continue
+        if unexpected:
+            return True
+
+    if expected == "panel":
+        all_panels = set().union(*(panels for _, panels, _ in classified))
+        if len(all_panels) > 1:
+            return True
+        if _PANEL_OPEN_RE.search(utterance) and _PANEL_CLOSE_RE.search(utterance):
+            return True
+    elif expected == "select_runner":
+        if sum("select_runner" in categories for categories, _, _ in classified) > 1:
+            return True
+    elif expected == "set_familiarity":
+        if _KNOWN_FAMILIARITY_RE.search(utterance) and _UNFAMILIAR_FAMILIARITY_RE.search(utterance):
+            return True
+    elif expected == "simulate":
+        if sum("simulate" in categories for categories, _, _ in classified) > 1:
+            return True
+        temperatures = re.findall(
+            r"(?<!\\w)(-?\\d+(?:\\.\\d+)?)\\s*(?:°\\s*c|degrees?(?:\\s+celsius)?|celsius|c\\b)",
+            utterance, re.IGNORECASE,
+        )
+        if len({round(float(value), 2) for value in temperatures}) > 1:
+            return True
+    return False
+
+
 def validate_voice_intent(
     payload: dict[str, Any],
     runners: Iterable[dict[str, Any]],
@@ -160,6 +321,11 @@ def validate_voice_intent(
     if not isinstance(intent, str) or intent not in INTENTS or not isinstance(args, dict):
         return _clarify(
             "That request doesn't map to a supported PaceSense action. Try opening a panel or searching the runner database.",
+            confidence, evidence,
+        )
+    if utterance is not None and intent != "none" and _compound_action_conflict(utterance, intent):
+        return _clarify(
+            "I heard more than one action in that request. Which action should I do first?",
             confidence, evidence,
         )
     if utterance is not None and intent != "none" and not _evidence_is_grounded(evidence, utterance):
