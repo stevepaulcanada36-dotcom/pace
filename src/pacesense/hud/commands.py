@@ -165,8 +165,8 @@ def _steering_candidate(text: str, hud: Any) -> bool:
     )
     has_context = getattr(steer, "context", None) is not None
     steering_language = re.search(
-        r"\b(weight|count|matter|trust|rely|represent|ignore|appeal|relevant|"
-        r"less|more|reduce|lower|raise|increase|keep|use|consider|"
+        r"\b(weight|count|matter|trust|rely|represent\w*|ignore|appeal\w*|relevan\w*|important|significant|"
+        r"less\w*|more\w*|reduce|lower|raise|increase|keep|use|consider|level|worth|valid|"
         r"fast|faster|slow|slower|hot|cold|injur\w*|ill|sick|good|bad|"
         r"best|worst|unusual|typical|outlier|recent)\b",
         text, re.I,
