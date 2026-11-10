@@ -206,7 +206,8 @@ def _compound_action_conflict(utterance: str, intent: str) -> bool:
             if panels:
                 categories.add("panel")
 
-        if _FAMILIARITY_ACTION_RE.search(clause):
+        if (_FAMILIARITY_ACTION_RE.search(clause) or _KNOWN_FAMILIARITY_RE.search(clause)
+                or _UNFAMILIAR_FAMILIARITY_RE.search(clause)):
             categories.add("set_familiarity")
         if _SIMULATION_ACTION_RE.search(clause):
             categories.add("simulate")
@@ -470,6 +471,8 @@ def validate_voice_intent(
                     r"(?:i\s+)?(?:do\s+not|don't|dont)\s+know\s+(?:this\s+|the\s+)?runner|"
                     r"not\s+familiar\s+with\s+(?:this\s+)?runner|not\s+known\s+to\s+me|"
                     r"haven't\s+coached\s+(?:this\s+)?runner|have\s+not\s+coached\s+(?:this\s+)?runner|"
+                    r"set\s+(?:the\s+)?(?:runner\s+)?familiarity\s+(?:to|as)\s+(?:unknown|unfamiliar)|"
+                    r"make\s+(?:this\s+|the\s+)?runner\s+(?:unknown|unfamiliar)|"
                     r"mark\s+(?:this\s+|the\s+)?runner\s+(?:as\s+)?(?:unknown|unfamiliar))\b",
                     utterance, re.IGNORECASE,
                 )
@@ -478,6 +481,8 @@ def validate_voice_intent(
                     r"\b(i\s+know\s+(?:this\s+|the\s+)?runner|i\s+coach\s+(?:this\s+)?runner|"
                     r"i\s+am\s+familiar\s+with\s+(?:this\s+)?runner|familiar\s+with\s+(?:this\s+)?runner|"
                     r"runner\s+(?:is\s+)?known\s+to\s+me|known\s+to\s+me|"
+                    r"set\s+(?:the\s+)?(?:runner\s+)?familiarity\s+(?:to|as)\s+(?:known|familiar)|"
+                    r"make\s+(?:this\s+|the\s+)?runner\s+(?:known|familiar)|"
                     r"mark\s+(?:this\s+|the\s+)?runner\s+(?:as\s+)?known)\b",
                     utterance, re.IGNORECASE,
                 )
