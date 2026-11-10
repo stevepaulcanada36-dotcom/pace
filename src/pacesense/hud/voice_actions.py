@@ -111,49 +111,49 @@ def _exact_runner(target: str, runners: Iterable[dict[str, Any]]) -> list[dict[s
 
 
 
-_ACTION_SPLIT_RE = re.compile(r"\\s*(?:[;,]|\\b(?:and\\s+then|then|and|also|but)\\b)\\s*", re.IGNORECASE)
-_PANEL_ACTION_RE = re.compile(r"\\b(?:open|show|display|focus|bring\\s+up|pin|close|hide|remove|minimi[sz]e)\\b", re.IGNORECASE)
-_PANEL_OPEN_RE = re.compile(r"\\b(?:open|show|display|focus|bring\\s+up|pin)\\b", re.IGNORECASE)
-_PANEL_CLOSE_RE = re.compile(r"\\b(?:close|hide|remove|minimi[sz]e)\\b", re.IGNORECASE)
-_SIMULATION_ACTION_RE = re.compile(r"\\b(?:simulate|simulation|run\\s+(?:the\\s+)?race|race[- ]day|what\\s+if)\\b", re.IGNORECASE)
+_ACTION_SPLIT_RE = re.compile(r"\s*(?:[;,]|\b(?:and\s+then|then|and|also|but)\b)\s*", re.IGNORECASE)
+_PANEL_ACTION_RE = re.compile(r"\b(?:open|show|display|focus|bring\s+up|pin|close|hide|remove|minimi[sz]e)\b", re.IGNORECASE)
+_PANEL_OPEN_RE = re.compile(r"\b(?:open|show|display|focus|bring\s+up|pin)\b", re.IGNORECASE)
+_PANEL_CLOSE_RE = re.compile(r"\b(?:close|hide|remove|minimi[sz]e)\b", re.IGNORECASE)
+_SIMULATION_ACTION_RE = re.compile(r"\b(?:simulate|simulation|run\s+(?:the\s+)?race|race[- ]day|what\s+if)\b", re.IGNORECASE)
 _REVEAL_ACTION_RE = re.compile(
-    r"\\b(?:reveal|show\\s+(?:me\\s+)?(?:the\\s+)?(?:real|actual|true)\\s+(?:best\\s+)?(?:result|finish)|"
-    r"how\\s+(?:close|accurate)\\s+(?:am\\s+i|was\\s+i|is\\s+it))\\b",
+    r"\b(?:reveal|show\s+(?:me\s+)?(?:the\s+)?(?:real|actual|true)\s+(?:best\s+)?(?:result|finish)|"
+    r"how\s+(?:close|accurate)\s+(?:am\s+i|was\s+i|is\s+it))\b",
     re.IGNORECASE,
 )
-_UNDO_ACTION_RE = re.compile(r"\\bundo\\b", re.IGNORECASE)
+_UNDO_ACTION_RE = re.compile(r"\bundo\b", re.IGNORECASE)
 _DATABASE_ACTION_RE = re.compile(
-    r"\\b(?:database|directory|roster)\\b|\\bshow\\s+(?:me\\s+)?(?:all|female|male)?\\s+runners?\\b",
+    r"\b(?:database|directory|roster)\b|\bshow\s+(?:me\s+)?(?:all|female|male)?\s+runners?\b",
     re.IGNORECASE,
 )
-_SEARCH_ACTION_RE = re.compile(r"\\b(?:search|find|filter|list|browse)\\b", re.IGNORECASE)
+_SEARCH_ACTION_RE = re.compile(r"\b(?:search|find|filter|list|browse)\b", re.IGNORECASE)
 _SELECT_ACTION_RE = re.compile(
-    r"\\b(?:load|select)\\s+(?:the\\s+)?(?:runner\\s+)?(?!database\\b|directory\\b|roster\\b)\\w+|"
-    r"\\b(?:open|switch(?:\\s+to)?)\\s+(?:the\\s+)?(?:runner\\s+)?"
-    r"(?!database\\b|directory\\b|roster\\b|panel\\b|simulator\\b|prediction\\b|races?\\b|"
-    r"pacing\\b|similar\\b|feedback\\b|steering\\b|chat\\b|log\\b|record\\b)\\w+",
+    r"\b(?:load|select)\s+(?:the\s+)?(?:runner\s+)?(?!database\b|directory\b|roster\b)\w+|"
+    r"\b(?:open|switch(?:\s+to)?)\s+(?:the\s+)?(?:runner\s+)?"
+    r"(?!database\b|directory\b|roster\b|panel\b|simulator\b|prediction\b|races?\b|"
+    r"pacing\b|similar\b|feedback\b|steering\b|chat\b|log\b|record\b)\w+",
     re.IGNORECASE,
 )
 _FAMILIARITY_ACTION_RE = re.compile(
-    r"\\b(?:i\\s+(?:do\\s+not|don't|dont)\\s+know\\s+(?:this\\s+|the\\s+)?runner|"
-    r"i\\s+know\\s+(?:this\\s+|the\\s+)?runner|i\\s+coach\\s+(?:this\\s+)?runner|"
-    r"i\\s+am\\s+familiar\\s+with\\s+(?:this\\s+|the\\s+)?runner|"
-    r"not\\s+familiar\\s+with\\s+(?:this\\s+|the\\s+)?runner|"
-    r"unfamiliar\\s+(?:to\\s+me|with\\s+(?:this\\s+|the\\s+)?runner)|"
-    r"unknown\\s+to\\s+me|mark\\s+(?:this\\s+|the\\s+)?runner\\s+(?:as\\s+)?(?:known|unknown|unfamiliar))\\b",
+    r"\b(?:i\s+(?:do\s+not|don't|dont)\s+know\s+(?:this\s+|the\s+)?runner|"
+    r"i\s+know\s+(?:this\s+|the\s+)?runner|i\s+coach\s+(?:this\s+)?runner|"
+    r"i\s+am\s+familiar\s+with\s+(?:this\s+|the\s+)?runner|"
+    r"not\s+familiar\s+with\s+(?:this\s+|the\s+)?runner|"
+    r"unfamiliar\s+(?:to\s+me|with\s+(?:this\s+|the\s+)?runner)|"
+    r"unknown\s+to\s+me|mark\s+(?:this\s+|the\s+)?runner\s+(?:as\s+)?(?:known|unknown|unfamiliar))\b",
     re.IGNORECASE,
 )
 _KNOWN_FAMILIARITY_RE = re.compile(
-    r"\\b(?:i\\s+know\\s+(?:this\\s+|the\\s+)?runner|i\\s+coach\\s+(?:this\\s+)?runner|"
-    r"i\\s+am\\s+familiar\\s+with\\s+(?:this\\s+|the\\s+)?runner|"
-    r"familiar\\s+with\\s+(?:this\\s+|the\\s+)?runner|mark\\s+(?:this\\s+|the\\s+)?runner\\s+(?:as\\s+)?known)\\b",
+    r"\b(?:i\s+know\s+(?:this\s+|the\s+)?runner|i\s+coach\s+(?:this\s+)?runner|"
+    r"i\s+am\s+familiar\s+with\s+(?:this\s+|the\s+)?runner|"
+    r"familiar\s+with\s+(?:this\s+|the\s+)?runner|mark\s+(?:this\s+|the\s+)?runner\s+(?:as\s+)?known)\b",
     re.IGNORECASE,
 )
 _UNFAMILIAR_FAMILIARITY_RE = re.compile(
-    r"\\b(?:i\\s+(?:do\\s+not|don't|dont)\\s+know\\s+(?:this\\s+|the\\s+)?runner|"
-    r"not\\s+familiar\\s+with\\s+(?:this\\s+|the\\s+)?runner|"
-    r"unfamiliar\\s+(?:to\\s+me|with\\s+(?:this\\s+|the\\s+)?runner)|"
-    r"unknown\\s+to\\s+me|mark\\s+(?:this\\s+|the\\s+)?runner\\s+(?:as\\s+)?(?:unknown|unfamiliar))\\b",
+    r"\b(?:i\s+(?:do\s+not|don't|dont)\s+know\s+(?:this\s+|the\s+)?runner|"
+    r"not\s+familiar\s+with\s+(?:this\s+|the\s+)?runner|"
+    r"unfamiliar\s+(?:to\s+me|with\s+(?:this\s+|the\s+)?runner)|"
+    r"unknown\s+to\s+me|mark\s+(?:this\s+|the\s+)?runner\s+(?:as\s+)?(?:unknown|unfamiliar))\b",
     re.IGNORECASE,
 )
 _COMPOUND_PANEL_TERMS = {
@@ -213,12 +213,12 @@ def _compound_action_conflict(utterance: str, intent: str) -> bool:
 
         database_cue = bool(_DATABASE_ACTION_RE.search(clause))
         if _SEARCH_ACTION_RE.search(clause) and (
-            intent == "runner_database" or re.search(r"\\b(?:runner|runners)\\b", clause, re.IGNORECASE)
+            intent == "runner_database" or re.search(r"\b(?:runner|runners)\b", clause, re.IGNORECASE)
         ):
             database_cue = True
         if intent == "runner_database" and re.search(
-            r"\\b(?:show|view|browse|search|find|filter|list)\\b", clause, re.IGNORECASE
-        ) and re.search(r"\\b(?:runner|runners)\\b", clause, re.IGNORECASE):
+            r"\b(?:show|view|browse|search|find|filter|list)\b", clause, re.IGNORECASE
+        ) and re.search(r"\b(?:runner|runners)\b", clause, re.IGNORECASE):
             database_cue = True
         if database_cue:
             categories.add("runner_database")
@@ -228,7 +228,7 @@ def _compound_action_conflict(utterance: str, intent: str) -> bool:
 
         # "open Jamie Lee" has no explicit "runner" token, so classify it as a runner selection
         # only when it is not already a panel/database/familiarity/simulation action.
-        if (not categories and re.search(r"\\b(?:open|load|switch|select)\\b", clause, re.IGNORECASE)
+        if (not categories and re.search(r"\b(?:open|load|switch|select)\b", clause, re.IGNORECASE)
                 and not _PANEL_ACTION_RE.search(clause)):
             categories.add("select_runner")
 
@@ -263,7 +263,7 @@ def _compound_action_conflict(utterance: str, intent: str) -> bool:
         if sum("simulate" in categories for categories, _, _ in classified) > 1:
             return True
         temperatures = re.findall(
-            r"(?<!\\w)(-?\\d+(?:\\.\\d+)?)\\s*(?:°\\s*c|degrees?(?:\\s+celsius)?|celsius|c\\b)",
+            r"(?<!\w)(-?\d+(?:\.\d+)?)\s*(?:°\s*c|degrees?(?:\s+celsius)?|celsius|c\b)",
             utterance, re.IGNORECASE,
         )
         if len({round(float(value), 2) for value in temperatures}) > 1:
