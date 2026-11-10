@@ -130,9 +130,9 @@ _DATABASE_ACTION_RE = re.compile(
     r"\b(?:database|directory|roster)\b|\bshow\s+(?:me\s+)?(?:all|female|male)?\s+runners?\b",
     re.IGNORECASE,
 )
-_SEARCH_ACTION_RE = re.compile(r"\b(?:search|find|filter|list|browse)\b", re.IGNORECASE)
+_SEARCH_ACTION_RE = re.compile(r"\b(?:search|find|filter|list|browse|look\s+up)\b", re.IGNORECASE)
 _SELECT_ACTION_RE = re.compile(
-    r"\b(?:load|select)\s+(?:the\s+)?(?:runner\s+)?(?!database\b|directory\b|roster\b)\w+|"
+    r"\b(?:load|select|choose|pick)\s+(?:the\s+)?(?:runner\s+)?(?!database\b|directory\b|roster\b)\w+|"
     r"\b(?:open|switch(?:\s+to)?)\s+(?:the\s+)?(?:runner\s+)?"
     r"(?!database\b|directory\b|roster\b|panel\b|simulator\b|prediction\b|races?\b|"
     r"pacing\b|similar\b|feedback\b|steering\b|chat\b|log\b|record\b)\w+",
@@ -364,7 +364,7 @@ def validate_voice_intent(
                 or int(min_races) != min_races):
             return _clarify("How many previous marathons should the runner have at minimum?", confidence, evidence)
         if utterance is not None:
-            if not re.search(r"\b(open|show|view|browse|search|find|filter|list|see)\b", utterance, re.IGNORECASE):
+            if not re.search(r"\b(open|show|view|browse|search|find|filter|list|see|look\s+up)\b", utterance, re.IGNORECASE):
                 return _clarify("Do you want me to open or search the existing runner database?", confidence, evidence)
             if FAMILIARITY_FILTER_RE.search(utterance):
                 return _clarify(
@@ -432,7 +432,7 @@ def validate_voice_intent(
         if not target:
             return _clarify("Which existing runner should I open? You can say their name or runner ID.", confidence, evidence)
         if utterance is not None:
-            if not re.search(r"\b(open|load|switch|select)\b", utterance, re.IGNORECASE):
+            if not re.search(r"\b(open|load|switch|select|choose|pick)\b", utterance, re.IGNORECASE):
                 return _clarify("Do you want me to open that runner, or are you asking a question about them?", confidence, evidence)
             if not _contains_phrase(utterance, raw_target):
                 return _clarify("I couldn't verify that runner name or ID in what you said. Please repeat the name or ID.", confidence, evidence)
