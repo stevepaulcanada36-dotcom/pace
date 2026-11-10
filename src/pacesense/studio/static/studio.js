@@ -1078,7 +1078,11 @@
     runnerSearchTimer = setTimeout(() => loadRunners(query), 160);
   }
   async function openRunnerDatabase(query = "", filters = {}) {
-    if (!dlg.open) dlg.showModal();
+    if (!dlg.open) {
+      const ask = $('#cond-choice input[value="ask"]');
+      if (ask) ask.checked = true;
+      dlg.showModal();
+    }
     $("#runner-search").value = query;
     $("#runner-gender-filter").value = filters.gender || "";
     const minSelect = $("#runner-min-races-filter");
