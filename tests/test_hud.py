@@ -143,7 +143,8 @@ class SessionTests(unittest.TestCase):
             "estimate": None,
         }))
         race = s.steer.races[0]
-        text = f"I don't think {race['event']} {race['year']} should matter as much"
+        text = f"I don't think {race['event']} {race['year']} is as appealing as the others"
+        s.steer.ai.client.payload["changes"][0]["quote"] = "as appealing as the others"
         r = route(text, s)
         self.assertEqual(r.used, ["steer"])
         self.assertEqual(r.turn["applied"][0]["race"], f"{race['event']} {race['year']}")
