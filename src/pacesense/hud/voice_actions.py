@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 MIN_CONFIDENCE = 0.78
 PROFILES = {"on_plan", "fast_start", "late_fade"}
@@ -282,8 +283,9 @@ def validate_voice_intent(
 
     if intent == "set_familiarity":
         value = args.get("value")
-        value = value.strip().lower() if isinstance(value, str) else value
-        value = {"unknown": "unfamiliar", "familiar": "known"}.get(value, value)
+        if isinstance(value, str):
+            value = value.strip().lower()
+            value = {"unknown": "unfamiliar", "familiar": "known"}.get(value, value)
         if value not in ("known", "unfamiliar"):
             return _clarify("Do you know this runner personally, or are they unfamiliar to you?", confidence, evidence)
         if utterance is not None:

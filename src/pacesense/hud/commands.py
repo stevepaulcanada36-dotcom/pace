@@ -77,12 +77,12 @@ UNKNOWN_RE = re.compile(
     r"i\s+have\s+not\s+coached\s+(?:this\s+)?runner|i\s+haven't\s+coached\s+(?:this\s+)?runner|"
     r"i\s+have\s+never\s+coached\s+(?:this\s+)?runner|not\s+familiar\s+with\s+(?:this\s+)?runner|"
     r"unfamiliar\s+(?:to\s+me|with\s+(?:this\s+)?runner)|unknown\s+to\s+me|"
-    r"runner\s+(?:is\s+)?new\s+to\s+me|new\s+runner\s+to\s+me|"
+    r"(?:this\s+)?runner\s+(?:is\s+)?new\s+to\s+me|new\s+runner\s+to\s+me|"
     r"mark\s+(?:this\s+)?runner\s+(?:as\s+)?(?:unknown|unfamiliar)(?:\s+to\s+me)?)\b", re.I)
 KNOWN_RE = re.compile(
     r"\b(?:i\s+know\s+(?:this\s+)?runner|i\s+coach\s+(?:this\s+)?runner|"
     r"i\s+am\s+familiar\s+with\s+(?:this\s+)?runner|familiar\s+with\s+(?:this\s+)?runner|"
-    r"runner\s+is\s+known\s+to\s+me|known\s+to\s+me|mark\s+(?:this\s+)?runner\s+as\s+known)\b", re.I)
+    r"(?:this\s+)?runner\s+is\s+known\s+to\s+me|known\s+to\s+me|mark\s+(?:this\s+)?runner\s+as\s+known)\b", re.I)
 
 
 def _panel_key(word: str) -> str:

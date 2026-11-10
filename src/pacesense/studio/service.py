@@ -27,6 +27,7 @@ from ..hud import HudSession
 from ..hud.commands import Routed, route, ui_commands
 from ..repro import configured_seed
 from ..storage import Repository
+from ..study import NotFound
 from ..tuning import configured_cbr
 from ..web.steer_api import demo_runner_id
 from .settings import Settings
@@ -266,13 +267,13 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                 current_runner_id=live.hud.runner_id,
                 current_runner_ids=[
                     live.hud.runner_id, live.hud.source_runner,
-                    *(["demo"] if live.hud.source_runner == demo_runner_id() else []),
+                    *(["demo"] if live.hud.source_runner == self.demo_runner else []),
                 ],
                 ui_state=state,
                 can_undo=bool(live.hud.steer._undo),
                 can_reveal=live.hud.truth_s is not None,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - any provider or parsing failure must fall back to the safe rules
             log.warning("voice intent interpretation unavailable; using safe rule-based fallback: %s", exc)
             return None
 
@@ -414,7 +415,7 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                 target = str(ui_actions[0].get("id") or "")
                 try:
                     self.coach.runner(target)
-                except Exception:
+                except NotFound:
                     r = Routed(
                         reply="I couldn't find that exact runner ID in the existing database. Open the runner database to search.",
                         used=["prompt"],
