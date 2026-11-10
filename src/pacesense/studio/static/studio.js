@@ -848,6 +848,7 @@
       // Leave the transcript editable so the coach can correct it before sending.
       $("#notes-input").value = text;
       hooks.transcript(text, false);
+      stopVoice(); // pause capture so another recognition event cannot overwrite the editable transcript
       toast("I may have misheard that. Please correct the transcript, then press Send.", "error");
       $("#notes-input").focus();
       return;
