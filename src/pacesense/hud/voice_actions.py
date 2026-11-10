@@ -122,6 +122,7 @@ _REVEAL_ACTION_RE = re.compile(
     re.IGNORECASE,
 )
 _UNDO_ACTION_RE = re.compile(r"\bundo\b", re.IGNORECASE)
+_QUESTION_ACTION_RE = re.compile(r"\b(?:ask|explain|tell me|what|why|how)\b", re.IGNORECASE)
 _DATABASE_ACTION_RE = re.compile(
     r"\b(?:database|directory|roster)\b|\bshow\s+(?:me\s+)?(?:all|female|male)?\s+runners?\b",
     re.IGNORECASE,
@@ -210,6 +211,8 @@ def _compound_action_conflict(utterance: str, intent: str) -> bool:
             categories.add("reveal")
         if _UNDO_ACTION_RE.search(clause):
             categories.add("undo")
+        if _QUESTION_ACTION_RE.search(clause):
+            categories.add("assistant_question")
 
         database_cue = bool(_DATABASE_ACTION_RE.search(clause))
         if _SEARCH_ACTION_RE.search(clause) and (
