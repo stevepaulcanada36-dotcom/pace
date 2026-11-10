@@ -152,6 +152,7 @@ class VoiceIntentValidationTests(unittest.TestCase):
             ui_state={"temp_c": 12, "wind_kmh": 0, "profile": "on_plan"},
         )
         self.assertEqual(result["status"], "action")
+
     def test_state_dependent_actions_are_checked(self):
         self.assertEqual(validate_voice_intent(intent("undo"), RUNNERS, can_undo=False)["status"], "clarify")
         self.assertEqual(validate_voice_intent(intent("undo"), RUNNERS, can_undo=True)["status"], "action")
