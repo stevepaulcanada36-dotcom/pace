@@ -53,7 +53,14 @@ class BosonClient:
         """Wait until Boson confirms the requested Realtime session configuration."""
         deadline = time.monotonic() + self.timeout
         while time.monotonic() < deadline:
-            event = json.loads(ws.recv(timeout=max(1, min(10, deadline - time.monotonic()))))
+            # A websocket receive timeout is only a polling interval, not proof that
+            # Boson failed to update the session. Keep waiting until the overall
+            # handshake deadline instead of aborting after the first 10 seconds.
+            try:
+                raw = ws.recv(timeout=max(1, min(10, deadline - time.monotonic())))
+            except TimeoutError:
+                continue
+            event = json.loads(raw)
             kind = event.get("type", "")
             if kind == "error":
                 err = event.get("error", {})
