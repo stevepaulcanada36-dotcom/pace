@@ -101,6 +101,57 @@ class VoiceIntentValidationTests(unittest.TestCase):
         self.assertEqual(validate_voice_intent(intent("simulate", {"temp_c": 22, "wind_kmh": 41}), RUNNERS)["status"], "clarify")
         self.assertEqual(validate_voice_intent(intent("simulate", {"temp_c": 22, "wind_kmh": 15, "profile": "fast_start"}), RUNNERS)["status"], "action")
 
+    def test_compound_panel_actions_are_clarified(self):
+        utterance = "open the races panel and close the simulator"
+        result = validate_voice_intent(
+            intent("focus_panel", {"panel": "races"}, evidence=[utterance]),
+            RUNNERS, utterance=utterance,
+        )
+        self.assertEqual(result["status"], "clarify")
+        self.assertIn("more than one action", result["message"])
+
+    def test_compound_runner_selection_and_familiarity_are_clarified(self):
+        utterance = "open Jamie Lee and mark this runner unfamiliar to me"
+        result = validate_voice_intent(
+            intent("select_runner", {"runner": "Jamie Lee"}, evidence=[utterance]),
+            RUNNERS, utterance=utterance,
+        )
+        self.assertEqual(result["status"], "clarify")
+
+    def test_compound_database_search_and_runner_selection_are_clarified(self):
+        utterance = "open the runner database and select Jamie Lee"
+        result = validate_voice_intent(
+            intent("runner_database", {"query": "Jamie Lee"}, evidence=[utterance]),
+            RUNNERS, utterance=utterance,
+        )
+        self.assertEqual(result["status"], "clarify")
+
+    def test_compound_action_and_question_are_clarified(self):
+        utterance = "open the races panel and explain why the range is wide"
+        result = validate_voice_intent(
+            intent("focus_panel", {"panel": "races"}, evidence=[utterance]),
+            RUNNERS, utterance=utterance,
+        )
+        self.assertEqual(result["status"], "clarify")
+
+    def test_conflicting_simulation_temperatures_are_clarified(self):
+        utterance = "simulate at 25 degrees and then at 30 degrees"
+        result = validate_voice_intent(
+            intent("simulate", {"temp_c": 25, "wind_kmh": 0, "profile": "on_plan"},
+                   evidence=[utterance]),
+            RUNNERS, utterance=utterance,
+        )
+        self.assertEqual(result["status"], "clarify")
+
+    def test_simulation_may_open_its_own_panel(self):
+        utterance = "simulate at 25 degrees and open the simulator"
+        result = validate_voice_intent(
+            intent("simulate", {"temp_c": 25, "wind_kmh": 0, "profile": "on_plan"},
+                   evidence=[utterance]),
+            RUNNERS, utterance=utterance,
+            ui_state={"temp_c": 12, "wind_kmh": 0, "profile": "on_plan"},
+        )
+        self.assertEqual(result["status"], "action")
     def test_state_dependent_actions_are_checked(self):
         self.assertEqual(validate_voice_intent(intent("undo"), RUNNERS, can_undo=False)["status"], "clarify")
         self.assertEqual(validate_voice_intent(intent("undo"), RUNNERS, can_undo=True)["status"], "action")
@@ -432,6 +483,7 @@ class VoiceIntentExecutionTests(unittest.TestCase):
         ))
         result = service.command(sid, "I don't know this runner", source="voice")
         self.assertEqual(result["adapt"]["ui"]["condition"], "unknown")
+        self.assertTrue(result["voice_action_pending"])
         self.assertEqual(result["actions"], [{"type": "condition", "value": "unknown"}])
 
     def test_voice_close_panel_is_mapped_to_a_close_action(self):
@@ -521,8 +573,29 @@ class VoiceIntentExecutionTests(unittest.TestCase):
         ))
         result = service.command(sid, f"open runner {target}", source="voice")
         name = CoachService._summary(runner, False).get("name") or runner.runner_id
-        self.assertEqual(result["actions"], [{"type": "runner", "id": runner.runner_id, "name": name}])
+        self.assertEqual(result["actions"], [
+            {"type": "runner", "id": runner.runner_id, "name": name, "condition": "ask"},
+        ])
 
+    def test_selecting_the_current_runner_keeps_its_existing_familiarity(self):
+        service, sid, _ = self.service(intent("none"))
+        live = service.sessions.entry(sid).value
+        target = live.hud.runner_id
+        service.ai_factory = lambda: FakeAI(intent(
+            "select_runner", {"runner": target}, evidence=[f"open runner {target}"],
+        ))
+        result = service.command(sid, f"open runner {target}", source="voice")
+        self.assertEqual(result["actions"][0]["condition"], "known")
+
+    def test_compound_voice_action_is_clarified_even_when_boson_proposes_one(self):
+        utterance = "open the races panel and close the simulator"
+        service, sid, _ = self.service(intent(
+            "focus_panel", {"panel": "races"}, evidence=[utterance],
+        ))
+        result = service.command(sid, utterance, source="voice")
+        self.assertEqual(result["actions"], [])
+        self.assertEqual(result["voice_intent"]["status"], "clarify")
+        self.assertIn("more than one action", result["reply"])
     def test_unmatched_runner_selection_does_not_execute(self):
         service, sid, _ = self.service(intent(
             "select_runner", {"runner": "Unknown Person"}, evidence=["open Unknown Person"],
