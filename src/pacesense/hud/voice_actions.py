@@ -144,20 +144,32 @@ _FAMILIARITY_ACTION_RE = re.compile(
     r"i\s+am\s+familiar\s+with\s+(?:this\s+|the\s+)?runner|"
     r"not\s+familiar\s+with\s+(?:this\s+|the\s+)?runner|"
     r"unfamiliar\s+(?:to\s+me|with\s+(?:this\s+|the\s+)?runner)|"
-    r"unknown\s+to\s+me|mark\s+(?:this\s+|the\s+)?runner\s+(?:as\s+)?(?:known|unknown|unfamiliar))\b",
+    r"unknown\s+to\s+me|not\s+known\s+to\s+me|known\s+to\s+me|"
+    r"haven't\s+coached\s+(?:this\s+)?runner|have\s+not\s+coached\s+(?:this\s+)?runner|"
+    r"(?:this\s+)?runner\s+(?:is\s+)?new\s+to\s+me|new\s+runner\s+to\s+me|"
+    r"set\s+(?:the\s+)?(?:runner\s+)?familiarity\s+(?:to|as)\s+(?:known|familiar|unknown|unfamiliar)|"
+    r"make\s+(?:this\s+|the\s+)?runner\s+(?:known|familiar|unknown|unfamiliar)|"
+    r"mark\s+(?:this\s+|the\s+)?runner\s+(?:as\s+)?(?:known|unknown|unfamiliar))\b",
     re.IGNORECASE,
 )
 _KNOWN_FAMILIARITY_RE = re.compile(
     r"\b(?:i\s+know\s+(?:this\s+|the\s+)?runner|i\s+coach\s+(?:this\s+)?runner|"
     r"i\s+am\s+familiar\s+with\s+(?:this\s+|the\s+)?runner|"
-    r"familiar\s+with\s+(?:this\s+|the\s+)?runner|mark\s+(?:this\s+|the\s+)?runner\s+(?:as\s+)?known)\b",
+    r"familiar\s+with\s+(?:this\s+|the\s+)?runner|known\s+to\s+me|"
+    r"set\s+(?:the\s+)?(?:runner\s+)?familiarity\s+(?:to|as)\s+(?:known|familiar)|"
+    r"make\s+(?:this\s+|the\s+)?runner\s+(?:known|familiar)|"
+    r"mark\s+(?:this\s+|the\s+)?runner\s+(?:as\s+)?known)\b",
     re.IGNORECASE,
 )
 _UNFAMILIAR_FAMILIARITY_RE = re.compile(
     r"\b(?:i\s+(?:do\s+not|don't|dont)\s+know\s+(?:this\s+|the\s+)?runner|"
     r"not\s+familiar\s+with\s+(?:this\s+|the\s+)?runner|"
     r"unfamiliar\s+(?:to\s+me|with\s+(?:this\s+|the\s+)?runner)|"
-    r"unknown\s+to\s+me|mark\s+(?:this\s+|the\s+)?runner\s+(?:as\s+)?(?:unknown|unfamiliar))\b",
+    r"unknown\s+to\s+me|not\s+known\s+to\s+me|haven't\s+coached\s+(?:this\s+)?runner|"
+    r"have\s+not\s+coached\s+(?:this\s+)?runner|(?:this\s+)?runner\s+(?:is\s+)?new\s+to\s+me|"
+    r"new\s+runner\s+to\s+me|set\s+(?:the\s+)?(?:runner\s+)?familiarity\s+(?:to|as)\s+(?:unknown|unfamiliar)|"
+    r"make\s+(?:this\s+|the\s+)?runner\s+(?:unknown|unfamiliar)|"
+    r"mark\s+(?:this\s+|the\s+)?runner\s+(?:as\s+)?(?:unknown|unfamiliar))\b",
     re.IGNORECASE,
 )
 _COMPOUND_PANEL_TERMS = {
