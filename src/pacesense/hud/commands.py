@@ -160,15 +160,15 @@ def _steering_candidate(text: str, hud: Any) -> bool:
     lowered = text.casefold()
     names_or_years = any(
         (str(r.get("event", "")).casefold() in lowered if r.get("event") else False)
-        or re.search(rf"(?<!\\d){int(r['year'])}(?!\\d)", text)
+        or re.search(rf"(?<!\d){int(r['year'])}(?!\d)", text)
         for r in races if r.get("year") is not None
     )
     has_context = getattr(steer, "context", None) is not None
     steering_language = re.search(
-        r"\\b(weight|count|matter|trust|rely|represent|ignore|appeal|relevant|"
+        r"\b(weight|count|matter|trust|rely|represent|ignore|appeal|relevant|"
         r"less|more|reduce|lower|raise|increase|keep|use|consider|"
-        r"fast|faster|slow|slower|hot|cold|injur\\w*|ill|sick|good|bad|"
-        r"best|worst|unusual|typical|outlier|recent)\\b",
+        r"fast|faster|slow|slower|hot|cold|injur\w*|ill|sick|good|bad|"
+        r"best|worst|unusual|typical|outlier|recent)\b",
         text, re.I,
     )
     return bool(steering_language and (names_or_years or has_context))
