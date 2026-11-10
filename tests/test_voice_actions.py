@@ -96,6 +96,14 @@ class VoiceIntentValidationTests(unittest.TestCase):
         self.assertEqual(validate_voice_intent(intent("runner_database", {"gender": "X"}), RUNNERS)["status"], "clarify")
         self.assertEqual(validate_voice_intent(intent("runner_database", {"min_races": 21}), RUNNERS)["status"], "clarify")
 
+    def test_conflicting_runner_minimum_filters_are_clarified(self):
+        utterance = "show runners with at least four marathons and at least six races"
+        result = validate_voice_intent(
+            intent("runner_database", {"query": "", "gender": "", "min_races": 4}, evidence=[utterance]),
+            RUNNERS, utterance=utterance,
+        )
+        self.assertEqual(result["status"], "clarify")
+        self.assertIn("different minimum", result["message"])
     def test_panel_action_must_match_the_spoken_open_or_close_verb(self):
         close_as_open = validate_voice_intent(
             intent("focus_panel", {"panel": "races"}, evidence=["close the races panel"]),
