@@ -208,7 +208,7 @@ def _compound_action_conflict(utterance: str, intent: str) -> bool:
     for clause in clauses:
         categories: set[str] = set()
         panels: set[str] = set()
-        panel_terms = PANEL_TERMS if intent in ("focus_panel", "close_panel") else _COMPOUND_PANEL_TERMS
+        panel_terms = _COMPOUND_PANEL_TERMS if intent == "runner_database" else PANEL_TERMS
         if _PANEL_ACTION_RE.search(clause):
             panels = {
                 key for key, terms in panel_terms.items()
