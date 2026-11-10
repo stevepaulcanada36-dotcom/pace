@@ -117,6 +117,38 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(r.used, ["assistant"])
         self.assertTrue(r.reply)
 
+    def test_ai_steering_reads_natural_language_paraphrases(self):
+        from types import SimpleNamespace
+
+        class FakeClient:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def chat(self, *args, **kwargs):
+                return SimpleNamespace(text=json.dumps(self.payload))
+
+        class FakeAI:
+            online = True
+
+            def __init__(self, payload):
+                self.client = FakeClient(payload)
+
+            def config(self, task):
+                return "fake-model", 0.0
+
+        s = HudSession(self.coach, self.rid, ai=FakeAI({
+            "changes": [{"race": 0, "direction": "down", "strength": "normal",
+                         "quote": "should matter as much"}],
+            "command": None,
+            "estimate": None,
+        }))
+        race = s.steer.races[0]
+        text = f"I don't think {race['event']} {race['year']} should matter as much"
+        r = route(text, s)
+        self.assertEqual(r.used, ["steer"])
+        self.assertEqual(r.turn["applied"][0]["race"], f"{race['event']} {race['year']}")
+        self.assertAlmostEqual(r.turn["applied"][0]["new"], 0.3)
+
     def test_reactions_are_counted(self):
         s = self.demo()
         s.react(1, "agree"); s.react(2, "unsure")
