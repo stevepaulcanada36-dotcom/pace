@@ -108,7 +108,13 @@
 
   // ---------------------------------------------------------------- session lifecycle
   async function openRunner(runnerId = "demo", holdout = null, condition = null) {
+    const explicitCondition = condition != null;
     condition = condition || storage.get("pacesense.condition") || "ask";
+    if (explicitCondition) {
+      storage.set("pacesense.condition", condition);
+      const choice = $(`#cond-choice input[value="${condition}"]`);
+      if (choice) choice.checked = true;
+    }
     setBusy(true);
     try {
       const r = await api("POST", "/sessions", { runner_id: runnerId, holdout, coach_id: coachId(), condition });
@@ -682,9 +688,10 @@
       if (a.type === "simulate") {
         setSim(a);
         if (sim) { app.sim = sim; renderSim(sim); }
-        focusPanel("#panel-sim");
-        outcome.success = !!sim;
+        const focused = focusPanel("#panel-sim");
+        outcome.success = !!sim && focused;
         outcome.confirmation = `Updated the race-day simulation to ${a.temp_c} °C, ${a.wind_kmh} km/h headwind, ${a.profile.replace("_", " ")}.`;
+        if (!outcome.success) outcome.message = "I couldn't display the simulation result, so I haven't confirmed the change.";
       } else if ((a.type === "focus" || a.type === "open") && (PANEL[a.panel] || a.panel === "similar" || a.panel === "log" || a.panel === "record")) {
         if (a.panel === "log" || a.panel === "record") {
           const loaded = hooks.profile ? await hooks.profile() : false;
@@ -703,8 +710,9 @@
       } else if (a.type === "close" && (PANEL[a.panel] || a.panel === "log" || a.panel === "record")) {
         if (a.panel === "log" || a.panel === "record") {
           const dialog = $("#profile-dialog");
-          outcome.success = !!dialog;
-          if (dialog && dialog.open) dialog.close();
+          outcome.success = !!(dialog && dialog.open);
+          if (outcome.success) dialog.close();
+          else outcome.message = "The coach profile is not open, so I couldn't close that section.";
         } else {
           const el = $(PANEL[a.panel]);
           outcome.success = !!el;
@@ -712,7 +720,9 @@
         }
         outcome.confirmation = `Closed the ${a.panel} panel.`;
       } else if (a.type === "runner") {
-        outcome.sessionChanged = await openRunner(a.id, a.id === "demo" ? null : $("#holdout-check").checked);
+        outcome.sessionChanged = await openRunner(
+          a.id, a.id === "demo" ? null : $("#holdout-check").checked, a.condition || null,
+        );
         outcome.success = outcome.sessionChanged;
         outcome.confirmation = a.name ? `Opened ${a.name}.` : "Runner opened.";
         outcome.message = "I couldn't open that runner. Please choose an existing record from the database.";
@@ -724,13 +734,17 @@
           : "Opened the runner database with the requested search and filters.";
         outcome.message = loaded && loaded.error ? `I couldn't search the runner database: ${loaded.error}` : "I couldn't load the runner database.";
       } else if (a.type === "condition") {
-        outcome.success = true; // The service applies this to the active session before returning.
-        storage.set("pacesense.condition", a.value);
-        const choice = $(`#cond-choice input[value="${a.value}"]`);
-        if (choice) choice.checked = true;
-        outcome.confirmation = a.value === "unknown"
-          ? "Marked this as a runner you are unfamiliar with. The runner remains in the database."
-          : "Marked this as a runner you know personally.";
+        outcome.success = !!(result.adapt && result.adapt.ui && result.adapt.ui.condition === a.value);
+        if (outcome.success) {
+          storage.set("pacesense.condition", a.value);
+          const choice = $(`#cond-choice input[value="${a.value}"]`);
+          if (choice) choice.checked = true;
+          outcome.confirmation = a.value === "unknown"
+            ? "Marked this as a runner you are unfamiliar with. The runner remains in the database."
+            : "Marked this as a runner you know personally.";
+        } else {
+          outcome.message = "I couldn't confirm the familiarity change, so I haven't said it was applied.";
+        }
       } else if (a.type === "reveal") {
         outcome.success = !!(result.state && result.state.holdout && result.state.holdout.truth_s != null);
         if (outcome.success) focusPanel("#kpi-acc");
