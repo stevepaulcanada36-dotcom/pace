@@ -52,6 +52,22 @@ class BosonAdapterTests(unittest.TestCase):
         self.assertEqual(MODEL, "higgs-realtime")
         self.assertEqual(REALTIME_URL, "wss://api.boson.ai/v1/realtime")
 
+    def test_session_handshake_retries_transient_receive_timeout(self):
+        class DelayedSocket(FakeSocket):
+            def __init__(self):
+                super().__init__([{"type": "session.updated", "session": {"type": "realtime"}}])
+                self.first_read = True
+
+            def recv(self, timeout=None):
+                if self.first_read:
+                    self.first_read = False
+                    raise TimeoutError("transient websocket polling timeout")
+                return super().recv(timeout)
+
+        client = BosonClient("test-key", timeout=2)
+        session = client._await_session_updated(DelayedSocket())
+        self.assertEqual(session["type"], "realtime")
+
     def test_tool_specs_convert_chat_completions_shape_to_realtime_shape(self):
         specs = BosonClient._tool_specs([{
             "type": "function",
