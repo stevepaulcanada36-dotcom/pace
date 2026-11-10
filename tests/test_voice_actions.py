@@ -149,6 +149,7 @@ class VoiceIntentValidationTests(unittest.TestCase):
             RUNNERS, utterance=utterance,
         )
         self.assertEqual(result["status"], "clarify")
+
     def test_compound_runner_selection_and_familiarity_are_clarified(self):
         utterance = "open Jamie Lee and mark this runner unfamiliar to me"
         result = validate_voice_intent(
