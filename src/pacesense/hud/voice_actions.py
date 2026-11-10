@@ -36,7 +36,7 @@ QUERY_STOP_WORDS = {
     "man", "men", "marathon", "marathons", "me", "minimum", "min", "more", "named",
     "name", "number", "of", "on", "only", "open", "or", "please", "previous", "race",
     "races", "record", "records", "roster", "run", "runner", "runners", "search", "see",
-    "show", "the", "to", "view", "want", "we", "who", "with", "woman", "women", "you",
+    "show", "the", "to", "up", "look", "view", "want", "we", "who", "with", "woman", "women", "you",
 }
 FAMILIARITY_FILTER_RE = re.compile(
     r"\b(?:familiar|unfamiliar|known|unknown)\s+runners?\b|"
