@@ -183,6 +183,23 @@ class VoiceIntentValidationTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "clarify")
 
+    def test_conflicting_simulation_wind_speeds_are_clarified(self):
+        utterance = "simulate at 25 degrees with 10 km/h headwind and then 20 km/h headwind"
+        result = validate_voice_intent(
+            intent("simulate", {"temp_c": 25, "wind_kmh": 10, "profile": "on_plan"},
+                   evidence=[utterance]),
+            RUNNERS, utterance=utterance,
+        )
+        self.assertEqual(result["status"], "clarify")
+
+    def test_conflicting_simulation_profiles_are_clarified(self):
+        utterance = "simulate at 25 degrees with a fast start and a late fade"
+        result = validate_voice_intent(
+            intent("simulate", {"temp_c": 25, "wind_kmh": 0, "profile": "fast_start"},
+                   evidence=[utterance]),
+            RUNNERS, utterance=utterance,
+        )
+        self.assertEqual(result["status"], "clarify")
     def test_simulation_may_open_its_own_panel(self):
         utterance = "simulate at 25 degrees and open the simulator"
         result = validate_voice_intent(
