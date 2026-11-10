@@ -106,7 +106,7 @@ class ProfileEdit(_Body):
     session_id: str | None = Field(None, max_length=64)
 
 
-BODIES = {"CreateSession": CreateSession, "Command": Command, "SetWeight": SetWeight, "Simulate": Simulate,
+BODIES: dict[str, type[BaseModel]] = {"CreateSession": CreateSession, "Command": Command, "SetWeight": SetWeight, "Simulate": Simulate,
           "React": React, "Estimate": Estimate, "SessionEvent": SessionEvent,
           "InterviewAnswer": InterviewAnswer, "ProfileEdit": ProfileEdit, "Condition": Condition,
           "Choose": Choose, "VoiceSignals": VoiceSignals, "VoiceUIState": VoiceUIState}

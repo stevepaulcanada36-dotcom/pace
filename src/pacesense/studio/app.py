@@ -34,7 +34,7 @@ import re
 import time
 import uuid
 from importlib import resources
-from typing import Any
+from typing import Any, TypeVar
 
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticError
@@ -96,7 +96,10 @@ def problem(request: Request, status: int, title: str, detail: str = "", errors:
     return JSON(body, status, media_type="application/problem+json")
 
 
-async def body_of(request: Request, model: type[BaseModel]) -> BaseModel:
+BodyT = TypeVar("BodyT", bound=BaseModel)
+
+
+async def body_of(request: Request, model: type[BodyT]) -> BodyT:
     raw = await request.body()
     if len(raw) > MAX_BODY:
         raise Problem(413, "Request too large", f"bodies are limited to {MAX_BODY // 1024} KB")
@@ -413,9 +416,10 @@ def create_app(service: StudioService, settings: Settings | None = None) -> Star
     if settings.cors_origins:
         middleware.append(Middleware(CORSMiddleware, allow_origins=settings.cors_origins,
                                      allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["content-type", "x-request-id"]))
-    app = Starlette(routes=routes, middleware=middleware, exception_handlers={
+    handlers: dict[Any, Any] = {
         Problem: on_problem, SessionNotFound: on_missing_session, NotFound: on_not_found, DomainError: on_domain,
-        HTTPException: on_http, Exception: on_error})
+        HTTPException: on_http, Exception: on_error}
+    app = Starlette(routes=routes, middleware=middleware, exception_handlers=handlers)
     app.state.service = service
     metrics.routes = routes
     return app

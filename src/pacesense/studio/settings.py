@@ -27,11 +27,11 @@ class Settings(BaseModel):
     data_path: str | None = None
     seed: int | None = None
     host: str = "127.0.0.1"
-    port: int = Field(8000, ge=1, le=65535)
+    port: int = Field(default=8000, ge=1, le=65535)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     log_format: Literal["json", "text"] = "text"
-    session_ttl_s: int = Field(3600, ge=60, le=7 * 24 * 3600)
-    max_sessions: int = Field(200, ge=1, le=10_000)
+    session_ttl_s: int = Field(default=3600, ge=60, le=7 * 24 * 3600)
+    max_sessions: int = Field(default=200, ge=1, le=10_000)
     cors_origins: list[str] = Field(default_factory=list)
     ai_enabled: bool = False
     access_user: str | None = None
@@ -78,7 +78,7 @@ class Settings(BaseModel):
         raw.update({k: v for k, v in overrides.items()})
         raw = {k: v for k, v in raw.items() if v is not None and v != ""}
         try:
-            return cls(**raw)
+            return cls.model_validate(raw)
         except ValidationError as exc:
             problems = "; ".join(f"{'.'.join(map(str, x['loc']))}: {x['msg']}" for x in exc.errors())
             raise SystemExit(f"PaceSense Studio: invalid settings ({problems})") from None
