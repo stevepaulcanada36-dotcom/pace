@@ -153,6 +153,27 @@ def ui_commands(text: str) -> tuple[list[dict], list[str], str]:
     return actions, said, " ".join(rest.split())
 
 
+def _steering_candidate(text: str, hud: Any) -> bool:
+    """Only spend an AI steering call when the utterance could describe a race or its relevance."""
+    steer = getattr(hud, "steer", None)
+    races = getattr(steer, "races", ()) or ()
+    lowered = text.casefold()
+    names_or_years = any(
+        (str(r.get("event", "")).casefold() in lowered if r.get("event") else False)
+        or re.search(rf"(?<!\\d){int(r['year'])}(?!\\d)", text)
+        for r in races if r.get("year") is not None
+    )
+    has_context = getattr(steer, "context", None) is not None
+    steering_language = re.search(
+        r"\\b(weight|count|matter|trust|rely|represent|ignore|appeal|relevant|"
+        r"less|more|reduce|lower|raise|increase|keep|use|consider|"
+        r"fast|faster|slow|slower|hot|cold|injur\\w*|ill|sick|good|bad|"
+        r"best|worst|unusual|typical|outlier|recent)\\b",
+        text, re.I,
+    )
+    return bool(steering_language and (names_or_years or has_context))
+
+
 def route(text: str, hud: Any, source: str = "typed") -> Routed:
     """`hud` is a HudSession (web/hud_api.py): .steer (SteeringSession), .ask(question) -> (answer, steps)."""
     out = Routed()
@@ -165,9 +186,15 @@ def route(text: str, hud: Any, source: str = "typed") -> Routed:
         from ..steer.intent import interpret
         it = interpret(rest, hud.steer.races, hud.steer.context, hud.steer.lexicon)
         strong = [a for a in it.actions if a.kind in ("reset", "undo", "recency") or a.confidence >= 0.8]
-        if strong or it.estimate_s is not None or (it.actions and not actions):
+        should_interpret = bool(
+            strong or it.estimate_s is not None or it.unknown_races or it.unresolved
+            or (it.actions and not actions) or _steering_candidate(rest, hud)
+        )
+        if should_interpret:
             turn = hud.steer.hear(rest, source)
-            if turn.applied or turn.estimate_s is not None or turn.source == "undo" or turn.notes:
+            meaningful_notes = [n for n in turn.notes if not n.startswith("Heard you, but nothing")]
+            if (turn.applied or turn.estimate_s is not None or turn.source == "undo"
+                    or meaningful_notes):
                 out.turn = {**turn.to_dict(), "said": text}
                 out.actions.append({"type": "refresh"})
                 out.used.append("steer")
