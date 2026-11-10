@@ -567,7 +567,8 @@ class VoiceIntentExecutionTests(unittest.TestCase):
 
     def test_voice_runner_selection_uses_verified_database_id(self):
         service, sid, coach = self.service(intent("none"))
-        runner = coach.runners[0]
+        live = service.sessions.entry(sid).value
+        runner = next(r for r in coach.runners if r.runner_id != live.hud.runner_id)
         target = runner.runner_id
         service.ai_factory = lambda: FakeAI(intent(
             "select_runner", {"runner": target}, evidence=[f"open runner {target}"],
@@ -597,6 +598,7 @@ class VoiceIntentExecutionTests(unittest.TestCase):
         self.assertEqual(result["actions"], [])
         self.assertEqual(result["voice_intent"]["status"], "clarify")
         self.assertIn("more than one action", result["reply"])
+
     def test_unmatched_runner_selection_does_not_execute(self):
         service, sid, _ = self.service(intent(
             "select_runner", {"runner": "Unknown Person"}, evidence=["open Unknown Person"],
