@@ -174,6 +174,13 @@ class VoiceIntentValidationTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "clarify")
 
+    def test_runner_database_open_and_race_panel_request_are_clarified(self):
+        utterance = "open the runner database and show races"
+        result = validate_voice_intent(
+            intent("runner_database", {"query": ""}, evidence=[utterance]),
+            RUNNERS, utterance=utterance,
+        )
+        self.assertEqual(result["status"], "clarify")
     def test_compound_database_search_and_runner_selection_are_clarified(self):
         utterance = "open the runner database and select Jamie Lee"
         result = validate_voice_intent(
