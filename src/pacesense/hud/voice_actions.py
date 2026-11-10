@@ -427,14 +427,22 @@ def validate_voice_intent(
                 return _clarify("I didn't hear a female-runner filter. Should I show female runners?", confidence, evidence)
             elif gender == "M" and not heard_male:
                 return _clarify("I didn't hear a male-runner filter. Should I show male runners?", confidence, evidence)
-            minimum_match = re.search(
+            minimum_matches = re.findall(
                 r"\b(?:at least|minimum(?: of)?|no fewer than|with)\s+"
                 r"(\d+|" + "|".join(NUMBER_WORDS) + r")\s+(?:previous\s+)?(?:marathons?|races?)\b",
                 utterance, re.IGNORECASE,
             )
-            if minimum_match:
-                raw_minimum = minimum_match.group(1).lower()
-                requested_minimum = int(raw_minimum) if raw_minimum.isdigit() else NUMBER_WORDS[raw_minimum]
+            requested_minima = {
+                int(value) if value.isdigit() else NUMBER_WORDS[value.lower()]
+                for value in minimum_matches
+            }
+            if len(requested_minima) > 1:
+                return _clarify(
+                    "I heard different minimum marathon counts. Which single minimum should I use?",
+                    confidence, evidence,
+                )
+            if requested_minima:
+                requested_minimum = next(iter(requested_minima))
                 if int(min_races) != requested_minimum:
                     return _clarify(
                         f"I heard a minimum of {requested_minimum} previous marathons, but that filter wasn't applied. Should I use {requested_minimum}?",
