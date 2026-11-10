@@ -52,7 +52,7 @@ class Settings(BaseModel):
         return str(v).upper()
 
     @model_validator(mode="after")
-    def _access_pair(self) -> "Settings":
+    def _access_pair(self) -> Settings:
         if bool(self.access_user) != bool(self.access_password):
             raise ValueError("PACESENSE_ACCESS_USER and PACESENSE_ACCESS_PASSWORD must be set together")
         return self

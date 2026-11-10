@@ -3,9 +3,9 @@ persona from how the coach speaks, turn-taking, and the spoken replies."""
 import unittest
 
 from pacesense.adaptive import AdaptiveEngine, Event, Persona
-from pacesense.adaptive.loops import ClarifyLoop, LoopContext, SessionContext
 from pacesense.adaptive.answers import is_bare_answer, match_choice
 from pacesense.adaptive.explain import explain
+from pacesense.adaptive.loops import ClarifyLoop, LoopContext, SessionContext
 from pacesense.coach import CoachService
 from pacesense.storage import Repository
 from pacesense.studio import Settings, StudioService
@@ -157,7 +157,7 @@ class VoicePersonaTests(unittest.TestCase):
 
     def test_explanations_use_the_session_numbers(self):
         self.assertIn("18 minutes slower", explain("race", STATE, 1))
-        self.assertIn("middle 60 percent", explain("range", STATE))
+        self.assertIn("20th to 80th percentiles", explain("range", STATE))
 
 
 class VoiceApiTests(unittest.TestCase):

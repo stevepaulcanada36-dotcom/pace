@@ -3,18 +3,16 @@ import json
 import unittest
 from types import SimpleNamespace
 
-from pacesense.coach import CoachService
 from pacesense.assistant.chat import ModelReply
+from pacesense.coach import CoachService
+from pacesense.hud.commands import ui_commands
+from pacesense.hud.voice_actions import MIN_CONFIDENCE, validate_voice_intent
 from pacesense.storage import Repository
 from pacesense.studio import Settings, StudioService
 from pacesense.studio.app import create_app
 from pacesense.studio.schemas import Command
-from tests.asgi import Client
 from tests import helpers
-
-from pacesense.hud.voice_actions import MIN_CONFIDENCE, validate_voice_intent
-from pacesense.hud.commands import ui_commands
-
+from tests.asgi import Client
 
 RUNNERS = [
     {"runner_id": "R00042", "name": "Alex Smith"},

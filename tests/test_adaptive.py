@@ -2,8 +2,8 @@
 import unittest
 
 from pacesense.adaptive import AdaptiveEngine, Event, Persona, default_loops, questions
-from pacesense.adaptive.loops import cue_category
 from pacesense.adaptive.explain import likely_range
+from pacesense.adaptive.loops import cue_category
 from pacesense.coach import CoachService
 from pacesense.storage import Repository
 from pacesense.studio import Settings, StudioService
@@ -246,7 +246,11 @@ class AdaptiveApiTests(unittest.TestCase):
 
         r = self.c.post(f"/api/v1/sessions/{sid}/commands", {"text": "trust the recent races more", "source": "voice"}).json()
         self.assertIn("adapt", r)
-        self.assertTrue(r["adapt"]["speak"])
+        # A voice command that changes the prediction is spoken by the browser only after it has applied the
+        # change, so the server defers the confirmation instead of speaking it optimistically.
+        self.assertTrue(r["voice_action_pending"])
+        self.assertTrue(r["reply"])
+        self.assertEqual(r["adapt"]["speak"], "")
 
         r = self.c.post(f"/api/v1/sessions/{sid}/events", {"kind": "voice_on"}).json()
         self.assertEqual(r["adapt"]["ui"]["layout"], "voice")

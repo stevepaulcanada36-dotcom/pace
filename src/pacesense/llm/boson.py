@@ -11,7 +11,7 @@ import json
 import time
 from typing import Any
 
-from .openrouter import ChatResult, LLMError, Transcript, Usage, MAX_AUDIO_BYTES
+from .openrouter import MAX_AUDIO_BYTES, ChatResult, LLMError, Transcript, Usage
 
 REALTIME_URL = "wss://api.boson.ai/v1/realtime"
 MODEL = "higgs-realtime"
@@ -315,4 +315,4 @@ class BosonClient:
                           time.perf_counter() - t0, MODEL, "realtime")
 
 
-__all__ = ["BosonClient", "MODEL", "REALTIME_URL", "SUPPORTED_AUDIO_FORMATS"]
+__all__ = ["MODEL", "REALTIME_URL", "SUPPORTED_AUDIO_FORMATS", "BosonClient"]

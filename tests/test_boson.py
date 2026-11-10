@@ -6,9 +6,9 @@ import wave
 
 from pacesense.llm.boson import (
     AUDIO_CHUNK_BYTES,
-    BosonClient,
     MODEL,
     REALTIME_URL,
+    BosonClient,
 )
 from pacesense.llm.openrouter import LLMError
 
