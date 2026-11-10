@@ -56,6 +56,37 @@ class VoiceIntentValidationTests(unittest.TestCase):
         self.assertEqual(unfamiliar["arguments"]["condition"], "unknown")
         self.assertNotIn("create_runner", unfamiliar["arguments"])
 
+    def test_runner_lookup_paraphrase_preserves_the_exact_name(self):
+        utterance = "look up Jamie Lee"
+        result = validate_voice_intent(
+            intent("runner_database", {"query": "Jamie Lee"}, evidence=[utterance]),
+            RUNNERS, utterance=utterance,
+        )
+        self.assertEqual(result["status"], "action")
+        self.assertEqual(result["arguments"]["query"], "Jamie Lee")
+
+    def test_runner_selection_accepts_choose_and_pick(self):
+        for verb in ("choose", "pick"):
+            utterance = f"{verb} Jamie Lee"
+            result = validate_voice_intent(
+                intent("select_runner", {"runner": "Jamie Lee"}, evidence=[utterance]),
+                RUNNERS, utterance=utterance,
+            )
+            self.assertEqual(result["status"], "action")
+
+    def test_familiarity_accepts_explicit_setting_language(self):
+        unfamiliar_text = "set familiarity to unfamiliar"
+        unfamiliar = validate_voice_intent(
+            intent("set_familiarity", {"value": "unfamiliar"}, evidence=[unfamiliar_text]),
+            RUNNERS, utterance=unfamiliar_text,
+        )
+        known_text = "make this runner familiar"
+        known = validate_voice_intent(
+            intent("set_familiarity", {"value": "known"}, evidence=[known_text]),
+            RUNNERS, utterance=known_text,
+        )
+        self.assertEqual(unfamiliar["arguments"]["condition"], "unknown")
+        self.assertEqual(known["arguments"]["condition"], "known")
     def test_runner_search_preserves_query(self):
         r = validate_voice_intent(intent("runner_database", {"query": "Jamie Lee"}), RUNNERS)
         self.assertEqual(r["arguments"]["query"], "Jamie Lee")
