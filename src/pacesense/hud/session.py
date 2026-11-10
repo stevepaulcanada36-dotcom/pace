@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from ..assistant.chat import Assistant
+from ..assistant.chat import Assistant, AssistantError
 from ..assistant.tools import AssistantTools
 from ..cbr import holdout_best
 from ..coach import CoachService
@@ -71,7 +71,16 @@ class HudSession:
         from ..assistant.offline import OfflineModel
         model = self.ai.chat_model() if self.ai is not None else OfflineModel()
         tools = AssistantTools(self.coach, plan=lambda: self.plan)
-        ans = Assistant(model, tools).ask(question, self.history, self.assistant_context)
+        try:
+            ans = Assistant(model, tools).ask(question, self.history, self.assistant_context)
+        except AssistantError:
+            # A configured key must not turn a temporary provider outage into an HTTP 500.
+            # Fall back to the deterministic local helper for this turn only; never
+            # pretend that Boson answered or silently change race weights.
+            if self.ai is None or not getattr(self.ai, "online", False):
+                raise
+            ans = Assistant(OfflineModel(), tools).ask(question, self.history, self.assistant_context)
+            ans.text = "Boson is temporarily unavailable, so I used PaceSense's local fallback. " + ans.text
         self.remember_turn(question, ans.text)
         steps = [{"function": s.name, "arguments": s.arguments} for s in ans.steps]
         return ans.text, steps
