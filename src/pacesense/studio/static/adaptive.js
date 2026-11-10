@@ -409,6 +409,7 @@
     $("#stage-close").addEventListener("click", () => setVoiceMode(false));
     $("#guide-btn").addEventListener("click", startInterview);
     $("#persona-btn").addEventListener("click", openProfile);
+    $("#settings-btn").addEventListener("click", openProfile);
     $("#why-btn").addEventListener("click", openProfile);
     $("#speak-btn").setAttribute("aria-label", "Toggle spoken replies");
     $("#speak-btn").title = "Spoken replies: on or off";
