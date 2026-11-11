@@ -891,11 +891,12 @@
   // fallback: if Boson is slow, unavailable or unsure, the browser's text is used exactly as before.
   const STT_LEAD_MS = 2000, STT_KEEP_MS = 45000, STT_MAX_S = 30, STT_RATE = 16000, STT_TIMEOUT_MS = 7000;
   const cap = { ctx: null, node: null, src: null, stream: null, chunks: [], rate: 48000, fails: 0, off: false, why: "" };
-  const sttReady = () => !cap.off && !!cap.ctx && cap.chunks.length > 0 && !!(app.st && app.st.ai);
+  const serverAi = () => !!(app.st && app.st.session && app.st.session.ai);
+  const sttReady = () => !cap.off && !!cap.ctx && cap.chunks.length > 0 && serverAi();
   async function startCapture() {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (cap.ctx || cap.off) return;
-    if (!(app.st && app.st.ai)) { cap.why = "no-ai"; return; }
+    if (!serverAi()) { cap.why = "no-ai"; return; }
     if (!AC || !navigator.mediaDevices) { cap.why = "unsupported"; return; }
     if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) { cap.why = "mobile"; return; }   // phones cannot share the microphone with recognition
     cap.why = "";

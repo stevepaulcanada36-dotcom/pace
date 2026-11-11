@@ -54,6 +54,11 @@ NOW_RE = re.compile(
 ASKING_RE = re.compile(
     r"^\s*(?:so\s+|and\s+|but\s+)*(?:what|which|why|how|when|who|where|is it|is that|are you|does|did|do you|"
     r"tell me|explain)\b|\?\s*$|\bwhat happened\b|\bi (?:just )?(?:want|need) to know\b", re.IGNORECASE)
+# An answer to "Which race was that?" meaning: none, it is not about a race.
+NOT_A_RACE_RE = re.compile(
+    r"\b(?:not|n't|never)\b.{0,40}\b(?:during|in|at|on|about)\s+(?:a|the|any|that|those|these)?\s*(?:race|races|marathon)|"
+    r"\bnone\s+of\s+(?:them|those|these|the\s+races)|\bnot\s+a\s+race\b|\bno\s+race\b|"
+    r"\boutside\s+(?:of\s+)?(?:a\s+|the\s+)?rac", re.IGNORECASE)
 CURRENT_NOTE = ("Noted as how the runner is now, not as one of the past races. The model only sees past "
                 "races, so the target does not include it. Tell me your own estimate, for example "
                 "“I think the finish will be 4:55”, and I'll track it beside the model.")
@@ -97,6 +102,7 @@ class SessionContext:
     voice_style: dict = field(default_factory=dict)
     knowledge_noted: bool = False
     suggest_done: bool = False
+    clarify_asked: set = field(default_factory=set)         # cue categories Clarify already asked about
 
 
 @dataclass
@@ -183,11 +189,16 @@ class ClarifyLoop(FeedbackLoop):
             return []
         if NOW_RE.search(ev.text or ""):
             # "He hurt his back two days ago" is about today. Asking which old marathon it was would be wrong.
+            ctx.session.clarify_asked.add(cue_category(m.group(0)))
             remember_note(ctx, ev)
             return [self.adapt("insight", CURRENT_NOTE, "you described the runner as they are now")]
         if ASKING_RE.search(ev.text or ""):
             return []                                        # a question is answered, not turned into a quiz
         cue = m.group(0)
+        category = cue_category(cue)
+        if category in ctx.session.clarify_asked:
+            return []                                        # asked once already; do not keep asking
+        ctx.session.clarify_asked.add(category)
         choices = [{"label": f"{r['event']} {r['year']}", "say": f"{r['event']} {r['year']}: {ev.text}"} for r in races]
         return [self.adapt("prompt", f'Which race was "{cue}"?', "a cue was heard but no race was named",
                            choices=choices + [{"label": "None of them", "action": "dismiss"}])]

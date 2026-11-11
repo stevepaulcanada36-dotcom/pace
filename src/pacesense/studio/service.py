@@ -459,6 +459,57 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
             return "You're welcome."
         return ""
 
+    _OTHER_ASSISTANT_RE = re.compile(r"^\s*(?:ok(?:ay)?|hey|hi|hello)\s+(?:google|siri|alexa|cortana|bixby)\b|"
+                                     r"^\s*(?:alexa|siri)\b", re.IGNORECASE)
+    _ONE_WORD_REQUESTS = frozenset({"undo", "reveal", "reset", "why", "explain", "help", "repeat", "again",
+                                    "simulate", "continue", "next", "back", "stop", "summary", "summarise",
+                                    "summarize"})
+    _GUIDE_RE = re.compile(r"^\s*(?:please\s+)?(?:guide\s+me|start\s+(?:the\s+)?(?:guided\s+)?interview|"
+                           r"walk\s+me\s+through(?:\s+it)?|interview\s+me|guided\s+interview)(?:\s+please)?\s*$",
+                           re.IGNORECASE)
+
+    def _not_for_pacesense(self, text: str, live: Live) -> bool:
+        """Speech the microphone caught that carries no request: another assistant's wake word, or a word
+        or two that is not an answer, a command, a year or a race."""
+        if self._OTHER_ASSISTANT_RE.search(text):
+            return True
+        words = [w for w in re.sub(r"[^a-z0-9' ]+", " ", text.casefold()).split()
+                 if w not in {"um", "uh", "erm", "hmm", "so", "well", "like", "and", "the", "a", "oh"}]
+        if len(words) > 2:
+            return False
+        if not words:
+            return True
+        from ..adaptive.answers import is_bare_answer
+        if is_bare_answer(text) or self._small_talk(text) or ui_commands(text)[0]:
+            return False
+        if any(w.isdigit() for w in words) or set(words) & self._ONE_WORD_REQUESTS:
+            return False
+        names = {str(r.get("event") or "").casefold() for r in (live.hud.steer.races or [])}
+        return not (set(words) & names)
+
+    def _unheard(self, sid: str, live: Live, text: str, source: str, voice: dict | None) -> dict:
+        """Acknowledge on screen, say nothing aloud, and keep it out of the conversation history."""
+        reply = "I didn't catch a request in that, so I've left everything as it is. I'm still listening."
+        out: dict[str, Any] = {"reply": reply, "actions": [], "card": None, "used": ["prompt"],
+                               "simulation": None, "state": self.view(sid, live), "turn": None}
+        data = {"applied": [], "turn": None, "estimate_s": None, "notes": [], "used": ["prompt"],
+                "ui_only": True, "unheard": True, **({"voice": voice} if voice else {})}
+        self._observe(sid, live, Event("utterance", text, source, data), out)
+        out["adapt"]["speak"] = ""
+        out["voice_action_pending"] = False
+        return out
+
+    def _guide(self, sid: str, live: Live, text: str) -> dict:
+        """"Guide me", spoken or typed, starts the guided interview exactly like the button."""
+        live.engine.ctx.session.state = state = self.view(sid, live)
+        adapt = live.engine.start_interview()
+        question = (adapt.get("prompt") or {}).get("message", "")
+        reply = "Starting the guided interview." if question else "The guided interview has no more questions for this runner."
+        adapt["speak"] = f"{reply} {question}{live.engine._choices_aloud(live.engine.pending) if live.engine.pending else ''}".strip()
+        live.hud.remember_turn(text, f"{reply} {question}".strip())
+        return {"reply": reply, "actions": [], "card": None, "used": ["prompt"], "simulation": None,
+                "state": state, "turn": None, "adapt": adapt, "voice_action_pending": False}
+
     @classmethod
     def _wants_ui_action(cls, text: str) -> bool:
         return bool(cls._UI_REQUEST_RE.search(text) or ui_commands(text)[0])
@@ -600,13 +651,12 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
         if kind == "utterance" and source in ("voice", "typed") and not (extra or {}).get("prompt_answer"):
             response = out.get("reply") or ""
             pending = live.engine.pending
-            if pending:
-                choices = pending.get("data", {}).get("choices") or []
-                labels = [str(choice.get("label", "")) for choice in choices if choice.get("label")]
-                response += "\nPaceSense follow-up: " + str(pending.get("message", ""))
-                if labels:
-                    response += " Answers: " + "; ".join(labels)
-            s.remember_turn(text, response)
+            # Record a follow-up question once, on the turn it is raised. Copying the open question and its
+            # button labels into every later turn taught the model to answer with them.
+            if pending and live.engine.pending_new:
+                response += "\nPaceSense then asked: " + str(pending.get("message", ""))
+            if not (extra or {}).get("unheard"):
+                s.remember_turn(text, response)
         return out
 
     def transcribe(self, sid: str, audio: bytes, fmt: str = "wav") -> dict:
@@ -665,12 +715,36 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
             taken = self._take_offer(sid, live, text, source, voice)
             if taken is not None:
                 return taken
+            if self._GUIDE_RE.match(text):
+                return self._guide(sid, live, text)
             pend = live.engine.pending
             if pend:
-                c = match_choice(text, pend["data"].get("choices") or [])
+                choices = pend["data"].get("choices") or []
+                c = match_choice(text, choices)
+                if c is None and pend.get("loop") == "clarify":
+                    from ..adaptive.loops import CURRENT_NOTE, NOT_A_RACE_RE, NOW_RE
+                    none = next((x for x in choices if x.get("action") == "dismiss"), None)
+                    if none and (NOT_A_RACE_RE.search(text) or NOW_RE.search(text)):
+                        # "No, it didn't happen during a race, it happened yesterday": close the question
+                        # and keep what was said as context about the runner now.
+                        out = self._take_choice(sid, live, none, text, source, pend, voice)
+                        notes = live.engine.ctx.profile.setdefault("runner_notes", {}).setdefault(
+                            live.hud.source_runner, [])
+                        if not any(n.get("text") == text for n in notes):
+                            notes.append({"t": time.time(), "text": text[:200]})
+                            del notes[:-20]
+                            live.engine._save()                   # the profile is reloaded on every event
+                        out["reply"] = CURRENT_NOTE
+                        if not live.engine.pending:
+                            out["adapt"]["speak"] = CURRENT_NOTE
+                        live.hud.remember_turn(text, CURRENT_NOTE)
+                        return out
                 if c is not None:
                     return self._take_choice(sid, live, c, text, source, pend, voice)
-            elif is_bare_answer(text):                           # "yes" with nothing to say yes to
+            if source == "voice" and self._not_for_pacesense(text, live):
+                return self._unheard(sid, live, text, source, voice)
+            ai_answers = bool(live.hud.ai is not None and getattr(live.hud.ai, "online", False) and live.hud.history)
+            if not pend and is_bare_answer(text) and not ai_answers:   # "yes" with nothing to say yes to
                 reply = ("There's no question open right now. Tell me about her races, say “guide me”, "
                          "or ask what the likely range means.")
                 adapt = live.engine.snapshot() | {"speak": reply}
@@ -721,8 +795,8 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
         out["choice"] = {"label": c.get("label"), "loop": loop, "said": said}
         response = out.get("reply") or ""
         pending = live.engine.pending
-        if pending:
-            response += "\nPaceSense follow-up: " + str(pending.get("message", ""))
+        if pending and live.engine.pending_new:
+            response += "\nPaceSense then asked: " + str(pending.get("message", ""))
         live.hud.remember_turn(said, response)
         return out
 

@@ -117,6 +117,65 @@ class VoiceConversationTests(unittest.TestCase):
             self.assertTrue(spoken.startswith("the assistant's answer"), spoken)
         self.assertNotIn("How well do you know", spoken)
 
+    def test_stray_speech_is_not_answered_aloud_or_remembered(self):
+        service, sid, live, client = self.open()
+        for said in ("OK Google", "sorry babe", "you too", "movie", "show", "this relationship", "I think"):
+            out = service.command(sid, said, source="voice")
+            self.assertEqual(out["adapt"]["speak"], "", said)
+            self.assertIn("didn't catch a request", out["reply"])
+        self.assertEqual(client.calls, [])
+        self.assertEqual(live.hud.history, [])
+        race = live.hud.steer.races[-1]                      # a year or a race name is still a real turn
+        service.command(sid, str(race["year"]), source="voice")
+        self.assertEqual(client.kinds(), ["assistant"])
+
+    def test_a_sentence_sharing_one_word_with_a_choice_is_not_an_answer(self):
+        service, sid, live, _client = self.open()
+        self.assertEqual(live.engine.pending["message"], "How well do you know this runner?")
+        out = service.command(sid, "the 2019 data is not being much more accurate", source="voice")
+        self.assertNotIn("choice", out)
+        self.assertEqual(live.engine.ctx.session.condition, "ask")
+        out = service.command(sid, "not at all", source="voice")
+        self.assertEqual(out["choice"]["label"], "Not at all")
+
+    def test_guide_me_starts_the_interview_by_voice(self):
+        service, sid, live, client = self.open()
+        service.command(sid, "not at all", source="voice")
+        out = service.command(sid, "guide me", source="voice")
+        self.assertEqual(client.calls, [])
+        self.assertTrue(live.engine.ctx.session.interview_on)
+        self.assertTrue(out["adapt"]["speak"].startswith("Starting the guided interview."))
+
+    def test_an_injury_is_asked_about_once_and_not_during_a_race_closes_it(self):
+        service, sid, live, _client = self.open()
+        service.command(sid, "not at all", source="voice")
+        before = self.weights(live)
+        service.command(sid, "she had an injury in her leg", source="voice")
+        self.assertEqual(live.engine.pending["message"], 'Which race was "injury"?')
+        out = service.command(sid, "no it didn't happen during the race it happened yesterday", source="voice")
+        self.assertIn("how the runner is now", out["reply"])
+        self.assertNotEqual((live.engine.pending or {}).get("loop"), "clarify")
+        service.command(sid, "for the injury what should I do about it", source="voice")
+        self.assertNotEqual((live.engine.pending or {}).get("loop"), "clarify")      # not asked a second time
+        self.assertEqual(self.weights(live), before)
+        notes = live.engine.ctx.profile["runner_notes"][live.hud.source_runner]
+        self.assertTrue(any("yesterday" in n["text"] for n in notes))
+
+    def test_yes_after_an_offer_from_the_assistant_goes_back_to_the_assistant(self):
+        service, sid, _live, client = self.open()
+        service.command(sid, "not at all", source="voice")
+        service.command(sid, "what can I do about her training this month", source="voice")
+        n = len(client.calls)
+        out = service.command(sid, "yes go ahead", source="voice")
+        self.assertEqual(out["reply"], "the assistant's answer")
+        self.assertEqual(len(client.calls), n + 1)
+
+    def test_the_open_question_is_not_copied_into_every_turn_of_the_history(self):
+        service, sid, live, _client = self.open()
+        for said in ("what does the likely range mean", "and how sure is the model about that"):
+            service.command(sid, said, source="voice")
+        self.assertFalse(any("I coach her" in m["content"] for m in live.hud.history))
+
     def test_small_talk_costs_no_model_call(self):
         service, sid, _live, client = self.open()
         self.assertIn("listening", service.command(sid, "wait", source="voice")["reply"])
