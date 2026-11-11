@@ -77,7 +77,7 @@ class VoiceConversationTests(unittest.TestCase):
     def test_the_assistant_gets_the_runner_the_races_and_the_earlier_turns(self):
         service, sid, live, client = self.open()
         race = live.hud.steer.races[-1]
-        service.command(sid, "so I just want to know what happened on", source="voice")
+        service.command(sid, "so what does the likely range mean", source="voice")
         service.command(sid, f"{race['year']} race", source="voice")
         _, messages = client.calls[-1]
         system = messages[0]["content"]
@@ -85,8 +85,17 @@ class VoiceConversationTests(unittest.TestCase):
         self.assertIn("for the next marathon", system)
         self.assertIn("always mean the active runner", system)
         earlier = [m["content"] for m in messages[1:-1] if m["role"] == "user"]
-        self.assertIn("so I just want to know what happened on", earlier)
+        self.assertIn("so what does the likely range mean", earlier)
         self.assertEqual(messages[-1]["content"], f"{race['year']} race")
+
+    def test_a_question_that_trails_off_is_joined_to_its_ending(self):
+        service, sid, live, client = self.open()
+        race = live.hud.steer.races[-1]
+        held = service.command(sid, "so I just want to know what happened on", source="voice")
+        self.assertEqual(held["reply"], "Go on, I'm listening.")
+        service.command(sid, f"{race['year']} race", source="voice")
+        self.assertEqual(client.calls[-1][1][-1]["content"],
+                         f"so I just want to know what happened on {race['year']} race")
 
     def test_a_statement_about_a_named_race_still_moves_its_weight(self):
         service, sid, live, _client = self.open()
@@ -193,7 +202,7 @@ class VoiceConversationTests(unittest.TestCase):
         self.assertEqual((body.voice.wpm, body.voice.duration_ms, body.voice.confidence), (600, 120000, 1))
 
     def test_describing_how_well_you_know_the_runner_answers_the_open_question(self):
-        for said, label in (("Like I'm not ever much of this runner, but still", "Not at all"),
+        for said, label in (("Like I'm not ever much of this runner, to be honest", "Not at all"),
                             ("I've seen him once, maybe in 2013, like a long time", "A little"),
                             ("I coach her and have done for years", "I coach her"),
                             ("I don't know this runner", "Not at all")):
@@ -322,6 +331,76 @@ class AssistantActionTests(unittest.TestCase):
         system = client.calls[-1][1][0]["content"]
         self.assertIn("has now been revealed", system)
         self.assertIn("% away from that result", system)
+
+
+class TurnTakingTests(unittest.TestCase):
+    """A pause is not the end of a turn: half a sentence is held, quietly, and joined to the rest."""
+
+    def open(self):
+        client = ScriptedClient()
+        coach = CoachService(helpers.model(), helpers.runners(), Repository(":memory:"))
+        service = StudioService(coach, settings=Settings(), ai_factory=lambda: ScriptedAI(client))
+        sid = service.create()[0]
+        live = service.sessions.entry(sid).value
+        service.command(sid, "not at all", source="voice")
+        service.command(sid, "no", source="voice")
+        return service, sid, live, client
+
+    def test_half_a_sentence_is_held_and_joined_to_the_rest(self):
+        service, sid, live, client = self.open()
+        race = live.hud.steer.races[1]
+        before = [r["weight"] for r in live.hud.steer.state()["races"]]
+        first = service.command(sid, "Wait. Let me complete it. So it's going to be like wait.", source="voice")
+        second = service.command(sid, f"I've seen him in the {race['year']} race and", source="voice")
+        for out in (first, second):
+            self.assertEqual(out["reply"], "Go on, I'm listening.")
+            self.assertEqual(out["adapt"]["speak"], "")
+        self.assertEqual(client.calls, [])
+        self.assertEqual([r["weight"] for r in live.hud.steer.state()["races"]], before)
+        done = service.command(sid, "it was a hot day and he was injured", source="voice")
+        self.assertIn("steer", done["used"])
+        self.assertLess(live.hud.steer.state()["races"][1]["weight"], before[1])
+        self.assertIsNone(live.voice_fragment)
+
+    def test_an_unfinished_description_does_not_answer_the_familiarity_question(self):
+        client = ScriptedClient()
+        coach = CoachService(helpers.model(), helpers.runners(), Repository(":memory:"))
+        service = StudioService(coach, settings=Settings(), ai_factory=lambda: ScriptedAI(client))
+        sid = service.create()[0]
+        held = service.command(sid, "I'm not ever much about this runner, but still, like I've seen", source="voice")
+        self.assertNotIn("choice", held)
+        out = service.command(sid, "him once at a race a long time ago", source="voice")
+        self.assertEqual(out["choice"]["label"], "A little")
+
+    def test_laughter_and_stammering_are_ignored(self):
+        service, sid, _live, client = self.open()
+        for said in ("Ha ha ha ha ha ha.", "But, but, but, but, but, but it was."):
+            out = service.command(sid, said, source="voice")
+            self.assertEqual(out["adapt"]["speak"], "", said)
+        self.assertEqual(client.calls, [])
+
+    def test_waiting_does_not_go_on_for_ever(self):
+        service, sid, _live, _client = self.open()
+        for _ in range(3):
+            self.assertEqual(service.command(sid, "so I was thinking that the", source="voice")["reply"],
+                             "Go on, I'm listening.")
+        out = service.command(sid, "so I was thinking that the", source="voice")
+        self.assertNotEqual(out["reply"], "Go on, I'm listening.")
+
+    def test_a_not_understood_reply_is_shown_but_not_spoken(self):
+        client = ScriptedClient()
+        coach = CoachService(helpers.model(), helpers.runners(), Repository(":memory:"))
+        service = StudioService(coach, settings=Settings(), ai_factory=lambda: ScriptedAI(client))
+        sid = service.create()[0]
+        service.command(sid, "not at all", source="voice")
+        service.command(sid, "no", source="voice")
+        original = client.chat
+        client.chat = lambda model, messages, **kw: ChatResult(
+            "I didn't catch a question about the runner there.", [], Usage(), 0.0, model)
+        out = service.command(sid, "one case alone which happened a while back somewhere", source="voice")
+        client.chat = original
+        self.assertIn("didn't catch", out["reply"])
+        self.assertEqual(out["adapt"]["speak"], "")
 
 
 class ReplyStyleTests(unittest.TestCase):

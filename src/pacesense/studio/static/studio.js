@@ -854,11 +854,26 @@
     if (STOP_RE.test(t.trim()) && echoShare(t) < 0.5) return true;
     return isFinal && wordsOf(t).length >= 3 && echoShare(t) < 0.34;
   }
-  function resetUtterance() { Object.assign(voice, { buf: [], conf: [], t0: 0, barge: false }); clearTimeout(voice.timer); }
+  function resetUtterance() { Object.assign(voice, { buf: [], conf: [], t0: 0, barge: false, holds: 0 }); clearTimeout(voice.timer); }
+  // A pause is not always the end of a turn. If the words so far stop on "but", "and", "I've seen", or the
+  // coach said "wait, let me finish", keep the turn open and add what comes next to the same sentence.
+  const UNFINISHED_RE = /(?:\b(?:but|and|so|or|because|cause|like|the|a|an|of|to|in|on|at|with|for|from|that|which|who|was|is|are|were|i've|i'm|have|has|had|seen|then|than|when|if|my|maybe|um|uh|well|wait)|,)[\s.…]*$/i;
+  const HOLD_RE = /\b(?:wait|hold on|hang on|let me (?:complete|finish|think|say)|one (?:second|moment|sec)|not (?:done|finished))\b/i;
+  const HOLD_MS = 2200, HOLD_LIMIT_MS = 25000;
+  function keepTurnOpen(text) {
+    const asked = HOLD_RE.test(text) && wordsOf(text).length <= 14;
+    if (!(asked || UNFINISHED_RE.test(text))) return false;
+    if ((voice.holds || 0) >= (asked ? 3 : 2) || performance.now() - voice.t0 > HOLD_LIMIT_MS) return false;
+    voice.holds = (voice.holds || 0) + 1;
+    clearTimeout(voice.timer);
+    voice.timer = setTimeout(flushUtterance, HOLD_MS);
+    return true;
+  }
   /** Send what was said once the coach has paused for the turn-taking silence (shorter for brisk coaches). */
   function flushUtterance() {
     const text = voice.buf.join(" ").replace(/\s+/g, " ").trim();
     if (!text) return resetUtterance();
+    if (keepTurnOpen(text)) return;
     const now = performance.now(), dur = Math.max(300, now - voice.t0 - hooks.silenceMs()), n = wordsOf(text).length;
     const confs = voice.conf.filter((c) => Number.isFinite(c) && c >= 0 && c <= 1), ended = hooks.tts().endedAt;
     const signals = {
@@ -1032,7 +1047,9 @@
       const shown = [...voice.buf, interim].join(" ").trim();
       if (shown) { input.value = shown; hooks.transcript(shown, false); }
       clearTimeout(voice.timer);
-      if (voice.buf.length) voice.timer = setTimeout(flushUtterance, interim ? hooks.silenceMs() + 600 : hooks.silenceMs());
+      // The end-of-turn pause: never under 1.1 s, and longer while words are still arriving.
+      const pause = Math.max(1100, hooks.silenceMs());
+      if (voice.buf.length) voice.timer = setTimeout(flushUtterance, interim ? pause + 700 : pause);
     };
     rec.onerror = (e) => {
       const messages = {

@@ -72,6 +72,7 @@ class Live:
     engine: AdaptiveEngine
     coach_id: str
     voice_offer: dict | None = None      # a control PaceSense offered and is waiting for "yes" or "no" on
+    voice_fragment: dict | None = None   # an unfinished spoken sentence, waiting for the rest of it
 
 
 class StudioService:
@@ -589,9 +590,52 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
         names = {str(r.get("event") or "").casefold() for r in (live.hud.steer.races or [])}
         return not (set(words) & names)
 
-    def _unheard(self, sid: str, live: Live, text: str, source: str, voice: dict | None) -> dict:
+    _TRAILING = frozenset(
+        ["but", "and", "so", "or", "because", "cause", "like", "the", "a", "an", "of", "to", "in", "on", "at", "with", "for", "from", "that", "which", "who", "was", "is", "are", "were", "i've", "i'm", "have", "has", "had", "seen", "then", "than", "when", "if", "my", "maybe", "um", "uh", "well", "wait"])
+    _HOLD_RE = re.compile(r"\b(?:wait|hold on|hang on|let me (?:complete|finish|think|say)(?: (?:it|this|that|"
+                          r"the (?:statement|sentence)))?|one (?:second|moment|sec)|i'?m not (?:done|finished))\b[,.]?\s*",
+                          re.IGNORECASE)
+    _FRAGMENT_TTL_S = 20.0
+
+    @classmethod
+    def _is_unfinished(cls, text: str) -> bool:
+        """The coach stopped mid-sentence ("...a pretty good run, but") or asked for a moment ("wait, let me
+        complete it"): the rest is still coming, so this is not yet something to answer."""
+        words = re.sub(r"[^a-z0-9' ]+", " ", text.casefold()).split()
+        if not words or len(words) > 40:
+            return False
+        if cls._HOLD_RE.search(text) and len(cls._HOLD_RE.sub(" ", text).split()) <= 8:
+            return True
+        return len(words) >= 2 and words[-1] in cls._TRAILING
+
+    @staticmethod
+    def _is_noise(text: str) -> bool:
+        """Laughter or a stammer: one word making up most of the utterance ("ha ha ha ha", "but, but, but")."""
+        words = re.sub(r"[^a-z' ]+", " ", text.casefold()).split()
+        if len(words) < 4:
+            return False
+        top = max(words.count(w) for w in set(words))
+        return top / len(words) >= 0.6
+
+    def _with_fragment(self, live: Live, text: str) -> str:
+        """Put an unfinished sentence from a moment ago in front of what the coach says now."""
+        frag = live.voice_fragment
+        live.voice_fragment = None
+        if not frag or time.time() - frag["t"] > self._FRAGMENT_TTL_S:
+            return text
+        joined = f"{frag['text']} {text}"
+        joined = " ".join(self._HOLD_RE.sub(" ", joined).split()) or text
+        return " ".join(joined.split()[-70:])
+
+    def _keep_fragment(self, live: Live, text: str, n: int = 1) -> None:
+        kept = " ".join(self._HOLD_RE.sub(" ", text).split())
+        live.voice_fragment = ({"text": " ".join(kept.split()[-60:]), "t": time.time(), "n": n}
+                               if kept and n <= 3 else None)
+
+    def _unheard(self, sid: str, live: Live, text: str, source: str, voice: dict | None,
+                 reply: str = "") -> dict:
         """Acknowledge on screen, say nothing aloud, and keep it out of the conversation history."""
-        reply = "I didn't catch a request in that, so I've left everything as it is. I'm still listening."
+        reply = reply or "I didn't catch a request in that, so I've left everything as it is. I'm still listening."
         out: dict[str, Any] = {"reply": reply, "actions": [], "card": None, "used": ["prompt"],
                                "simulation": None, "state": self.view(sid, live), "turn": None}
         data = {"applied": [], "turn": None, "estimate_s": None, "notes": [], "used": ["prompt"],
@@ -599,6 +643,7 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
         self._observe(sid, live, Event("utterance", text, source, data), out)
         out["adapt"]["speak"] = ""
         out["voice_action_pending"] = False
+        out["unheard"] = True
         return out
 
     def _guide(self, sid: str, live: Live, text: str) -> dict:
@@ -820,6 +865,27 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                 return taken
             if self._GUIDE_RE.match(text):
                 return self._guide(sid, live, text)
+            if source != "voice":
+                return answer(live, text)
+            if self._is_noise(text):
+                return self._unheard(sid, live, text, source, voice)
+            waited = int((live.voice_fragment or {}).get("n", 0))
+            said = self._with_fragment(live, text)
+            if waited < 3 and self._is_unfinished(said) and not is_bare_answer(text):
+                # Mid-sentence: say nothing, keep the words, and answer when the rest arrives.
+                self._keep_fragment(live, said, waited + 1)
+                return self._unheard(sid, live, text, source, voice, reply="Go on, I'm listening.")
+            out = answer(live, said)
+            if "didn't catch" in str(out.get("reply", "")) and not out.get("unheard"):
+                # Not understood yet. Do not say so aloud over a coach who is still talking; keep the words
+                # in case the next sentence completes them.
+                self._keep_fragment(live, said, waited + 1)
+                out.setdefault("adapt", {})["speak"] = ""
+            elif self._small_talk(text).startswith("Take your time"):
+                out.setdefault("adapt", {})["speak"] = ""        # asked to wait: wait quietly
+            return out
+
+        def answer(live: Live, text: str):
             pend = live.engine.pending
             if pend:
                 choices = pend["data"].get("choices") or []
