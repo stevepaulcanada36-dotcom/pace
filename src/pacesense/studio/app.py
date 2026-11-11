@@ -27,6 +27,7 @@ Routes (all JSON under /api/v1; errors are RFC 9457 problem documents with a req
 from __future__ import annotations
 
 import base64
+import hashlib
 import hmac
 import json
 import logging
@@ -238,7 +239,15 @@ def create_app(service: StudioService, settings: Settings | None = None) -> Star
     settings = settings or service.settings
     metrics = Metrics()
     static_dir = resources.files("pacesense.studio").joinpath("static")
-    index_html = static_dir.joinpath("index.html").read_text(encoding="utf-8").replace("{{version}}", __version__)
+    # The script address changes whenever a static file changes, so a browser never runs an old script
+    # against a new server (the release number alone stays the same between deployments).
+    digest = hashlib.sha256()
+    for name in ("studio.js", "adaptive.js", "studio.css"):
+        asset = static_dir.joinpath(name)
+        if asset.is_file():
+            digest.update(asset.read_bytes())
+    asset_version = f"{__version__}-{digest.hexdigest()[:10]}"
+    index_html = static_dir.joinpath("index.html").read_text(encoding="utf-8").replace("{{version}}", asset_version)
 
     async def call(fn, *a):
         return await run_in_threadpool(fn, *a)

@@ -65,6 +65,10 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(r.status, 201)
         return r.json()["id"], r.json()["state"]
 
+    def test_script_address_carries_a_content_fingerprint(self):
+        page = self.c.get("/").text
+        self.assertRegex(page, r'/static/studio\.js\?v=[0-9.]+-[0-9a-f]{10}"')
+
     def test_operations_endpoints(self):
         self.assertEqual(self.c.get("/healthz").json()["status"], "ok")
         r = self.c.get("/readyz").json()
