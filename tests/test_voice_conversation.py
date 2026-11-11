@@ -176,6 +176,21 @@ class VoiceConversationTests(unittest.TestCase):
             service.command(sid, said, source="voice")
         self.assertFalse(any("I coach her" in m["content"] for m in live.hud.history))
 
+    def test_saying_a_race_is_not_precise_counts_it_less(self):
+        service, sid, live, _client = self.open()
+        service.command(sid, "not at all", source="voice")
+        race = live.hud.steer.races[1]
+        before = self.weights(live)
+        out = service.command(sid, f"{race['year']} datas are not precise so pretty picture is it", source="voice")
+        self.assertIn("steer", out["used"])
+        self.assertLess(self.weights(live)[1], before[1])
+
+    def test_an_odd_speech_measurement_does_not_reject_the_turn(self):
+        from pacesense.studio.schemas import Command
+        body = Command.model_validate({"text": "hello", "source": "voice",
+                                       "voice": {"wpm": 1800, "duration_ms": 9e9, "confidence": 1.4}})
+        self.assertEqual((body.voice.wpm, body.voice.duration_ms, body.voice.confidence), (600, 120000, 1))
+
     def test_small_talk_costs_no_model_call(self):
         service, sid, _live, client = self.open()
         self.assertIn("listening", service.command(sid, "wait", source="voice")["reply"])

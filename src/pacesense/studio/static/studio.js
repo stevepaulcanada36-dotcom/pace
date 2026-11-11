@@ -846,7 +846,7 @@
     const now = performance.now(), dur = Math.max(300, now - voice.t0 - hooks.silenceMs()), n = wordsOf(text).length;
     const confs = voice.conf.filter((c) => Number.isFinite(c) && c >= 0 && c <= 1), ended = hooks.tts().endedAt;
     const signals = {
-      wpm: Math.round(n / (dur / 60000)), duration_ms: Math.round(dur), barge_in: voice.barge,
+      wpm: Math.min(600, Math.round(n / (Math.max(dur, 250) / 60000))), duration_ms: Math.round(dur), barge_in: voice.barge,
       fillers: (text.match(FILLER_RE) || []).length,
       confidence: confs.length ? +Math.min(...confs).toFixed(2) : undefined,
       latency_ms: ended && voice.t0 > ended && voice.t0 - ended < 20000 ? Math.round(voice.t0 - ended) : undefined,
@@ -861,7 +861,7 @@
     // Prefer Boson's transcript of the recorded audio; the browser's text stays as the fallback.
     const wav = sttReady() ? utteranceWav(startedAt - STT_LEAD_MS) : null;
     // Tell the server which transcript this is, so a deployment's logs show whether audio capture works.
-    signals.transcriber = wav ? "browser:pending" : `browser:${cap.why || (cap.ctx ? (cap.chunks.length ? "short" : "idle") : "not-started")}`;
+    signals.transcriber = wav ? "browser:pending" : `browser:${performance.now() < (cap.pausedUntil || 0) ? "paused" : cap.why || (cap.ctx ? (cap.chunks.length ? "short" : "idle") : "not-started")}`;
     if (wav) {
       $("#notes-input").value = text; hooks.transcript(text, false);
       voice.stt = (voice.stt || Promise.resolve()).then(() => deliverWithBoson(text, signals, wav)).catch(() => deliverUtterance(text, signals));
@@ -889,10 +889,10 @@
   // The microphone is also captured as PCM. When the coach pauses, the audio of that utterance is sent to
   // the server, which asks Boson to transcribe it. Browser recognition still paces the turn and remains the
   // fallback: if Boson is slow, unavailable or unsure, the browser's text is used exactly as before.
-  const STT_LEAD_MS = 2000, STT_KEEP_MS = 45000, STT_MAX_S = 30, STT_RATE = 16000, STT_TIMEOUT_MS = 7000;
+  const STT_LEAD_MS = 2000, STT_KEEP_MS = 45000, STT_MAX_S = 30, STT_RATE = 16000, STT_TIMEOUT_MS = 7000, STT_RETRY_MS = 45000;
   const cap = { ctx: null, node: null, src: null, stream: null, chunks: [], rate: 48000, fails: 0, off: false, why: "" };
   const serverAi = () => !!(app.st && app.st.session && app.st.session.ai);
-  const sttReady = () => !cap.off && !!cap.ctx && cap.chunks.length > 0 && serverAi();
+  const sttReady = () => !cap.off && performance.now() >= (cap.pausedUntil || 0) && !!cap.ctx && cap.chunks.length > 0 && serverAi();
   async function startCapture() {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (cap.ctx || cap.off) return;
@@ -973,9 +973,11 @@
       return deliverUtterance(heard, s2);
     }
     if (r && r.available === false) { cap.off = true; cap.why = "no-ai"; }   // no provider key on the server
-    else if (++cap.fails >= 2 && !cap.off) {
-      cap.off = true; cap.why = "server-failed";
-      toast("Server transcription is not responding, so PaceSense is using the browser's speech recognition.");
+    else if (++cap.fails >= 2) {
+      // Two misses in a row (a server that is still waking up, a slow provider): use the browser's text for
+      // a while and then try again, instead of giving up for the rest of the session.
+      cap.fails = 0; cap.why = "server-failed"; cap.pausedUntil = performance.now() + STT_RETRY_MS;
+      if (!cap.told) { cap.told = true; toast("Server transcription is slow to answer, so PaceSense is using the browser's speech recognition for now."); }
     }
     if (cap.off) stopCapture();
     deliverUtterance(browserText, { ...signals, transcriber: `browser:${r ? (r.error ? "server-error" : "empty") : "timeout"}` });

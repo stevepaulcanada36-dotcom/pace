@@ -168,7 +168,8 @@ def _steering_candidate(text: str, hud: Any) -> bool:
         r"\b(weight|count|matter|trust|rely|represent\w*|ignore|appeal\w*|relevan\w*|important|significant|"
         r"less\w*|more\w*|reduce|lower|raise|increase|keep|use|consider|level|worth|valid|"
         r"fast|faster|slow|slower|hot|cold|injur\w*|ill|sick|good|bad|"
-        r"best|worst|unusual|typical|outlier|recent)\b",
+        r"best|worst|unusual|typical|outlier|recent|precise|imprecise|accurate|inaccurate|reliable|unreliable|"
+        r"correct|wrong|right|normal|fluke|misleading|reflect\w*|odd|strange|weird|anomal\w*|exception\w*)\b",
         text, re.I,
     )
     return bool(steering_language and (names_or_years or has_context))
