@@ -266,9 +266,9 @@ def _compound_action_conflict(utterance: str, intent: str) -> bool:
     # A simulator panel opened as part of a simulation is the same user action, not a second one.
     for categories, panels, clause in classified:
         unexpected = categories - {expected}
-        if intent == "simulate" and categories == {"panel"} and panels == {"simulator"}:
-            if _PANEL_OPEN_RE.search(clause):
-                continue
+        if (intent == "simulate" and categories == {"panel"} and panels == {"simulator"}
+                and _PANEL_OPEN_RE.search(clause)):
+            continue
         if unexpected:
             return True
 
@@ -373,8 +373,10 @@ def validate_voice_intent(
         )
     if intent == "none":
         clarification = _text(payload.get("clarification"), 240)
+        # "unmapped" tells the caller this is not a refused control: the words may still be a question or
+        # a comment about a race, so the conversation path gets them before any clarification is shown.
         return (
-            _clarify(clarification, confidence, evidence) if clarification
+            {**_clarify(clarification, confidence, evidence), "unmapped": True} if clarification
             else {"status": "fallback", "confidence": confidence, "evidence": evidence}
         )
 
@@ -551,13 +553,15 @@ def validate_voice_intent(
             return _clarify("Which PaceSense panel should I open or close?", confidence, evidence)
         if utterance is not None:
             if intent == "focus_panel":
-                verbs = r"\b(open|show|display|focus|bring up|pin)\b"
-                prompt = "Do you want me to open a PaceSense panel?"
+                verbs = r"\b(open|show|display|focus|bring up|pull up|pin|view|see|go to|take me to)\b"
+                prompt = f"Do you want me to open the {panel} panel?"
             else:
                 verbs = r"\b(close|hide|remove|minimize|minimise)\b"
-                prompt = "Do you want me to close a PaceSense panel?"
+                prompt = f"Do you want me to close the {panel} panel?"
             if not re.search(verbs, utterance, re.IGNORECASE):
-                return _clarify(prompt, confidence, evidence)
+                # Remember what was offered, so a plain "yes" on the next turn carries it out.
+                return {**_clarify(prompt, confidence, evidence),
+                        "offer": {"intent": intent, "arguments": {"panel": panel}}}
             if not any(_contains_phrase(utterance, term) for term in PANEL_TERMS[panel]):
                 return _clarify("I couldn't verify which panel you meant. Please name the panel.", confidence, evidence)
         return {

@@ -17,8 +17,14 @@ services:
         value: json
       - key: PACESENSE_AI
         value: "1"
+      # OpenRouter leads when its key is set (chat, interpretation and transcription); Boson is the
+      # backup, or the only provider when OPENROUTER_API_KEY is absent. Set the keys in the dashboard.
+      - key: OPENROUTER_API_KEY
+        sync: false
       - key: BOSON_API_KEY
         sync: false
+      - key: PACESENSE_LANGUAGE
+        value: en
       - key: PACESENSE_ACCESS_USER
         sync: false
       - key: PACESENSE_ACCESS_PASSWORD

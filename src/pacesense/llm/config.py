@@ -78,3 +78,15 @@ def boson_api_key(env: dict[str, str] | None = None) -> tuple[str | None, str | 
     if isinstance(key, str) and key.strip() and key.strip() not in {"YOUR_BOSON_API_KEY", "YOUR_KEY_HERE"}:
         return key.strip(), "config/local.yaml"
     return None, None
+
+
+def openrouter_api_key(env: dict[str, str] | None = None) -> tuple[str | None, str | None]:
+    """Return (key, source) for OpenRouter; the source label never contains the secret."""
+    source = os.environ if env is None else env
+    env_key = source.get("OPENROUTER_API_KEY", "").strip()
+    if env_key:
+        return env_key, "environment"
+    key = load_config().get("openrouter", {}).get("api_key")
+    if isinstance(key, str) and key.strip() and key.strip() not in {"YOUR_OPENROUTER_API_KEY", "YOUR_KEY_HERE"}:
+        return key.strip(), "config/local.yaml"
+    return None, None

@@ -860,6 +860,8 @@
     resetUtterance();
     // Prefer Boson's transcript of the recorded audio; the browser's text stays as the fallback.
     const wav = sttReady() ? utteranceWav(startedAt - STT_LEAD_MS) : null;
+    // Tell the server which transcript this is, so a deployment's logs show whether audio capture works.
+    signals.transcriber = wav ? "browser:pending" : `browser:${cap.why || (cap.ctx ? (cap.chunks.length ? "short" : "idle") : "not-started")}`;
     if (wav) {
       $("#notes-input").value = text; hooks.transcript(text, false);
       voice.stt = (voice.stt || Promise.resolve()).then(() => deliverWithBoson(text, signals, wav)).catch(() => deliverUtterance(text, signals));
@@ -883,21 +885,25 @@
     hooks.transcript("", true, text);
     send(text, "voice", signals);
   }
-  // ---- Boson transcription of the utterance audio --------------------------------------------
+  // ---- server transcription of the utterance audio (OpenRouter or Boson, whichever the server uses) ----
   // The microphone is also captured as PCM. When the coach pauses, the audio of that utterance is sent to
   // the server, which asks Boson to transcribe it. Browser recognition still paces the turn and remains the
   // fallback: if Boson is slow, unavailable or unsure, the browser's text is used exactly as before.
   const STT_LEAD_MS = 2000, STT_KEEP_MS = 45000, STT_MAX_S = 30, STT_RATE = 16000, STT_TIMEOUT_MS = 7000;
-  const cap = { ctx: null, node: null, src: null, stream: null, chunks: [], rate: 48000, fails: 0, off: false };
+  const cap = { ctx: null, node: null, src: null, stream: null, chunks: [], rate: 48000, fails: 0, off: false, why: "" };
   const sttReady = () => !cap.off && !!cap.ctx && cap.chunks.length > 0 && !!(app.st && app.st.ai);
   async function startCapture() {
     const AC = window.AudioContext || window.webkitAudioContext;
-    if (cap.ctx || cap.off || !AC || !navigator.mediaDevices || !(app.st && app.st.ai)) return;
-    if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) return;   // phones cannot share the microphone with recognition
+    if (cap.ctx || cap.off) return;
+    if (!(app.st && app.st.ai)) { cap.why = "no-ai"; return; }
+    if (!AC || !navigator.mediaDevices) { cap.why = "unsupported"; return; }
+    if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) { cap.why = "mobile"; return; }   // phones cannot share the microphone with recognition
+    cap.why = "";
     try {
       cap.stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
       if (!voice.on) { cap.stream.getTracks().forEach((t) => t.stop()); cap.stream = null; return; }
       cap.ctx = new AC(); cap.rate = cap.ctx.sampleRate; cap.chunks = [];
+      if (cap.ctx.state === "suspended") cap.ctx.resume().catch(() => {});   // some browsers start it paused
       cap.src = cap.ctx.createMediaStreamSource(cap.stream);
       cap.node = cap.ctx.createScriptProcessor(4096, 1, 1);
       cap.node.onaudioprocess = (e) => {
@@ -907,7 +913,7 @@
       };
       const mute = cap.ctx.createGain(); mute.gain.value = 0;              // keep the graph running without playback
       cap.src.connect(cap.node); cap.node.connect(mute); mute.connect(cap.ctx.destination);
-    } catch { stopCapture(); cap.off = true; }
+    } catch (e) { stopCapture(); cap.off = true; cap.why = `denied:${String((e && e.name) || "error").slice(0, 12)}`; }
   }
   function stopCapture() {
     try { if (cap.node) { cap.node.onaudioprocess = null; cap.node.disconnect(); } } catch { /* ignore */ }
@@ -956,21 +962,22 @@
   }
   async function deliverWithBoson(browserText, signals, wav) {
     const r = await transcribeAudio(wav);
-    const heard = r && r.source === "boson" ? String(r.text || "").trim() : "";
+    const heard = r && r.source && r.source !== "none" ? String(r.text || "").trim() : "";
     const plausible = heard && wordsOf(heard).length <= wordsOf(browserText).length * 3 + 5;
     if (plausible) {
       cap.fails = 0;
       const s2 = { ...signals, fillers: (heard.match(FILLER_RE) || []).length };
       delete s2.confidence;                                                 // that score described the browser's text
+      s2.transcriber = String(r.source).slice(0, 24);
       return deliverUtterance(heard, s2);
     }
-    if (r && r.available === false) cap.off = true;                         // no Boson key on the server
+    if (r && r.available === false) { cap.off = true; cap.why = "no-ai"; }   // no provider key on the server
     else if (++cap.fails >= 2 && !cap.off) {
-      cap.off = true;
-      toast("Boson transcription is not responding, so PaceSense is using the browser's speech recognition.");
+      cap.off = true; cap.why = "server-failed";
+      toast("Server transcription is not responding, so PaceSense is using the browser's speech recognition.");
     }
     if (cap.off) stopCapture();
-    deliverUtterance(browserText, signals);
+    deliverUtterance(browserText, { ...signals, transcriber: `browser:${r ? (r.error ? "server-error" : "empty") : "timeout"}` });
   }
 
   function startVoice() {

@@ -41,6 +41,8 @@ class VoiceSignals(_Body):
     barge_in: bool = Field(False, description="The coach started talking while PaceSense was speaking")
     fillers: int = Field(0, ge=0, le=100)
     confidence: float | None = Field(None, ge=0, le=1, description="Speech recognition confidence")
+    transcriber: str | None = Field(None, max_length=40, pattern=r"^[A-Za-z0-9:_\- ]*$",
+                                    description="Where the words came from: the server provider, or browser:<why>")
     ui_state: VoiceUIState | None = None
 
 

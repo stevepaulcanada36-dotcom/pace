@@ -80,7 +80,7 @@ class HudSession:
             if self.ai is None or not getattr(self.ai, "online", False):
                 raise
             ans = Assistant(OfflineModel(), tools).ask(question, self.history, self.assistant_context)
-            ans.text = "Boson is temporarily unavailable, so I used PaceSense's local fallback. " + ans.text
+            ans.text = "The AI service is temporarily unavailable, so I used PaceSense's local fallback. " + ans.text
         self.remember_turn(question, ans.text)
         steps = [{"function": s.name, "arguments": s.arguments} for s in ans.steps]
         return ans.text, steps

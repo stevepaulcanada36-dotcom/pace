@@ -174,15 +174,57 @@ def _steering_candidate(text: str, hud: Any) -> bool:
     return bool(steering_language and (names_or_years or has_context))
 
 
+QUESTION_RE = re.compile(
+    r"^\s*(?:so\s+|and\s+|but\s+|ok(?:ay)?\s+|well\s+)*"
+    r"(?:what|which|why|how|when|who|where|whose|is\s+(?:it|that|this|there)|are\s+(?:you|we|they|those)|"
+    r"was\s+(?:it|that|this|there)|were\s+|does\s+|did\s+|do\s+you|tell\s+me|explain|"
+    r"i\s+(?:just\s+)?(?:want|need|would\s+like|wanna)\s+to\s+(?:know|understand|check|see)|"
+    r"i'?m\s+asking)\b"
+    r"|\?\s*$"
+    r"|\b(?:what\s+happened|what\s+(?:is|was|does|did|will|would|about)|which\s+\w+\s+(?:are\s+)?you(?:'re|\s+are)?\s+"
+    r"(?:talking|referring)|is\s+it\s+not|isn'?t\s+it|"
+    r"i\s+(?:just\s+)?(?:want|need)\s+to\s+know|(?:could|can|would)\s+you\s+(?:tell|explain|show)\s+me\s+(?:what|why|how|which))\b",
+    re.IGNORECASE,
+)
+# A question that also spells out an instruction ("why don't you count 2019 less") is still an instruction.
+DIRECTIVE_RE = re.compile(
+    r"\b(?:count|weigh|weight|trust|rely\s+on|use|consider)\s+(?:\w+\s+){0,4}(?:less|more|fully|half|twice)\b|"
+    r"\b(?:ignore|drop|exclude|discard|remove|reduce|lower|decrease|increase|raise|boost|set|reset)\s+"
+    r"(?:the\s+|that\s+|this\s+|its\s+|her\s+|his\s+)?(?:weight|\d{4}|race)\b", re.IGNORECASE)
+
+
+# Speech recognition often writes "race" as "raise", which the steering rules read as "increase the weight".
+_RAISE_AS_RACE = (
+    re.compile(r"\b(the|that|this|which|what|they|a|one|last|first|latest|recent|same|every|each|any|\d{4}|"
+               r"amsterdam|rotterdam|eindhoven|marathon)\s+raise(s?)\b", re.IGNORECASE),
+    re.compile(r"\braise(s?)\s+(which|that|in|on|from|of|was|is|were|are|happened|i'm|i am|you're|you are|"
+               r"he|she|we|at|history|day|time|result|results)\b", re.IGNORECASE),
+)
+
+
+def repair_mishearings(text: str) -> str:
+    """Fix the "race"/"raise" confusion where the grammar shows a race was meant ("which raise", "raise in 2019")."""
+    text = _RAISE_AS_RACE[0].sub(lambda m: f"{m.group(1)} race{m.group(2)}", text)
+    return _RAISE_AS_RACE[1].sub(lambda m: f"race{m.group(1)} {m.group(2)}", text)
+
+
+def is_question(text: str) -> bool:
+    """True when the coach is asking something, not telling PaceSense about a race."""
+    return bool(QUESTION_RE.search(text)) and not DIRECTIVE_RE.search(text)
+
+
 def route(text: str, hud: Any, source: str = "typed") -> Routed:
     """`hud` is a HudSession (web/hud_api.py): .steer (SteeringSession), .ask(question) -> (answer, steps)."""
     out = Routed()
+    if source == "voice":
+        text = repair_mishearings(text)
     actions, said, rest = ui_commands(text)
     if actions:
         out.actions += actions
         out.used.append("ui")
     steered = False
-    if rest and len(rest) > 2:
+    # A question is answered, never applied: asking "what happened in 2019?" must not move a weight.
+    if rest and len(rest) > 2 and not is_question(rest):
         from ..steer.intent import interpret
         it = interpret(rest, hud.steer.races, hud.steer.context, hud.steer.lexicon)
         strong = [a for a in it.actions if a.kind in ("reset", "undo", "recency") or a.confidence >= 0.8]
@@ -214,4 +256,4 @@ def route(text: str, hud: Any, source: str = "typed") -> Routed:
     return out
 
 
-__all__ = ["route", "ui_commands", "Routed", "PANELS", "PERSPECTIVES"]
+__all__ = ["route", "ui_commands", "is_question", "Routed", "PANELS", "PERSPECTIVES"]

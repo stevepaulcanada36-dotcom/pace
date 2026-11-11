@@ -41,6 +41,27 @@ Rules:
   then adds the runner with a button. You cannot save anything yourself.
 - You cannot see the research study's data; if asked, say that the Study results page shows it.
 - Keep answers short: a few sentences or a short list. Use the coach's pace unit ({unit}).
+
+How to follow a spoken conversation (the coach talks continuously and speech recognition makes mistakes):
+- "The runner", "he", "she", "him", "her" and "this runner" always mean the active runner in the live session
+  context. Never ask which runner is meant, and never search the runner database, unless the coach names a
+  different person or asks to open, find or switch runner.
+- A bare year or city ("2019", "the Amsterdam one", "that race") is one of the active runner's listed races,
+  not a runner to look up. "What happened in 2019?" is answered from that race's line in the live session
+  context: its finish time and how it compares with the runner's other races.
+- The model target and the likely range are the prediction for the runner's next marathon. They are never
+  the result or the prediction of a past race. If the coach mixes the two up, say which is which.
+- Read the earlier turns before answering. "It", "that", "then", "the same one" and short follow-ups such as
+  "2019 race" continue the previous topic: combine them with the previous question and answer that.
+- Repair obvious mishearings from context ("raise" for "race", a garbled city for a listed race) and answer
+  the most likely meaning. If two readings are equally likely, ask one short question that names both, for
+  example "Do you mean Eindhoven 2019 or the prediction?". Never reply by describing the coach's sentence
+  ("the phrase ... is unclear") and never ask for "more context" without saying what you need.
+- When the coach tells you something about the runner as they are now (an injury this week, illness,
+  training going well), acknowledge it and say it is kept as coach context. Explain that the model only sees
+  past races, so the target assumes a healthy runner on a good day and does not include this; do not invent
+  a number for the effect. Say what the coach can do with it: state their own estimate, or run a simulation.
+- Answers are read aloud: one to three plain sentences, the answer first, no lists unless asked.
 {context}"""
 
 
@@ -86,11 +107,11 @@ class AssistantError(RuntimeError):
 
 
 class BosonModel:
-    """Boson Higgs Realtime chat model, with PaceSense function calling."""
+    """A hosted chat model (Boson Higgs Realtime or an OpenRouter model), with PaceSense function calling."""
 
-    def __init__(self, client: Any, model: str, temperature: float = 0.2):
+    def __init__(self, client: Any, model: str, temperature: float = 0.2, provider: str = "Boson"):
         self.client, self.model, self.temperature = client, model, temperature
-        self.label = f"{model} via Boson"
+        self.label = f"{model} via {provider}"
 
     def complete(self, messages: list[dict], tools: list[dict]) -> ModelReply:
         try:
@@ -123,7 +144,9 @@ class Assistant:
                             "\nA trial run, relay, training session, or injury note is not a marathon result. "
                             "Never add it to marathon history or change race weights because of it. Explain possible "
                             "performance implications cautiously, do not diagnose or invent a numerical effect, and "
-                            "ask a focused follow-up if recovery or timing is unclear.")
+                            "ask a focused follow-up if recovery or timing is unclear."
+                            "\nThe numbers in this live session context came from PaceSense, so you may quote "
+                            "them without calling a function.")
         return {"role": "system", "content": SYSTEM_PROMPT.format(unit=f"per {self.tools.unit}",
                                                                     context=plan_context + live_context)}
 

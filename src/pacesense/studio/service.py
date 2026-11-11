@@ -71,6 +71,7 @@ class Live:
     hud: HudSession
     engine: AdaptiveEngine
     coach_id: str
+    voice_offer: dict | None = None      # a control PaceSense offered and is waiting for "yes" or "no" on
 
 
 class StudioService:
@@ -89,13 +90,22 @@ class StudioService:
     def from_settings(cls, settings: Settings) -> StudioService:
         coach, info = load_coach(settings)
         ai = None
-        from ..llm.config import boson_api_key
-        has_boson_key, _ = boson_api_key()
-        # A configured Boson key is sufficient to enable the assistant; PACESENSE_AI=1
+        from ..llm.config import boson_api_key, openrouter_api_key
+        has_key = bool(boson_api_key()[0] or openrouter_api_key()[0])
+        # A configured provider key is sufficient to enable the assistant; PACESENSE_AI=1
         # remains a compatibility opt-in. AIService still honors PACESENSE_AI=offline.
-        if settings.ai_enabled or has_boson_key:
+        if settings.ai_enabled or has_key:
             from ..llm.service import AIService
             ai = lambda: AIService(coach.repo)
+            try:
+                probe = ai()
+                log.info("AI provider", extra={"data": {
+                    "online": probe.online, "provider": probe.provider if probe.online else None,
+                    "backup": probe.backup_provider, "key_source": probe.key_source,
+                    "assistant_model": probe.config("assistant")[0] if probe.online else None,
+                    "transcribe_model": probe.config("transcribe")[0] if probe.online else None}})
+            except Exception as exc:  # noqa: BLE001 - a startup log line must never stop the server
+                log.warning("could not describe the AI provider: %s", exc)
         return cls(coach, info, settings, ai)
 
     # ---- runners --------------------------------------------------------------------------------
@@ -177,18 +187,25 @@ class StudioService:
         hud = live.hud
         state = hud.state()
         runner = state.get("runner") or {}
-        lines = [f"Current runner: {runner.get('name') or hud.runner_id} (ID {hud.runner_id}).",
-                 f"Runner familiarity condition: {live.engine.ctx.session.condition}."]
+        try:
+            gender = str(hud.coach.runner(hud.runner_id).gender or "").upper()[:1]
+        except Exception:  # noqa: BLE001 - the pronoun hint is optional context
+            gender = ""
+        sex = {"M": "; male, say he/him", "F": "; female, say she/her"}.get(gender, "")
+        who = f"Current runner: {runner.get('name') or hud.runner_id} (ID {hud.runner_id}{sex})."
+        lines = [who, f"Runner familiarity condition: {live.engine.ctx.session.condition}."]
         races = state.get("races") or []
         if races:
             lines.append("Existing marathon records: " + "; ".join(
                 f"{r.get('event', 'Marathon')} {r.get('year', '')}".strip() for r in races))
-            lines.append("Race details: " + "; ".join(
-                f"{r.get('event', 'Marathon')} {r.get('year', '')}: {r.get('finish', 'finish unavailable')}, "
+            lines.append("Race details (these are past results, not predictions): " + "; ".join(
+                f"{r.get('event', 'Marathon')} {r.get('year', '')}: finished in "
+                f"{r.get('finish', 'an unknown time')}, "
+                f"{(r.get('evidence') or {}).get('label') or 'no comparison available'}, "
                 f"current weight {float(r.get('weight', 0.5)):.2f}" for r in races))
         prediction = state.get("prediction") or {}
         if prediction.get("finish") and prediction.get("low_s") and prediction.get("high_s"):
-            lines.append("Current model target: " + str(prediction["finish"]))
+            lines.append("Current model target for the next marathon: " + str(prediction["finish"]))
             lines.append("Current likely range: " + format_time(prediction["low_s"]) +
                          " to " + format_time(prediction["high_s"]))
         notes = (live.engine.ctx.profile.get("runner_notes") or {}).get(hud.source_runner, [])
@@ -236,7 +253,7 @@ Allowed intents only:
 - reveal or undo: {}
 - none: {}
 Rules:
-Interpret the transcript, not assumptions. Use only one intent. A question about data is not a UI action: use none unless the coach explicitly asks to open, close, search, filter, select, simulate, reveal or undo. For runner_database, query contains only an actual name or ID spoken by the coach; set gender or min_races only when explicitly requested. Do not treat familiar/unfamiliar/known/unknown as database filters: familiarity applies only to the currently selected runner. Never omit or invent a filter. For select_runner, require an explicit request to open/load/switch/select/choose/pick one name or ID actually spoken by the coach. The supplied catalog is only a preview; the local validator checks the full database. Never invent an ID or name. Both familiar and unfamiliar runners already exist in the database. Familiarity means whether the coach personally knows the currently selected runner; unfamiliar never means create a runner or add race data. If another runner is named for a familiarity change, include it in runner; do not change a different active runner. When selecting a different runner, do not copy the current runner's familiarity: the UI asks the coach again. For simulate, use current_ui_state for every condition the coach did not explicitly change; never invent temperature, wind or pacing conditions. Unsupported, ambiguous or incomplete requests must use none and explain one focused clarification. Confidence is your estimate that intent and arguments match the actual words. Evidence must quote or closely identify words actually spoken. Never execute an action; local validation and the application do that separately."""
+Interpret the transcript, not assumptions. Use only one intent. A question about data is not a UI action: use none unless the coach explicitly asks to open, close, search, filter, select, simulate, reveal or undo. For runner_database, query contains only an actual name or ID spoken by the coach; set gender or min_races only when explicitly requested. Do not treat familiar/unfamiliar/known/unknown as database filters: familiarity applies only to the currently selected runner. Never omit or invent a filter. For select_runner, require an explicit request to open/load/switch/select/choose/pick one name or ID actually spoken by the coach. The supplied catalog is only a preview; the local validator checks the full database. Never invent an ID or name. Both familiar and unfamiliar runners already exist in the database. Familiarity means whether the coach personally knows the currently selected runner; unfamiliar never means create a runner or add race data. If another runner is named for a familiarity change, include it in runner; do not change a different active runner. When selecting a different runner, do not copy the current runner's familiarity: the UI asks the coach again. For simulate, use current_ui_state for every condition the coach did not explicitly change; never invent temperature, wind or pacing conditions. A question, a comment about a race, or information about the runner (an injury, training, how a race went) is not a screen control: use none with an empty clarification, and PaceSense will answer it in conversation. A year or a city on its own is one of the current runner's races listed in current_runner.races, never a runner to search for. Use recent_turns to resolve short follow-ups such as "yes", "that one" or "the prediction one". Only when the coach clearly asked for one of the controls above but a required detail is missing, use none and ask for that one detail in clarification, as a short question a person would ask aloud. Confidence is your estimate that intent and arguments match the actual words. Evidence must quote or closely identify words actually spoken. Never execute an action; local validation and the application do that separately."""
             signals = voice_signals or {}
             state = signals.get("ui_state") or {}
             current_runner = self.coach.runner(live.hud.runner_id)
@@ -246,7 +263,10 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                     "runner_id": live.hud.runner_id,
                     "name": CoachService._summary(current_runner, False).get("name") or live.hud.runner_id,
                     "familiarity": live.engine.ctx.session.condition,
+                    "races": [f"{r.get('event')} {r.get('year')}" for r in (live.hud.steer.races or [])],
                 },
+                "recent_turns": [{"role": m.get("role"), "content": str(m.get("content", ""))[:240]}
+                                 for m in live.hud.history[-6:]],
                 "current_ui_state": {
                     "temp_c": state.get("temp_c", 12.0),
                     "wind_kmh": state.get("wind_kmh", 0.0),
@@ -261,7 +281,7 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                 {"role": "user", "content": json.dumps(user, ensure_ascii=False)},
             ], temperature=0.0, json_mode=True)
             payload = parse_json_answer(result.text)
-            return validate_voice_intent(
+            verdict = validate_voice_intent(
                 payload, rows, utterance=text,
                 transcript_confidence=signals.get("confidence"),
                 current_runner_id=live.hud.runner_id,
@@ -273,6 +293,17 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                 can_undo=bool(live.hud.steer._undo),
                 can_reveal=live.hud.truth_s is not None,
             )
+            # The classifier found no screen control, or was unsure there was one. That is not a refusal
+            # to act: mark it so the conversation path answers instead of a bare "please clarify".
+            from ..hud.voice_actions import MIN_CONFIDENCE
+            try:
+                unsure = float(payload.get("confidence", 0.0)) < MIN_CONFIDENCE
+            except (TypeError, ValueError):
+                unsure = True
+            if verdict.get("status") == "clarify" and not verdict.get("offer") and (
+                    payload.get("intent") in (None, "", "none") or unsure):
+                verdict = {**verdict, "unmapped": True}
+            return verdict
         except Exception as exc:  # noqa: BLE001 - any provider or parsing failure must fall back to the safe rules
             log.warning("voice intent interpretation unavailable; using safe rule-based fallback: %s", exc)
             return None
@@ -403,6 +434,61 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                 return True
         return False
 
+    # Words that can ask for a screen control. Deliberately broad: it only decides whether the control
+    # classifier is worth a call, and the classifier and validator still decide what, if anything, to do.
+    _UI_REQUEST_RE = re.compile(
+        r"\b(open|show|display|view|see|bring\s+up|pull\s+up|look\s+up|search|find|filter|list|browse|"
+        r"select|choose|pick|switch|load|go\s+to|take\s+me|close|hide|dismiss|minimi[sz]e|pin|focus|"
+        r"simulat\w*|what\s+if|reveal|undo|revert|database|panel|dashboard|"
+        r"familiar\w*|unfamiliar|know\s+(?:this|the|him|her)|coach\s+(?:this|the|him|her)|new\s+to\s+me|"
+        r"known\s+to\s+me)\b", re.IGNORECASE)
+
+    @staticmethod
+    def _small_talk(text: str) -> str:
+        """A reply for a word or two that is not a request ("wait", "hello"), without spending a model call."""
+        words = re.sub(r"[^a-z' ]+", " ", text.casefold()).split()
+        said = " ".join(words)
+        if not words or len(words) > 4:
+            return ""
+        if re.fullmatch(r"(?:wait|hold on|hang on|one (?:sec|second|moment|minute)|just a (?:sec|second|moment|minute)|"
+                        r"give me a (?:sec|second|moment|minute)|hmm+|um+|uh+|let me think)(?: please)?", said):
+            return "Take your time. I'm listening."
+        if re.fullmatch(r"(?:hello|hi|hey)(?: there| pacesense| pace sense)?|(?:are you|you) there|can you hear me", said):
+            return "I'm here. Tell me about a race, or ask me about the prediction."
+        if re.fullmatch(r"(?:thanks|thank you|thank you very much|cheers|great|perfect|got it)", said):
+            return "You're welcome."
+        return ""
+
+    @classmethod
+    def _wants_ui_action(cls, text: str) -> bool:
+        return bool(cls._UI_REQUEST_RE.search(text) or ui_commands(text)[0])
+
+    def _take_offer(self, sid: str, live: Live, text: str, source: str, voice: dict | None) -> dict | None:
+        """"Yes" or "no" to a control PaceSense offered on the previous turn; None if `text` is neither."""
+        offer = live.voice_offer
+        if not offer:
+            return None
+        from ..adaptive.answers import NO, YES, _norm
+        words = _norm(text)
+        if len(words.split()) > 6 or not (YES.match(words) or NO.match(words)):
+            return None
+        live.voice_offer = None
+        if NO.match(words):
+            r = Routed(reply="Okay, I've left the screen as it is.", used=["prompt"])
+        else:
+            r = self._voice_route(text, source, live, offer)
+        state = self.view(sid, live)
+        out: dict[str, Any] = {"reply": r.reply, "actions": r.actions, "card": None, "used": r.used,
+                               "simulation": None, "state": state, "turn": None}
+        data = {"applied": [], "turn": None, "estimate_s": None, "notes": [], "used": r.used,
+                "ui_only": True, "prompt_answer": "voice_offer", **({"voice": voice} if voice else {})}
+        self._observe(sid, live, Event("utterance", text, source, data), out)
+        out["voice_action_pending"] = source == "voice" and bool(r.actions)
+        if out["voice_action_pending"]:
+            out["adapt"]["speak"] = ""
+        live.hud.remember_turn(text, r.reply)
+        return out
+
     def _run_command(self, sid: str, live: Live, text: str, source: str, kind: str = "utterance",
                      extra: dict | None = None) -> dict:
         s = live.hud
@@ -413,10 +499,28 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
         # for one sentence. Everything else spoken (runner search, navigation, paraphrased controls)
         # still goes through the classifier; gating it on the fixed-phrase parser would switch the
         # classifier off for exactly the paraphrases it exists to understand.
+        # The intent classifier only understands screen controls. Run it when the words could be asking
+        # for one; a question or a comment goes straight to the conversation path, which has the history.
         voice_intent = (self._interpret_voice_intent(text, live, voice_signals)
-                        if source == "voice" and not self._is_race_comment(text, live) else None)
-        if voice_intent and voice_intent.get("status") == "clarify":
+                        if source == "voice" and self._wants_ui_action(text)
+                        and not self._small_talk(text)
+                        and not self._is_race_comment(text, live) else None)
+        unmapped_clarification = ""
+        if voice_intent and voice_intent.get("status") == "clarify" and voice_intent.get("unmapped"):
+            # Not a control after all. Let the steering interpreter and the assistant try, and keep the
+            # classifier's question only for the case where neither has anything to say.
+            unmapped_clarification = voice_intent["message"]
+            voice_intent = None
+        live.voice_offer = None
+        small_talk = self._small_talk(text) if source == "voice" else ""
+        if small_talk:
+            r = Routed(reply=small_talk, used=["prompt"])
+        elif voice_intent and voice_intent.get("status") == "clarify":
             r = Routed(reply=voice_intent["message"], used=["prompt"])
+            if voice_intent.get("offer"):
+                live.voice_offer = {"status": "action", **voice_intent["offer"],
+                                    "confidence": voice_intent.get("confidence", 0.0),
+                                    "evidence": voice_intent.get("evidence", [])}
         elif voice_intent and voice_intent.get("status") == "action":
             r = self._voice_route(text, source, live, voice_intent)
         elif source == "voice":
@@ -457,6 +561,8 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                 r = route(text, s, source)
         else:
             r = route(text, s, source)
+        if unmapped_clarification and not set(r.used) & {"steer", "assistant", "ui"}:
+            r.reply = unmapped_clarification
         sim, revealed = None, False
         for a in r.actions:
             if a["type"] == "reveal" and s.truth_s is not None:
@@ -504,29 +610,61 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
         return out
 
     def transcribe(self, sid: str, audio: bytes, fmt: str = "wav") -> dict:
-        """Boson's transcript of one recorded utterance. Never raises for a provider problem: the browser
-        keeps its own speech recognition as the fallback, so an empty text simply means "use that"."""
-        self.sessions.entry(sid)                                  # 404 for an unknown or expired session
+        """The AI provider's transcript of one recorded utterance. Never raises for a provider problem: the
+        browser keeps its own speech recognition as the fallback, so an empty text simply means "use that"."""
+        live = self.sessions.entry(sid).value                     # 404 for an unknown or expired session
         if not self.ai_factory:
             return {"text": "", "available": False, "source": "none", "latency_s": 0.0}
         t0 = time.perf_counter()
+        provider = "server"
         try:
             ai = self.ai_factory()
             if not getattr(ai, "online", False):
                 return {"text": "", "available": False, "source": "none", "latency_s": 0.0}
+            provider = str(getattr(ai, "provider", "server"))
             result = ai.transcribe(audio, fmt)
         except Exception as exc:  # noqa: BLE001 - any provider or decoding failure falls back to the browser transcript
-            log.warning("Boson transcription unavailable; the browser transcript will be used: %s", exc)
+            log.warning("server transcription unavailable; the browser transcript will be used: %s", exc)
             return {"text": "", "available": True, "source": "none", "error": str(exc)[:200],
                     "latency_s": round(time.perf_counter() - t0, 2)}
-        log.info("utterance transcribed", extra={"session": sid[:6], "ms": round((time.perf_counter() - t0) * 1000)})
-        return {"text": " ".join(str(result.text or "").split())[:1000], "available": True, "source": "boson",
+        text = " ".join(str(result.text or "").split())[:1000]
+        text = self._repair_race_names(text, live)
+        log.info("utterance transcribed", extra={"data": {
+            "session": sid[:6], "provider": provider, "words": len(text.split()),
+            "ms": round((time.perf_counter() - t0) * 1000)}})
+        return {"text": text, "available": True, "source": provider,
                 "latency_s": round(time.perf_counter() - t0, 2)}
+
+    @staticmethod
+    def _repair_race_names(text: str, live: Live) -> str:
+        """Snap a near-miss spelling of one of this runner's race cities to the listed name ("Einthoven")."""
+        import difflib
+        names = {str(r.get("event") or "") for r in (live.hud.steer.races or [])}
+        names = {n for n in names if len(n) >= 6 and " " not in n}
+        if not names:
+            return text
+
+        def fix(match: re.Match) -> str:
+            word = match.group(0)
+            if len(word) < 6 or word.casefold() in {n.casefold() for n in names}:
+                return word
+            close = difflib.get_close_matches(word.casefold(), [n.casefold() for n in names], n=1, cutoff=0.8)
+            return next(n for n in names if n.casefold() == close[0]) if close else word
+
+        return re.sub(r"[A-Za-z]+", fix, text)
 
     def command(self, sid: str, text: str, source: str = "typed", voice: dict | None = None) -> dict:
         """What the coach said. If PaceSense has a question open and the words answer it ("yes", "the second
         one", "2010", "undo"), the answer is taken; otherwise it is a new sentence for the interpreter."""
         def run(live: Live):
+            if source == "voice":
+                log.info("voice turn", extra={"data": {
+                    "session": sid[:6], "words": len(text.split()),
+                    "transcriber": (voice or {}).get("transcriber") or "unreported",
+                    "confidence": (voice or {}).get("confidence")}})
+            taken = self._take_offer(sid, live, text, source, voice)
+            if taken is not None:
+                return taken
             pend = live.engine.pending
             if pend:
                 c = match_choice(text, pend["data"].get("choices") or [])

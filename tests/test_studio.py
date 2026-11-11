@@ -229,6 +229,7 @@ class TranscribeApiTests(unittest.TestCase):
 
     class FakeAI:
         online = True
+        provider = "openrouter"
 
         def __init__(self, text="reduce the weight for Rotterdam 2014", fail=False):
             self.text, self.fail, self.calls = text, fail, []
@@ -256,8 +257,18 @@ class TranscribeApiTests(unittest.TestCase):
         r = self.send(client, sid, content_type="audio/wav; codecs=1")
         self.assertEqual(r.status, 200)
         self.assertEqual(r.json()["text"], "reduce the weight for Rotterdam 2014")
-        self.assertEqual(r.json()["source"], "boson")
+        self.assertEqual(r.json()["source"], "openrouter")
         self.assertEqual(ai.calls, [(12, "wav")])
+
+    def test_near_miss_race_city_is_snapped_to_the_listed_race(self):
+        client, sid = self.make(self.FakeAI())
+        races = client.get(f"/api/v1/sessions/{sid}").json()["races"]
+        city = next(r["event"] for r in races if len(r["event"]) >= 6 and " " not in r["event"])
+        wrong = city[:-2] + city[-1] + city[-2]                      # swap the last two letters
+        client2, sid2 = self.make(self.FakeAI(text=f"what happened in {wrong.lower()} that year"))
+        races2 = client2.get(f"/api/v1/sessions/{sid2}").json()["races"]
+        self.assertIn(city, {r["event"] for r in races2})            # the demo runner is deterministic
+        self.assertIn(city, self.send(client2, sid2).json()["text"])
 
     def test_provider_failure_is_a_soft_fallback_not_an_error(self):
         client, sid = self.make(self.FakeAI(fail=True))

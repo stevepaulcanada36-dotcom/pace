@@ -226,12 +226,19 @@ class AdaptiveEngine:
             elif self.last_insight:
                 s += " " + self.last_insight
             return s
-        if self.pending and self.pending.get("kind") == "prompt":
-            return self.pending["message"] + self._choices_aloud(self.pending)
         r = (reply or "").strip()
+        if r and style != "full" and len(r) >= 160:
+            r = r.split(". ")[0].rstrip(".") + "."
+        if self.pending and self.pending.get("kind") == "prompt":
+            ask = self.pending["message"] + self._choices_aloud(self.pending)
+            # Answer the coach first. A question PaceSense has only just raised follows the answer; one
+            # that was already open stays on screen and is not read out again over every later reply.
+            if not r:
+                return ask
+            return f"{r} {ask}" if self.pending_new else r
         if not r:
             return self.last_insight
-        return r if style == "full" or len(r) < 160 else r.split(". ")[0] + "."
+        return r
 
 
 __all__ = ["CONDITIONS", "LAYOUTS", "VOICE_PRESETS", "AdaptiveEngine"]
