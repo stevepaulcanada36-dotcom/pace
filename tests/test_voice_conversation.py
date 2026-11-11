@@ -162,9 +162,10 @@ class VoiceConversationTests(unittest.TestCase):
         self.assertTrue(any("yesterday" in n["text"] for n in notes))
 
     def test_yes_after_an_offer_from_the_assistant_goes_back_to_the_assistant(self):
-        service, sid, _live, client = self.open()
+        service, sid, live, client = self.open()
         service.command(sid, "not at all", source="voice")
         service.command(sid, "what can I do about her training this month", source="voice")
+        live.hud.history[-1]["content"] = "Would you like me to run a simulation for a hot day?"
         n = len(client.calls)
         out = service.command(sid, "yes go ahead", source="voice")
         self.assertEqual(out["reply"], "the assistant's answer")
@@ -190,6 +191,25 @@ class VoiceConversationTests(unittest.TestCase):
         body = Command.model_validate({"text": "hello", "source": "voice",
                                        "voice": {"wpm": 1800, "duration_ms": 9e9, "confidence": 1.4}})
         self.assertEqual((body.voice.wpm, body.voice.duration_ms, body.voice.confidence), (600, 120000, 1))
+
+    def test_describing_how_well_you_know_the_runner_answers_the_open_question(self):
+        for said, label in (("Like I'm not ever much of this runner, but still", "Not at all"),
+                            ("I've seen him once, maybe in 2013, like a long time", "A little"),
+                            ("I coach her and have done for years", "I coach her"),
+                            ("I don't know this runner", "Not at all")):
+            service, sid, _live, _client = self.open()
+            out = service.command(sid, said, source="voice")
+            self.assertEqual(out.get("choice", {}).get("label"), label, said)
+
+    def test_yes_with_nothing_asked_is_not_sent_to_the_model(self):
+        service, sid, _live, client = self.open()
+        service.command(sid, "not at all", source="voice")
+        service.command(sid, "no", source="voice")                       # closes the suggestion, if any
+        service.command(sid, "what does the likely range mean", source="voice")
+        n = len(client.calls)
+        out = service.command(sid, "Yeah.", source="voice")
+        self.assertEqual(len(client.calls), n)
+        self.assertIn("no question open", out["reply"])
 
     def test_small_talk_costs_no_model_call(self):
         service, sid, _live, client = self.open()
@@ -226,6 +246,82 @@ class VoiceConversationTests(unittest.TestCase):
         self.assertEqual(notes[-1]["text"], said)
         service.command(sid, "so what should I expect", source="voice")
         self.assertIn("Previously captured coach context", client.calls[-1][1][0]["content"])
+
+
+class ToolCallingClient(ScriptedClient):
+    """A model that answers the assistant prompt by calling one function, then claims success in words."""
+
+    def __init__(self, name, arguments, claim="I've set that for you. The prediction is now 3:00:00."):
+        super().__init__()
+        self.name, self.arguments, self.claim, self.results = name, arguments, claim, []
+
+    def chat(self, model, messages, **kwargs):
+        system = messages[0]["content"]
+        if system.startswith("You interpret one spoken command") or "adjust a marathon prediction model" in system:
+            return super().chat(model, messages, **kwargs)
+        self.calls.append(("assistant", messages))
+        tool_results = [m for m in messages if m.get("role") == "tool"]
+        if self.name and not tool_results:
+            return ChatResult("", [{"id": "call_1", "name": self.name, "arguments": self.arguments}],
+                              Usage(), 0.0, model)
+        self.results = [json.loads(m["content"]) for m in tool_results]
+        return ChatResult(self.claim, [], Usage(), 0.0, model)
+
+
+class AssistantActionTests(unittest.TestCase):
+    def open(self, name, arguments, **kw):
+        client = ToolCallingClient(name, arguments, **kw)
+        coach = CoachService(helpers.model(), helpers.runners(), Repository(":memory:"))
+        service = StudioService(coach, settings=Settings(), ai_factory=lambda: ScriptedAI(client))
+        sid = service.create()[0]
+        live = service.sessions.entry(sid).value
+        service.command(sid, "not at all", source="voice")
+        service.command(sid, "no", source="voice")
+        return service, sid, live, client
+
+    def test_the_assistant_can_really_change_a_weight(self):
+        service, sid, live, client = self.open("set_race_weight", {"race": "PLACEHOLDER", "weight": 0.3})
+        race = live.hud.steer.races[-1]
+        client.arguments = {"race": f"{race['event']} {race['year']}", "weight": 0.3}
+        out = service.command(sid, "I hope you can change the last one because he should go under five hours",
+                              source="voice")
+        self.assertEqual(round(live.hud.steer.state()["races"][-1]["weight"], 2), 0.3)
+        self.assertTrue(client.results[0]["applied"])
+        self.assertIn("steer", out["used"])
+        self.assertIsNotNone(out["card"])
+        self.assertNotIn("3:00:00", out["reply"])             # the wording comes from PaceSense, not the model
+        self.assertTrue(live.hud.steer._undo)
+
+    def test_the_assistant_can_record_the_coachs_estimate(self):
+        service, sid, live, _client = self.open("set_coach_estimate", {"finish": "4:30"})
+        service.command(sid, "I believe the person may complete in about four hours thirty minutes", source="voice")
+        self.assertEqual(live.hud.state()["steering"]["coach_estimate_s"], 4.5 * 3600)
+
+    def test_a_claimed_change_without_a_function_call_is_corrected(self):
+        service, sid, live, _client = self.open(None, None, claim="I've set the weight for the last race to 0.30.")
+        before = [r["weight"] for r in live.hud.steer.state()["races"]]
+        out = service.command(sid, "yep you can proceed with that one for me", source="voice")
+        self.assertEqual([r["weight"] for r in live.hud.steer.state()["races"]], before)
+        self.assertTrue(out["reply"].startswith("Nothing has changed yet."))
+
+    def test_an_unknown_race_is_refused_with_the_list(self):
+        service, sid, live, client = self.open("set_race_weight", {"race": "Berlin 1999", "weight": 0.3},
+                                               claim="I could not find that race.")
+        before = [r["weight"] for r in live.hud.steer.state()["races"]]
+        service.command(sid, "please change the Berlin one for me now", source="voice")
+        self.assertFalse(client.results[0]["applied"])
+        self.assertEqual(len(client.results[0]["races"]), len(before))
+        self.assertEqual([r["weight"] for r in live.hud.steer.state()["races"]], before)
+
+    def test_the_revealed_race_is_explained_to_the_assistant(self):
+        service, sid, _live, client = self.open(None, None, claim="It is the hidden race.")
+        service.command(sid, "what is the accuracy check about", source="voice")
+        self.assertIn("is hidden from the model", client.calls[-1][1][0]["content"])
+        service.reveal(sid)
+        service.command(sid, "so how are we predicting that year", source="voice")
+        system = client.calls[-1][1][0]["content"]
+        self.assertIn("has now been revealed", system)
+        self.assertIn("% away from that result", system)
 
 
 class QuestionDetectionTests(unittest.TestCase):

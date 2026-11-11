@@ -67,10 +67,14 @@ class HudSession:
         self._per_race = self.coach.model.per_race(self.coach.runner(rid), self.coach.runner(rid).recent(5))
 
     # ---- assistant ----------------------------------------------------------------------------
-    def ask(self, question: str) -> tuple[str, list[dict]]:
+    def ask(self, question: str, source: str = "typed") -> tuple[str, list[dict]]:
         from ..assistant.offline import OfflineModel
         model = self.ai.chat_model() if self.ai is not None else OfflineModel()
-        tools = AssistantTools(self.coach, plan=lambda: self.plan)
+        online = self.ai is not None and getattr(self.ai, "online", False)
+        # Only the hosted model is given the functions that change this session; they run through the
+        # steering engine, and the turns they produce are picked up by the caller as `tool_turns`.
+        tools = AssistantTools(self.coach, plan=lambda: self.plan, session=self if online else None, source=source)
+        self.tool_turns = tools.turns
         try:
             ans = Assistant(model, tools).ask(question, self.history, self.assistant_context)
         except AssistantError:

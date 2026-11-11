@@ -184,6 +184,7 @@ QUESTION_RE = re.compile(
     r"|\?\s*$"
     r"|\b(?:what\s+happened|what\s+(?:is|was|does|did|will|would|about)|which\s+\w+\s+(?:are\s+)?you(?:'re|\s+are)?\s+"
     r"(?:talking|referring)|is\s+it\s+not|isn'?t\s+it|"
+    r"is\s+(?:it|that|this)\s+(?:like\s+)?(?:true|right|correct|accurate|real)|"
     r"i\s+(?:just\s+)?(?:want|need)\s+to\s+know|(?:could|can|would)\s+you\s+(?:tell|explain|show)\s+me\s+(?:what|why|how|which))\b",
     re.IGNORECASE,
 )
@@ -207,6 +208,15 @@ def repair_mishearings(text: str) -> str:
     """Fix the "race"/"raise" confusion where the grammar shows a race was meant ("which raise", "raise in 2019")."""
     text = _RAISE_AS_RACE[0].sub(lambda m: f"{m.group(1)} race{m.group(2)}", text)
     return _RAISE_AS_RACE[1].sub(lambda m: f"race{m.group(1)} {m.group(2)}", text)
+
+
+# The assistant saying that it changed something. Without a function call behind it, that is not true.
+CLAIMED_CHANGE_RE = re.compile(
+    r"\bI(?:'ve| have)\s+(?:now\s+)?(?:set|changed|updated|adjusted|reduced|lowered|raised|increased|recorded|"
+    r"saved|noted\s+your\s+(?:estimate|hope|goal))\b|"
+    r"\b(?:weight|prediction|target|estimate)\s+(?:for\s+[\w ]{0,30})?(?:is|has\s+been)\s+now\b|"
+    r"\b(?:prediction|target)\s+is\s+now\b|\bhas\s+been\s+(?:set|changed|updated|adjusted|reduced|lowered|raised)\b",
+    re.IGNORECASE)
 
 
 def is_question(text: str) -> bool:
@@ -245,9 +255,23 @@ def route(text: str, hud: Any, source: str = "typed") -> Routed:
     if steered:
         out.reply = hud.feedback_text(out.turn)
     elif rest and len(rest) > 2 and not (actions and len(rest.split()) < 3):
-        answer, steps = hud.ask(rest)
+        try:
+            answer, steps = hud.ask(rest, source)
+        except TypeError:                                    # a session object that takes the question only
+            answer, steps = hud.ask(rest)
         out.reply, out.steps = answer, steps
         out.used.append("assistant")
+        made = list(getattr(hud, "tool_turns", None) or [])
+        if made:
+            # The assistant changed the session through a function. Report it the way every other change
+            # is reported: the card and the wording come from the steering engine, not from the model.
+            out.turn = {**made[-1].to_dict(), "said": text}
+            out.actions.append({"type": "refresh"})
+            out.used.append("steer")
+            out.reply = hud.feedback_text(out.turn)
+        elif CLAIMED_CHANGE_RE.search(out.reply or ""):
+            out.reply = ("Nothing has changed yet. To change a race, say for example “set Amsterdam 2017 to 0.3” "
+                         "or “count 2017 less”; for your own estimate, say “I think the finish will be 4:30”.")
     if said:
         lead = "Done: " + ", ".join(said) + "."
         out.reply = (lead + (" " + out.reply if out.reply else "")).strip()

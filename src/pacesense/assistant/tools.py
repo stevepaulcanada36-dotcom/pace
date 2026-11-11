@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -83,6 +84,19 @@ SPECS: list[dict] = [
 ]
 
 
+# Functions that act on the live Studio session. They are offered only when a session is attached, and they
+# go through the same steering engine as a typed instruction, so every change has a card and can be undone.
+SESSION_SPECS: list[dict] = [
+    _fn("set_race_weight", "Change how much one of the active runner's past races counts in the prediction. "
+        "race: the race as listed, for example 'Amsterdam 2017'. weight: 0 (ignore) to 1 (fully representative).",
+        {"race": {"type": "string"}, "weight": {"type": "number", "minimum": 0, "maximum": 1}}, ["race", "weight"]),
+    _fn("set_coach_estimate", "Record the coach's own estimate of the next marathon finish, shown beside the "
+        "model's target. finish: h:mm or h:mm:ss, for example '4:30'.",
+        {"finish": {"type": "string"}}, ["finish"]),
+    _fn("undo_last_change", "Undo the most recent change to the race weights."),
+]
+
+
 def _clean(value: Any) -> Any:
     """Make results JSON-safe and short: no NaN/inf, floats rounded."""
     if isinstance(value, float):
@@ -100,10 +114,13 @@ class AssistantTools:
     plan: Callable[[], PlanSession | None] = lambda: None
     unit: str = "km"
     pending_runner: dict | None = field(default=None)
+    session: Any = None                    # the live HudSession, when the assistant may act on it
+    source: str = "typed"
+    turns: list = field(default_factory=list)   # steering turns these functions produced, newest last
 
     @property
     def specs(self) -> list[dict]:
-        return SPECS
+        return SPECS + SESSION_SPECS if self.session is not None else SPECS
 
     def call(self, name: str, arguments: dict | str | None) -> dict:
         """Run one function. Errors come back as {"error": ...} so the AI can tell the coach what went wrong."""
@@ -113,7 +130,7 @@ class AssistantTools:
             except json.JSONDecodeError:
                 return {"error": "the arguments were not valid JSON"}
         fn = getattr(self, f"_t_{name}", None)
-        if fn is None or name not in {s["function"]["name"] for s in SPECS}:
+        if fn is None or name not in {s["function"]["name"] for s in self.specs}:
             return {"error": f"there is no function called {name!r}"}
         try:
             return _clean(fn(**(arguments or {})))
@@ -121,6 +138,52 @@ class AssistantTools:
             return {"error": str(e)}
         except TypeError as e:            # wrong or missing arguments from the model
             return {"error": f"wrong arguments: {e}"}
+
+    # ---- the live session ----------------------------------------------------------------------
+    def _session_result(self, turn: Any, done: bool) -> dict:
+        state = self.session.steer.state()
+        prediction = (self.session.state().get("prediction") or {})
+        likely = (f"{format_time(prediction['low_s'])} to {format_time(prediction['high_s'])}"
+                  if prediction.get("low_s") and prediction.get("high_s") else None)
+        out = {"applied": done,
+               "weights": {f"{r['event']} {r['year']}": round(float(r["weight"]), 2) for r in state["races"]},
+               "model_target": prediction.get("finish"), "likely_range": likely,
+               "notes": list(getattr(turn, "notes", []) or [])[:3]}
+        if done:
+            self.turns.append(turn)
+        else:
+            out["error"] = "nothing changed"
+        return out
+
+    def _t_set_race_weight(self, race: str, weight: float) -> dict:
+        races = self.session.steer.races
+        wanted = str(race).casefold()
+        years = set(re.findall(r"(?<!\d)(?:19|20)\d{2}(?!\d)", wanted))
+        match = [r for r in races if str(r["year"]) in years and (
+            str(r["event"]).casefold() in wanted or sum(str(x["year"]) in years for x in races) == 1)]
+        if not match:
+            match = [r for r in races if str(r["event"]).casefold() in wanted]
+        if len(match) != 1:
+            return {"applied": False, "error": "say which race, exactly as listed",
+                    "races": [f"{r['event']} {r['year']}" for r in races]}
+        try:
+            value = round(max(0.0, min(1.0, float(weight))), 1)
+        except (TypeError, ValueError):
+            return {"applied": False, "error": "weight must be a number from 0 to 1"}
+        name = f"{match[0]['event']} {match[0]['year']}"
+        turn = self.session.steer.hear(f"set {name} to {value:.1f}", self.source)
+        return self._session_result(turn, bool(turn.applied)) | {"race": name}
+
+    def _t_set_coach_estimate(self, finish: str) -> dict:
+        secs = parse_time(str(finish))
+        if secs is None or not 2 * 3600 <= secs <= 7 * 3600:
+            return {"applied": False, "error": "an estimate should be between 2:00 and 7:00, as h:mm"}
+        turn = self.session.steer.hear(f"I think the finish will be {format_time(secs)}", self.source)
+        return self._session_result(turn, turn.estimate_s is not None) | {"coach_estimate": format_time(secs)}
+
+    def _t_undo_last_change(self) -> dict:
+        turn = self.session.steer.undo()
+        return self._session_result(turn, bool(turn.applied) or getattr(turn, "source", "") == "undo")
 
     # ---- helpers -------------------------------------------------------------------------------
     def _pace(self, s: float) -> str:

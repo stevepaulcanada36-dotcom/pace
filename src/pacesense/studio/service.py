@@ -209,6 +209,34 @@ class StudioService:
             lines.append("Current likely range: " + format_time(prediction["low_s"]) +
                          " to " + format_time(prediction["high_s"]))
         notes = (live.engine.ctx.profile.get("runner_notes") or {}).get(hud.source_runner, [])
+        holdout = state.get("holdout") or {}
+        if holdout.get("label"):
+            if holdout.get("revealed") and holdout.get("truth_s"):
+                check = (f"Accuracy check: this demo runner's real next marathon, {holdout['label']}, was hidden "
+                         f"from the model and has now been revealed: {format_time(holdout['truth_s'])}. ")
+                if holdout.get("error_pct") is not None:
+                    check += (f"The current target is {float(holdout['error_pct']):.2f}% away from that result "
+                              "(\"% off\" is the gap between target and real result as a share of the real "
+                              "result; smaller is better). ")
+                if holdout.get("equal_weights_error_pct") is not None:
+                    check += (f"With equal weights it would have been "
+                              f"{float(holdout['equal_weights_error_pct']):.2f}% off, so the coach's changes "
+                              + ("helped." if float(holdout.get("error_pct") or 0) <
+                                 float(holdout["equal_weights_error_pct"]) else "did not help."))
+            else:
+                check = (f"Accuracy check: this demo runner's real next marathon, {holdout['label']}, is hidden "
+                         "from the model and from you. The target is the prediction for that race. The coach can "
+                         "say \"reveal the real result\" to compare; you do not know the result.")
+            lines.append(check + f" {holdout['label']} is therefore not in the race history above.")
+        lines.append(
+            "Acting on this session: you can change it only by calling set_race_weight, set_coach_estimate or "
+            "undo_last_change. When the coach asks for a change and the race is clear, call the function in this "
+            "turn without asking permission first; if no amount is given, move the weight by 0.2 from its "
+            "current value. When the coach agrees to a change you proposed, call the function now. Never say a "
+            "weight, the target or an estimate changed or was noted unless a function in this turn returned "
+            "applied, and take any new numbers only from that result. You cannot edit a race result. Do not "
+            "invent statistics: every percentage and time you state must appear in this context or in a "
+            "function result.")
         if notes:
             lines.append("Previously captured coach context: " + " | ".join(
                 str(n.get("text", "")) for n in notes[-5:] if isinstance(n, dict)))
@@ -468,6 +496,35 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                            r"walk\s+me\s+through(?:\s+it)?|interview\s+me|guided\s+interview)(?:\s+please)?\s*$",
                            re.IGNORECASE)
 
+    _FAMILIARITY = (
+        ("none", re.compile(
+            r"\b(?:don'?t|do not|never|not)\b.{0,25}\b(?:know|met|seen|coach\w*|familiar|heard of)\b|"
+            r"\b(?:not|n't)\s+(?:\w+\s+){0,2}(?:familiar|much)\b|\bunfamiliar\b|\bstranger\b|\bnew to me\b|"
+            r"\bno idea who\b", re.IGNORECASE)),
+        ("some", re.compile(
+            r"\b(?:seen|met|watched)\s+(?:him|her|them|this runner|the runner)\b|\ba (?:little|bit)\b|\bsomewhat\b|"
+            r"\bknow of\b|\bheard of\b|\bonce or twice\b|\bonly once\b|\bnot (?:very )?well\b|\bbarely\b",
+            re.IGNORECASE)),
+        ("coach", re.compile(
+            r"\bI\s+(?:do\s+)?(?:coach|train)\s+(?:him|her|them|this runner|the runner)\b|\bmy (?:athlete|runner)\b|"
+            r"\bknow (?:him|her|them|this runner) (?:very |really |quite )?well\b|\bfor years\b", re.IGNORECASE)),
+    )
+
+    @classmethod
+    def _familiarity_answer(cls, text: str, choices: list[dict]) -> dict | None:
+        """"I've seen him once, maybe in 2013" answers "How well do you know this runner?" without the
+        coach having to say a button's exact words. Returns None unless exactly one reading fits."""
+        by_key = {(c.get("interview") or [None, None])[1]: c for c in choices
+                  if (c.get("interview") or [None])[0] == "familiarity"}
+        about_the_runner = re.search(r"\b(?:runner|athlete|person|him|her|he|she|them|guy|man|woman|lady)\b",
+                                     text, re.IGNORECASE)
+        if not by_key or len(text.split()) > 30 or not about_the_runner:
+            return None
+        if cls._FAMILIARITY[1][1].search(text) and "some" in by_key:      # "seen him once" beats "not much"
+            return by_key["some"]
+        hits = [key for key, pattern in cls._FAMILIARITY if pattern.search(text) and key in by_key]
+        return by_key[hits[0]] if len(hits) == 1 else None
+
     def _not_for_pacesense(self, text: str, live: Live) -> bool:
         """Speech the microphone caught that carries no request: another assistant's wake word, or a word
         or two that is not an answer, a command, a year or a race."""
@@ -721,6 +778,8 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
             if pend:
                 choices = pend["data"].get("choices") or []
                 c = match_choice(text, choices)
+                if c is None:
+                    c = self._familiarity_answer(text, choices)
                 if c is None and pend.get("loop") == "clarify":
                     from ..adaptive.loops import CURRENT_NOTE, NOT_A_RACE_RE, NOW_RE
                     none = next((x for x in choices if x.get("action") == "dismiss"), None)
@@ -743,7 +802,11 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                     return self._take_choice(sid, live, c, text, source, pend, voice)
             if source == "voice" and self._not_for_pacesense(text, live):
                 return self._unheard(sid, live, text, source, voice)
-            ai_answers = bool(live.hud.ai is not None and getattr(live.hud.ai, "online", False) and live.hud.history)
+            # A bare "yes" goes to the assistant only if its last reply asked something; otherwise there
+            # is nothing to agree to and answering would just repeat the last reply.
+            last = next((m["content"] for m in reversed(live.hud.history) if m.get("role") == "assistant"), "")
+            asked = "?" in str(last).split("\nPaceSense then asked:")[0][-160:]
+            ai_answers = bool(live.hud.ai is not None and getattr(live.hud.ai, "online", False) and asked)
             if not pend and is_bare_answer(text) and not ai_answers:   # "yes" with nothing to say yes to
                 reply = ("There's no question open right now. Tell me about her races, say “guide me”, "
                          "or ask what the likely range means.")
