@@ -48,6 +48,8 @@ class HudSession:
     reactions: list[dict] = field(init=False, default_factory=list)
     history: list[dict] = field(init=False, default_factory=list)
     assistant_context: str = field(init=False, default="")
+    reply_style: str = field(init=False, default="normal")     # brief | normal | full, from the voice style
+    tool_turns: list = field(init=False, default_factory=list)
     source_runner: str = field(init=False, default="")
 
     def __post_init__(self) -> None:

@@ -95,8 +95,15 @@ class SteeringSession:
         return f"{r['event']} {r['year']}"
 
     def _set(self, turn: Turn, i: int, new: float, cue: str, reasoned: bool, say_if_unchanged: bool = False) -> None:
-        new = round(min(1.0, max(0.0, new)), 1)
+        raw = min(1.0, max(0.0, new))
+        new = round(raw, 1)
         old = self.plan.weights[i]
+        if new == old and abs(raw - old) >= 0.03:
+            # Weights move in steps of 0.1. "0.35" from 0.3 is a request to go up, so take the next step
+            # in that direction instead of answering that nothing changed.
+            new = round(min(1.0, max(0.0, old + (0.1 if raw > old else -0.1))), 1)
+            if new != old:
+                turn.notes.append(f"Weights move in steps of 0.1, so {self._name(i)} went to {new:.1f}.")
         if new == old:
             if say_if_unchanged:
                 what = "counts for nothing" if old == 0 else "counts fully" if old == 1 else f"is at {old:.1f}"

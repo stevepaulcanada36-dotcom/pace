@@ -181,6 +181,50 @@ class StudioService:
         out["adapt"] = adapt
         return out
 
+    _HEDGES = ("maybe", "i hope", "i think", "i guess", "kind of", "sort of", "like", "you know", "probably")
+    _UNSURE_RE = re.compile(r"\b(?:don'?t know|not sure|confus\w*|what do you (?:think|suggest|feel)|you decide|"
+                            r"any suggestions?|what should i|help me|no idea)\b", re.IGNORECASE)
+    _TERMS = ("data", "weight", "reduce", "increase", "decrease", "lower", "raise", "race", "prediction", "predict",
+              "estimate", "accuracy", "percent", "percentage", "model", "target", "range", "representative",
+              "precise", "accurate", "performance", "injury", "trust", "count")
+
+    @staticmethod
+    def _speaking_style(live: Live) -> str:
+        """How this coach talks, measured from their own turns, so the reply can be given the same way."""
+        said = [str(m.get("content", "")) for m in live.hud.history if m.get("role") == "user"][-8:]
+        words = [w for t in said for w in re.findall(r"[a-z']+", t.casefold())]
+        per_turn = (len(words) / len(said)) if said else 0.0
+        joined = " ".join(said).casefold()
+        hedges = sum(joined.count(h) for h in StudioService._HEDGES)
+        unsure = sum(1 for t in said[-4:] if StudioService._UNSURE_RE.search(t))
+        terms = [t for t in StudioService._TERMS if re.search(rf"\b{t}\w*\b", joined)][:8]
+        try:
+            persona = live.engine.ctx.persona.archetype()
+        except Exception:  # noqa: BLE001 - the persona is optional colour for the reply style
+            persona = {}
+        reply = str((live.engine.ctx.session.voice_style or {}).get("reply") or "normal")
+        limit = {"brief": "one sentence, at most 20 words", "full": "at most three short sentences"}.get(
+            reply, "at most two short sentences, about 30 words")
+        parts = [f"How to talk to this coach: reply in {limit}, in plain spoken English, answer first."]
+        if persona.get("name"):
+            parts.append(f"PaceSense's reading of how they work: {persona['name']}"
+                         f"{' (' + persona['description'] + ')' if persona.get('description') else ''}.")
+        if said:
+            pace = ("short, quick phrases" if per_turn < 8 else "long, thinking-aloud sentences" if per_turn > 18
+                    else "medium-length sentences")
+            parts.append(f"They speak in {pace}"
+                         + (", informally, with hedges like \"maybe\" and \"I hope\"" if hedges >= 3 else "")
+                         + ". Match that register: everyday words, no jargon, no lecture.")
+        if terms:
+            parts.append("Use their own words for things where you can: " + ", ".join(terms) + ".")
+        if unsure:
+            parts.append("They have said they are unsure what to do, so lead: give one concrete recommendation "
+                         "with one short reason, and if it is a change you can make, make it or offer exactly "
+                         "that one thing. Do not list options.")
+        parts.append("Give a reason only as one short clause after the answer. Never suggest adding a new runner, "
+                     "opening another runner or leaving this session unless the coach asks for that.")
+        return " ".join(parts)
+
     @staticmethod
     def _assistant_context(live: Live) -> str:
         """Ground free-form voice/chat turns in the active runner and any open adaptive question."""
@@ -228,6 +272,7 @@ class StudioService:
                          "from the model and from you. The target is the prediction for that race. The coach can "
                          "say \"reveal the real result\" to compare; you do not know the result.")
             lines.append(check + f" {holdout['label']} is therefore not in the race history above.")
+        lines.append(StudioService._speaking_style(live))
         lines.append(
             "Acting on this session: you can change it only by calling set_race_weight, set_coach_estimate or "
             "undo_last_change. When the coach asks for a change and the race is clear, call the function in this "
@@ -601,6 +646,7 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                      extra: dict | None = None) -> dict:
         s = live.hud
         s.assistant_context = self._assistant_context(live)
+        s.reply_style = str((live.engine.ctx.session.voice_style or {}).get("reply") or "normal")
         voice_signals = (extra or {}).get("voice") or {}
         # A spoken comment about one of this runner's races is handled by the validated steering
         # interpreter below, so skip the separate intent classifier for it and avoid two Boson calls

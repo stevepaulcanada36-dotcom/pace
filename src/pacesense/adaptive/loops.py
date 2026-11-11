@@ -102,6 +102,8 @@ class SessionContext:
     voice_style: dict = field(default_factory=dict)
     knowledge_noted: bool = False
     suggest_done: bool = False
+    voice_want: str = ""                                    # the preset the last turns pointed to...
+    voice_want_n: int = 0                                   # ...and for how many turns in a row
     clarify_asked: set = field(default_factory=set)         # cue categories Clarify already asked about
 
 
@@ -155,9 +157,9 @@ class EvidenceLoop(FeedbackLoop):
             return []
         a = bad[0]
         fam = ctx.persona.value("familiarity")
-        hint = (" You know this runner well, so it may well be right; it just isn't in the data."
-                if fam >= 0.7 else " Say what you know that the times don't show, or undo it.")
-        return [self.adapt("prompt", f"{a['race']}: {a.get('evidence', 'her own times disagree with this change.')}{hint}",
+        hint = (" You know this runner well, so it may be right; it just isn't in the data."
+                if fam >= 0.7 else " Keep it, or undo?")
+        return [self.adapt("prompt", f"{a.get('evidence') or 'The runner’s own times disagree with this change.'}{hint}",
                            "a change went against the runner's own data",
                            choices=[{"label": "Keep it: I know something the data doesn't", "action": "keep",
                                      "turn": ev.data.get("turn"), "yes": True},
@@ -528,7 +530,18 @@ class TurnTakingLoop(FeedbackLoop):
         want = self.desired(ctx)
         old = ctx.session.voice_style.get("preset")
         if want == old:
+            ctx.session.voice_want, ctx.session.voice_want_n = "", 0
             return []
+        # One fast or slow sentence is not a change of style. Switch only when three turns in a row point
+        # to the same preset (a preset the coach locked, or the very first one, applies at once).
+        if old is not None and ctx.profile.get("voice_preset") not in self.PRESETS:
+            if ctx.session.voice_want == want:
+                ctx.session.voice_want_n += 1
+            else:
+                ctx.session.voice_want, ctx.session.voice_want_n = want, 1
+            if ctx.session.voice_want_n < 3:
+                return []
+        ctx.session.voice_want, ctx.session.voice_want_n = "", 0
         ctx.session.voice_style = {"preset": want, **self.PRESETS[want]}
         if old is None and want == "balanced":
             return []

@@ -93,17 +93,16 @@ def check_change(ev: RaceEvidence, old: float, new: float, name: str = "this rac
     gap = "" if ev.others_median_s is None else _mins(ev.finish_s - ev.others_median_s)
     if ev.direction == 0:
         return EvidenceCheck("your_knowledge",
-                             f"The times do not single out {name} (within the usual spread of this runner's races), "
-                             f"so this change rests on what you know about it.")
+                             f"{name} is a typical race for this runner, so this change rests on what you know.")
     slow = ev.direction > 0
     if lowering == slow:
         what = f"{gap} slower" if slow else f"{gap} faster"
         return EvidenceCheck("supported", f"The data agrees: {name} was {what} than this runner's other races.")
     if lowering:
-        return EvidenceCheck("against_data", f"{name} was one of this runner's faster races ({gap} faster than the "
-                                             f"others); counting it less makes the target slower.")
-    return EvidenceCheck("against_data", f"{name} was one of this runner's slower races ({gap} slower than the "
-                                         f"others); counting it more makes the target slower.")
+        return EvidenceCheck("against_data", f"{name} was a fast race for this runner ({gap} faster than the "
+                                             f"others), so counting it less slows the target.")
+    return EvidenceCheck("against_data", f"{name} was a slow race for this runner ({gap} slower than the "
+                                         f"others), so counting it more slows the target.")
 
 
 @dataclass(frozen=True)

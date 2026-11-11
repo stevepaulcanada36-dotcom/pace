@@ -324,6 +324,44 @@ class AssistantActionTests(unittest.TestCase):
         self.assertIn("% away from that result", system)
 
 
+class ReplyStyleTests(unittest.TestCase):
+    def test_a_long_reply_is_cut_to_its_first_sentences(self):
+        from pacesense.hud.commands import brief
+        long = ("Rotterdam 2019 was 26 minutes slower than the others. The model counts it at 0.3 now. "
+                "The target is 4:34:09 with a likely range of 4:25 to 4:42. Would you like more detail?")
+        self.assertEqual(brief(long, 2), "Rotterdam 2019 was 26 minutes slower than the others. "
+                                         "The model counts it at 0.3 now.")
+        self.assertEqual(brief(long, 1), "Rotterdam 2019 was 26 minutes slower than the others.")
+        self.assertEqual(brief("It is 4:34:09. Set to 0.3.", 2), "It is 4:34:09. Set to 0.3.")
+
+    def test_the_assistant_is_told_how_this_coach_talks(self):
+        client = ScriptedClient()
+        coach = CoachService(helpers.model(), helpers.runners(), Repository(":memory:"))
+        service = StudioService(coach, settings=Settings(), ai_factory=lambda: ScriptedAI(client))
+        sid = service.create()[0]
+        for said in ("so what do you think like reducing the data or increasing it maybe",
+                     "right now do you have any suggestions it's kind of confusing for me",
+                     "you maybe like you decide what to do because I don't know what to do now"):
+            service.command(sid, said, source="voice")
+        system = client.calls[-1][1][0]["content"]
+        self.assertIn("How to talk to this coach", system)
+        self.assertIn("hedges like", system)
+        self.assertIn("so lead", system)
+        self.assertIn("data", system.split("Use their own words")[1][:120])
+
+    def test_a_request_between_two_steps_moves_one_step_the_way_asked(self):
+        coach = CoachService(helpers.model(), helpers.runners(), Repository(":memory:"))
+        service = StudioService(coach, settings=Settings())
+        sid = service.create()[0]
+        live = service.sessions.entry(sid).value
+        race = live.hud.steer.races[-1]
+        name = f"{race['event']} {race['year']}"
+        service.command(sid, f"set {name} to 0.3", source="typed")
+        out = service.command(sid, f"set {name} to 0.35", source="typed")
+        self.assertEqual(round(live.hud.steer.state()["races"][-1]["weight"], 2), 0.4)
+        self.assertIn("steps of 0.1", json.dumps(out["card"]))
+
+
 class QuestionDetectionTests(unittest.TestCase):
     def test_questions(self):
         for said in ("what happened in 2019", "so I just want to know what happened on", "is it perfect",

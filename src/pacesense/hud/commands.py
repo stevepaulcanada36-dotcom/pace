@@ -219,6 +219,32 @@ CLAIMED_CHANGE_RE = re.compile(
     re.IGNORECASE)
 
 
+_SENTENCE_END = re.compile(r"(?<=[.!?])[\"”')\]]?\s+(?=[A-Z“\"'(\[])")
+
+
+def brief(text: str, sentences: int = 2, words: int = 55) -> str:
+    """A spoken reply kept to its first sentences. The model is asked to be short; this makes sure of it."""
+    text = " ".join(str(text or "").split())
+    parts = _SENTENCE_END.split(text)
+    if len(parts) <= sentences and len(text.split()) <= words:
+        return text
+    kept: list[str] = []
+    for part in parts[:sentences]:
+        if kept and len(" ".join([*kept, part]).split()) > words:
+            break
+        kept.append(part)
+    out = " ".join(kept) or parts[0]
+    if len(out.split()) > words + 15:                       # one runaway sentence
+        out = " ".join(out.split()[:words]).rstrip(",;:") + "…"
+    return out
+
+
+def _reply_sentences(hud: Any) -> int:
+    """How many sentences this coach's voice style allows (brief 1, normal 2, full 3)."""
+    style = str(getattr(hud, "reply_style", "") or "normal")
+    return {"brief": 1, "full": 3}.get(style, 2)
+
+
 def is_question(text: str) -> bool:
     """True when the coach is asking something, not telling PaceSense about a race."""
     return bool(QUESTION_RE.search(text)) and not DIRECTIVE_RE.search(text)
@@ -269,7 +295,9 @@ def route(text: str, hud: Any, source: str = "typed") -> Routed:
             out.actions.append({"type": "refresh"})
             out.used.append("steer")
             out.reply = hud.feedback_text(out.turn)
-        elif CLAIMED_CHANGE_RE.search(out.reply or ""):
+        elif source == "voice":
+            out.reply = brief(out.reply, _reply_sentences(hud))
+        if not made and CLAIMED_CHANGE_RE.search(out.reply or ""):
             out.reply = ("Nothing has changed yet. To change a race, say for example “set Amsterdam 2017 to 0.3” "
                          "or “count 2017 less”; for your own estimate, say “I think the finish will be 4:30”.")
     if said:
@@ -281,4 +309,4 @@ def route(text: str, hud: Any, source: str = "typed") -> Routed:
     return out
 
 
-__all__ = ["route", "ui_commands", "is_question", "Routed", "PANELS", "PERSPECTIVES"]
+__all__ = ["route", "ui_commands", "is_question", "brief", "Routed", "PANELS", "PERSPECTIVES"]

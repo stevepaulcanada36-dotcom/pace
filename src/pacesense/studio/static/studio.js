@@ -832,11 +832,27 @@
   const FILLER_RE = /\b(um+|uh+|erm*|hmm+)\b/gi;
   const wordsOf = (t) => t.toLowerCase().replace(/[^a-z0-9' ]+/g, " ").split(/\s+/).filter(Boolean);
   /** PaceSense hearing its own voice through the speakers: most words are in what it is saying (or just said). */
+  // The microphone hears PaceSense's own voice through the speakers. While it is speaking, and for a
+  // moment afterwards, recognised words are compared with what it is saying; the recogniser garbles an
+  // echo, so half the words matching is enough to call it one.
+  const ECHO_TAIL_MS = 1500, STOP_RE = /^(?:stop|wait|pause|hold on|hang on|one (?:second|moment)|pacesense|excuse me)\b/i;
+  function echoShare(t) {
+    const tts = hooks.tts();
+    if (!tts.text) return 0;
+    const spoken = new Set(wordsOf(tts.text)), w = wordsOf(t);
+    return w.length ? w.filter((x) => spoken.has(x)).length / w.length : 0;
+  }
   function isEcho(t) {
     const tts = hooks.tts();
-    if (!tts.text || (!tts.speaking && performance.now() - tts.endedAt > 1500)) return false;
-    const spoken = new Set(wordsOf(tts.text)), w = wordsOf(t);
-    return w.length > 0 && w.filter((x) => spoken.has(x)).length / w.length >= 0.7;
+    if (!tts.text || (!tts.speaking && performance.now() - tts.endedAt > ECHO_TAIL_MS)) return false;
+    return wordsOf(t).length > 0 && echoShare(t) >= 0.5;
+  }
+  /** While PaceSense is speaking, only a deliberate interruption counts: "stop" or "wait", or a finished
+   *  phrase of three or more words that is not its own speech. A stray sound or a half-heard word no longer
+   *  cuts the reply off. */
+  function isInterruption(t, isFinal) {
+    if (STOP_RE.test(t.trim()) && echoShare(t) < 0.5) return true;
+    return isFinal && wordsOf(t).length >= 3 && echoShare(t) < 0.34;
   }
   function resetUtterance() { Object.assign(voice, { buf: [], conf: [], t0: 0, barge: false }); clearTimeout(voice.timer); }
   /** Send what was said once the coach has paused for the turn-taking silence (shorter for brisk coaches). */
@@ -908,7 +924,8 @@
       cap.src = cap.ctx.createMediaStreamSource(cap.stream);
       cap.node = cap.ctx.createScriptProcessor(4096, 1, 1);
       cap.node.onaudioprocess = (e) => {
-        const now = performance.now();
+        const now = performance.now(), tts = hooks.tts();
+        if (tts.speaking || now - tts.endedAt < 250) return;      // that would be PaceSense's own voice
         cap.chunks.push({ t: now, data: new Float32Array(e.inputBuffer.getChannelData(0)) });
         while (cap.chunks.length && cap.chunks[0].t < now - STT_KEEP_MS) cap.chunks.shift();
       };
@@ -1000,8 +1017,11 @@
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const res = e.results[i], t = res[0].transcript;
         if (!t.trim() || isEcho(t)) continue;
+        if (hooks.tts().speaking) {
+          if (!isInterruption(t, res.isFinal)) continue;          // let PaceSense finish its sentence
+          voice.barge = true; hooks.bargeIn();                     // the coach really talked over it
+        }
         if (!voice.t0) voice.t0 = performance.now();
-        if (hooks.tts().speaking && wordsOf(t).length >= 2) { voice.barge = true; hooks.bargeIn(); }   // talk over it
         if (res.isFinal) {
           voice.buf.push(t.trim());
           // Keep a genuine zero: it is a low-confidence transcript, not missing metadata.
