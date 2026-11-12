@@ -12,7 +12,8 @@ from typing import Any
 
 MIN_CONFIDENCE = 0.78
 PROFILES = {"on_plan", "fast_start", "late_fade"}
-STUDIO_PANELS = {"races", "prediction", "pacing", "similar", "simulator", "feedback", "steering", "chat", "log", "record"}
+STUDIO_PANELS = {"races", "prediction", "pacing", "similar", "simulator", "feedback", "steering", "chat", "log", "record",
+                 "contributions", "analysis"}
 INTENTS = {
     "runner_database", "select_runner", "set_familiarity",
     "focus_panel", "close_panel", "simulate", "reveal", "undo", "none",
@@ -26,6 +27,8 @@ PANEL_TERMS = {
     "feedback": ("feedback", "evidence", "checks", "data checks"),
     "steering": ("steering", "steering meter", "whose view", "meter"),
     "chat": ("chat", "conversation", "assistant", "coach notes"),
+    "contributions": ("race contributions", "contributions", "breakdown", "graphs", "charts"),
+    "analysis": ("insights", "analysis"),
     "log": ("change log", "log", "history of changes"),
     "record": ("track record", "record", "results", "outcomes"),
 }

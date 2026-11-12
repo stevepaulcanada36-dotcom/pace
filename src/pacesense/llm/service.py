@@ -158,8 +158,9 @@ class AIService:
         wanted = (self.env.get("PACESENSE_AI_PROVIDER") or "auto").strip().lower()
         if wanted not in ("auto", "openrouter", "boson"):
             wanted = "auto"
-        # OpenRouter (the original PaceSense architecture) leads when its key is configured; Boson is the
-        # other provider. Whichever is not leading becomes the backup if its key is present too.
+        # With one key, that provider does everything. With both, OpenRouter does the analysis (chat, voice
+        # intent, race interpretation) and Boson keeps speech to text (see transcribe_provider below), each
+        # backing the other up. PACESENSE_AI_PROVIDER pins the analysis provider.
         if wanted == "boson" or (wanted == "auto" and not openrouter_key):
             self.provider = "boson"
         else:

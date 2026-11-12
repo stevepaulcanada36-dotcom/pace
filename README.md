@@ -24,6 +24,8 @@ Everything is Python: the model, the services, the analysis, and a **Streamlit d
 | **Reproducibility** (`repro.py`, `pacesense reproduce`) | One command rebuilds every reported number and writes a manifest of input and output hashes; `--check` proves a re-run matches | PaceSense addition |
 | **AI models per task** (`llm/`, Settings, Model lab) | Chat, voice transcription, field filling and refining use Boson Higgs Realtime; local Whisper is an optional transcription fallback | PaceSense addition |
 
+With only `BOSON_API_KEY`, Boson does everything. With both `BOSON_API_KEY` and `OPENROUTER_API_KEY`, an OpenRouter model does the analysis (chat, voice intent, race interpretation) and Boson keeps speech to text; each backs the other up. `PACESENSE_AI_PROVIDER` pins the analysis provider and `PACESENSE_TRANSCRIBE_PROVIDER` the transcription one. The browser never receives either key. See `docs/AI_PROVIDERS.md`.
+
 ## PaceSense Studio (start here)
 
 **New in 3.1: a voice assistant for known and unknown runners.** Talk to PaceSense; the sliders move as you

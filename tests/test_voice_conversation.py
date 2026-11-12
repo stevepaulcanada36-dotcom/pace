@@ -346,7 +346,9 @@ class ChartsAndOffersTests(unittest.TestCase):
 
     def test_asking_for_a_graph_opens_one(self):
         service, sid, _live, client = self.open("unused")
-        for said, panel in (("I want you to present some graphs so it is easy to interpret", "pacing"),
+        for said, panel in (("I want you to present some graphs so it is easy to interpret", "contributions"),
+                            ("show me the graph of which race matters most", "contributions"),
+                            ("plot the pacing per kilometre", "pacing"),
                             ("show me a chart of similar runners please", "similar"),
                             ("can I see a visualization for a hot day", "simulator")):
             out = service.command(sid, said, source="voice")
@@ -392,7 +394,7 @@ class ChartsAndOffersTests(unittest.TestCase):
         service.command(sid, "so what do you make of all this then", source="voice")
         system = client.calls[-1][1][0]["content"]
         self.assertIn("pulls the target", system)
-        self.assertIn("What is on screen", system)
+        self.assertIn("Charts on screen", system)
 
 
 class TurnTakingTests(unittest.TestCase):

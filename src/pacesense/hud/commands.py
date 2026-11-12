@@ -23,6 +23,8 @@ from typing import Any
 
 PANELS = {
     "races": ("races", "sliders", "weights", "past races"),
+    "contributions": ("graphs", "charts", "visualizations", "visualisations", "contributions", "prediction breakdown", "weight breakdown"),
+    "analysis": ("analysis", "insights", "explanations"),
     "prediction": ("prediction", "target", "forecast", "likely range", "range"),
     "pacing": ("pacing", "pace plan", "splits", "pace band"),
     "similar": ("similar runners", "neighbours", "neighbors", "similar", "lookalikes"),
@@ -53,8 +55,8 @@ def _alts(words) -> str:
     return "|".join(re.escape(w) for w in sorted(words, key=len, reverse=True))
 
 
-PANEL_RE = re.compile(r"\b(show|open|bring up|display|hide|close|remove|minimi[sz]e|focus on|zoom (?:in )?on|pin)\s+"
-                      r"(?:me\s+)?(?:the\s+|my\s+|her\s+|his\s+)?(" + _alts(w for ws in PANELS.values() for w in ws) +
+PANEL_RE = re.compile(r"\b(show|open|bring up|display|present|generate|plot|visuali[sz]e|hide|close|remove|minimi[sz]e|focus on|zoom (?:in )?on|pin)\s+"
+                      r"(?:me\s+)?(?:some\s+)?(?:the\s+|my\s+|her\s+|his\s+)?(" + _alts(w for ws in PANELS.values() for w in ws) +
                       r")(?:\s+panel)?\b", re.I)
 PERSP_RE = re.compile(r"\b(?:switch|change|go)\s+(?:to\s+)?(?:the\s+)?(" + _alts(w for ws in PERSPECTIVES.values() for w in ws)
                       + r")\s+(?:view|mode|perspective)\b|\b(" + _alts(w for ws in PERSPECTIVES.values() for w in ws)
@@ -214,15 +216,22 @@ def repair_mishearings(text: str) -> str:
 # ---- "show me a graph" -------------------------------------------------------------------------
 CHART_RE = re.compile(r"\b(?:graphs?|charts?|plots?|diagrams?|visuali[sz]\w*|visuals?)\b", re.IGNORECASE)
 CHARTS = {
+    "contributions": ("Here is how much each race moves the target: left is faster, right is slower.",
+                      re.compile(r"\b(?:contribut\w*|breakdown|break\s+down|influence|pull\w*|weights?|which\s+race|"
+                                 r"each\s+race|races?\s+(?:matter|count))\b", re.IGNORECASE)),
     "similar": ("Here is how runners like this one went on to finish.",
                 re.compile(r"\b(?:similar|other runners|runners like|neighbou?rs|compar\w+)\b", re.IGNORECASE)),
     "simulator": ("Here is the race-day simulator: heat, wind and pacing against the plan.",
                   re.compile(r"\b(?:simulat\w*|heat|hot|wind|weather|race day|conditions)\b", re.IGNORECASE)),
     "prediction": ("Here is the target and the likely range.",
                    re.compile(r"\b(?:likely range|range|uncertain\w*|interval)\b", re.IGNORECASE)),
-    "pacing": ("Here is the pacing chart: the plan against the past races, darker lines count more. "
-               "Say “similar runners” or “simulator” for the other charts.", None),
+    "pacing": ("Here is the pacing chart: the plan against the past races.",
+               re.compile(r"\b(?:pac(?:e|ing)|splits?|per\s+km|kilomet\w*)\b", re.IGNORECASE)),
+    "analysis": ("Here are the insights for this runner.",
+                 re.compile(r"\b(?:insights?|analysis|scenarios?)\b", re.IGNORECASE)),
 }
+DEFAULT_CHART = ("contributions", "Here is how much each race moves the target. "
+                 "You can also ask for the pacing chart, similar runners or the simulator.")
 
 
 def chart_request(text: str) -> tuple[str, str] | None:
@@ -230,9 +239,9 @@ def chart_request(text: str) -> tuple[str, str] | None:
     if not CHART_RE.search(text) or re.search(r"\b(?:hide|close|remove)\b", text, re.IGNORECASE):
         return None
     for panel, (line, pattern) in CHARTS.items():
-        if pattern is None or pattern.search(text):
+        if pattern.search(text):
             return panel, line
-    return None
+    return DEFAULT_CHART
 
 
 # The assistant promising a change ("I'll set Rotterdam 2014 to 0.8") without having made it.

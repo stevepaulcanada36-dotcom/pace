@@ -153,7 +153,7 @@
     const prev = app.st && app.st.races ? app.st.races.map((r) => r.weight) : null;
     app.st = st;
     renderHeader(st); renderKpis(st); renderRaces(st); animateWeights(prev, st);
-    renderPacing(st); renderSimilar(st); renderInsights(st); renderSuggestions();
+    renderPacing(st); renderSimilar(st); renderInsights(st); renderContributions(st); renderSuggestions();
     $("#undo-btn").disabled = !st.session.can_undo;
     $("#ai-pill").hidden = !st.session.ai;
   }
@@ -454,6 +454,41 @@
     (st.scenarios || []).forEach((x) => sc.append(h("div", { class: "scenario" }, h("small", { text: x.name }), h("b", { text: x.finish }))));
   }
 
+  // ---------------------------------------------------------------- race contribution chart
+  function renderContributions(st) {
+    const box = clear($("#contribution-chart"));
+    const rows = (st.races || []).map((r) => ({ race: r, pull: Number(r.influence && r.influence.pull_s || 0) }))
+      .filter((x) => Number.isFinite(x.pull));
+    if (!rows.length) { box.append(h("p", { class: "muted", text: "No race-influence data is available for this prediction." })); return; }
+    rows.sort((a, b) => Math.abs(b.pull) - Math.abs(a.pull));
+    const W = chartWidth(box), narrow = W < 520, rowH = 38;
+    const m = { l: narrow ? 112 : 174, r: 28, t: 18, b: 34 }, H = m.t + rows.length * rowH + m.b;
+    const max = Math.max(30, ...rows.map((x) => Math.abs(x.pull)));
+    const half = (W - m.l - m.r) / 2, mid = m.l + half;
+    const x = (v) => mid + (v / max) * half;
+    const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img",
+      "aria-label": "Race-by-race influence on the predicted finish relative to equal weights" });
+    const grid = s("g", { class: "grid" }), axis = s("g", { class: "axis" });
+    [-max, -max / 2, 0, max / 2, max].forEach((v) => {
+      grid.append(s("line", { x1: x(v), x2: x(v), y1: m.t - 5, y2: H - m.b, class: v === 0 ? "zero" : "" }));
+      axis.append(s("text", { x: x(v), y: H - m.b + 17, "text-anchor": "middle",
+        text: v === 0 ? "no change" : fmt.signed(v) }));
+    });
+    svg.append(grid, axis);
+    rows.forEach(({ race, pull }, i) => {
+      const cy = m.t + i * rowH + rowH / 2, end = x(pull), start = Math.min(mid, end);
+      const label = `${race.event} ${race.year}`;
+      svg.append(
+        s("text", { x: 0, y: cy + 4, class: "rowlbl", text: label.length > (narrow ? 17 : 25) ? label.slice(0, narrow ? 16 : 24) + "…" : label }),
+        s("rect", { x: start, y: cy - 7, width: Math.max(1, Math.abs(end - mid)), height: 14, rx: 4,
+          fill: pull < 0 ? "var(--good)" : pull > 0 ? "var(--warn)" : "var(--past)", opacity: race.weight === 0 ? 0.35 : 0.85 }),
+        s("text", { x: pull < 0 ? Math.max(m.l, end - 6) : Math.min(W - m.r, end + 6), y: cy + 4,
+          "text-anchor": pull < 0 ? "end" : "start", class: "lbl", text: fmt.signed(pull) })
+      );
+    });
+    box.append(svg);
+  }
+
   // ---------------------------------------------------------------- simulator
   function simParams() {
     return { temp_c: Number($("#sim-temp").value), wind_kmh: Number($("#sim-wind").value),
@@ -680,7 +715,7 @@
     } finally { setBusy(false); }
   }
 
-  const PANEL = { races: "#panel-races", prediction: ".kpis", pacing: "#panel-analysis", similar: "#panel-analysis",
+  const PANEL = { races: "#panel-races", prediction: ".kpis", pacing: "#panel-analysis", similar: "#panel-analysis", contributions: "#panel-analysis", analysis: "#panel-analysis",
     simulator: "#panel-sim", feedback: "#loops-bar", steering: ".kpi-steer", chat: "#panel-notes" };
   async function handleActions(actions, sim, result = {}) {
     const outcome = { sessionChanged: false, success: false, confirmation: "", message: "" };
@@ -704,6 +739,8 @@
         } else {
           if (a.panel === "similar") selectTab("tab-similar");
           else if (a.panel === "pacing") selectTab("tab-pacing");
+          else if (a.panel === "contributions") selectTab("tab-contributions");
+          else if (a.panel === "analysis") selectTab("tab-insights");
           outcome.success = focusPanel(PANEL[a.panel]);
           outcome.confirmation = `Opened the ${a.panel} panel.`;
         }
@@ -1152,7 +1189,7 @@
       $(`#${t.getAttribute("aria-controls")}`).hidden = !on;
     });
     storage.set("pacesense.tab", id);
-    if (app.st) { if (id === "tab-similar") renderSimilar(app.st); if (id === "tab-pacing") renderPacing(app.st); }
+    if (app.st) { if (id === "tab-similar") renderSimilar(app.st); if (id === "tab-pacing") renderPacing(app.st); if (id === "tab-contributions") renderContributions(app.st); }
   }
 
   // ---------------------------------------------------------------- theme

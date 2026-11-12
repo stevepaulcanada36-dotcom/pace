@@ -290,10 +290,12 @@ class StudioService:
                          f"{'slower' if moved > 0 else 'faster'}." if abs(moved) >= 1 else
                          "The weights are equal, so the coach has not moved the target yet.")
         lines.append(
-            "What is on screen: a pacing chart (the plan against the past races), a similar-runners chart, a "
-            "race-day simulator, and the likely-range bar. You cannot draw new charts; when the coach wants a "
-            "visual, name the one that fits and tell them to say \"show the pacing chart\", \"show similar "
-            "runners\" or \"open the simulator\".")
+            "Charts on screen: race contributions (how far each race pulls the target, using the pull figures "
+            "above), the pacing chart (plan against past races), similar runners, the race-day simulator, and the "
+            "likely-range bar. You cannot draw new charts. When the coach asks about a chart, explain it in one "
+            "or two sentences from these facts; when they want a visual, name the chart and the words that open "
+            "it: \"show the race contributions\", \"show the pacing chart\", \"show similar runners\", "
+            "\"open the simulator\".")
         lines.append(
             "When the coach asks what you think, asks you to interpret, or asks why: give one insight from the "
             "facts above that they could not read off the screen in a second, for example which race is pulling "
@@ -761,7 +763,7 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                                     "evidence": voice_intent.get("evidence", [])}
         elif voice_intent and voice_intent.get("status") == "action":
             r = self._voice_route(text, source, live, voice_intent)
-        elif source == "voice":
+        elif source == "voice" and not chart_request(text):          # a chart request is one request
             ui_actions, _, remainder = ui_commands(text)
             if len(ui_actions) > 1 or (ui_actions and remainder.strip()):
                 r = Routed(reply="I heard more than one request. Which action should I do first?", used=["prompt"])

@@ -26,6 +26,18 @@ class CommandParsingTests(unittest.TestCase):
         self.assertEqual(a, [{"type": "perspective", "value": "runner"}])
         self.assertEqual(ui_commands("researcher mode")[0][0]["value"], "researcher")
 
+    def test_graph_requests_open_the_race_contribution_view(self):
+        for phrase in ("show me some graphs", "present the charts", "visualize the prediction breakdown", "plot contributions"):
+            actions, said, rest = ui_commands(phrase)
+            self.assertEqual(actions, [{"type": "focus", "panel": "contributions"}], phrase)
+            self.assertEqual(rest.strip(), "", phrase)
+            self.assertIn("opened contributions", said[0])
+
+    def test_analysis_requests_open_insights(self):
+        actions, _, rest = ui_commands("show the analysis")
+        self.assertEqual(actions, [{"type": "focus", "panel": "analysis"}])
+        self.assertEqual(rest.strip(), "")
+
     def test_simulation_with_conditions(self):
         a, _, rest = ui_commands("simulate 26 degrees with a 15 km/h headwind and she starts too fast")
         self.assertEqual(a, [{"type": "simulate", "temp_c": 26.0, "wind_kmh": 15.0, "profile": "fast_start"}])
