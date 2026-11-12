@@ -158,9 +158,9 @@ class AIService:
         wanted = (self.env.get("PACESENSE_AI_PROVIDER") or "auto").strip().lower()
         if wanted not in ("auto", "openrouter", "boson"):
             wanted = "auto"
-        # OpenRouter (the original PaceSense architecture) leads when its key is configured; Boson is the
-        # other provider. Whichever is not leading becomes the backup if its key is present too.
-        if wanted == "boson" or (wanted == "auto" and not openrouter_key):
+        # Boson is the default primary provider. OpenRouter remains an optional explicitly selectable provider
+        # and becomes a backup when both server-side keys are configured.
+        if wanted == "boson" or (wanted == "auto" and bool(boson_key)):
             self.provider = "boson"
         else:
             self.provider = "openrouter"
