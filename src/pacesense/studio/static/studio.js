@@ -665,6 +665,11 @@
       li.append(h("details", { class: "why", open: "" }, h("summary", { text: "Why" }),
         h("ol", null, card.reasoning.map((line) => h("li", { text: line })))));
     }
+    if (card.consider && card.consider.length) {
+      const mark = { for: "For", against: "Against", check: "To check" };
+      li.append(h("div", { class: "consider" }, h("b", { text: "Weigh it" }),
+        h("ul", null, card.consider.map((p) => h("li", { class: `c-${p.kind}` }, h("span", { class: "c-tag", text: mark[p.kind] || p.kind }), h("span", { text: p.text }))))));
+    }
     if (card.notes && card.notes.length) li.append(h("ul", { class: "notes-list" }, card.notes.map((n) => h("li", { text: n }))));
     if (card.accuracy) {
       const a = card.accuracy, cls = a.closer ? "closer" : a.same ? "same" : "further";
@@ -757,8 +762,18 @@
       addReply(message);
       if (outcome.success && hooks.speak) hooks.speak(message);
     }
+    if (r.opinion) addOpinion(r.opinion);
     if (r.next_step) addNext(r.next_step);
     if (!r.simulation && !outcome.sessionChanged) runSim();
+  }
+  /** A second opinion: verdict, the points on each side, and what would settle it. */
+  function addOpinion(o) {
+    const list = (kind, label, items) => (items && items.length ? items.map((t) => h("li", { class: `c-${kind}` }, h("span", { class: "c-tag", text: label }), h("span", { text: t }))) : []);
+    feed.append(h("li", { class: "fcard opinion" },
+      h("div", { class: "op-head" }, h("b", { text: "Second opinion" }), h("small", { class: "muted", text: o.source === "model" ? "AI analysis, checked against the data" : "from the data" })),
+      h("p", { class: "op-verdict", text: o.verdict }),
+      h("div", { class: "consider" }, h("ul", null, [...list("against", "Against", o.against), ...list("for", "For", o.for), ...list("check", "To settle it", o.settle ? [o.settle] : [])]))));
+    scrollFeed();
   }
   /** "Next: say …" with the reason, under the turn. Tapping it sends it. */
   function addNext(step) {

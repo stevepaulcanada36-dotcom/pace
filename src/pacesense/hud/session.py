@@ -138,8 +138,11 @@ class HudSession:
         if not items and not turn["notes"]:
             card["suggestions"] += ["2016 was a hot day", "trust the recent races more"]
         card["suggestions"] = list(dict.fromkeys(card["suggestions"]))[:4]
+        from .critique import consider
         from .guide import reasoning
-        card["reasoning"] = reasoning(card, self.state().get("races") or [])
+        state = self.state()
+        card["reasoning"] = reasoning(card, state.get("races") or [])
+        card["consider"] = consider(card, state, str(turn.get("said") or turn.get("text") or ""))
         return card
 
     def feedback_text(self, turn: dict) -> str:
@@ -156,6 +159,10 @@ class HudSession:
             parts.append(f"That is {acc['text']} ({acc['after_pct']:.2f}% off).")
         elif acc:
             parts.append(f"That moved the prediction {acc['text'].split(' to ')[0]}.")
+        from .critique import spoken
+        counter = spoken(c.get("consider") or [])
+        if counter:
+            parts.append(counter)
         return " ".join(parts)
 
     def react(self, turn_n: int, value: str, note: str = "") -> dict:

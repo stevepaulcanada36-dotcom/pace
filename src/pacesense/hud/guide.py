@@ -74,6 +74,12 @@ def because(item: dict, races: list[dict], target_before_s: float | None = None)
     return f"its time was {gap}" if gap else "it is a typical race for this runner, so this rests on what you know"
 
 
+SLOW_EXAMPLES = ("{year} was a hot day", "{she} was injured in {year}", "{she} went out too fast in {year}",
+                 "{year} came after a bad training block")
+FAST_EXAMPLES = ("{year} had a fast course and a tailwind", "{she} was at peak form in {year}",
+                 "{year} was a one-off, {she} can't repeat it", "{year} is the most representative race")
+
+
 def _outliers(races: list[dict]) -> list[dict]:
     """Races whose time stands out and whose weight the coach has not touched yet, largest gap first."""
     out = [r for r in races if (r.get("evidence") or {}).get("direction") and abs(float(r.get("weight", 0.5)) - 0.5) < 1e-9]
@@ -100,9 +106,14 @@ def next_steps(state: dict, *, familiarity: str, used: set[str], shown: dict[str
                              "for one you coach."})
     for r in _outliers(races)[:2]:
         name, gap = f"{r['event']} {r['year']}", _gap(r)
-        cands.append({"key": f"outlier:{name}", "say": f"{r['year']} was a hot day",
-                      "why": f"{name} was {gap}. If you know why (heat, injury, a fall), say it and its weight "
-                             f"follows; if not, the data treats it as normal." if gap else
+        slow = _gap_s(r) > 0
+        # Vary the example with the race (and with how often this race has been suggested), so the coach sees
+        # the range of things they can say rather than one stock phrase.
+        options = (SLOW_EXAMPLES if slow else FAST_EXAMPLES)
+        example = options[(shown.get(f"outlier:{name}", 0) + int(r["year"])) % len(options)]
+        cands.append({"key": f"outlier:{name}", "say": example.format(year=r["year"], she=she),
+                      "why": f"{name} was {gap}. If you know why, say it and its weight follows; if you don't, "
+                             f"ask what similar runners ran." if gap else
                              f"{name} stands out. If you know why, say it and its weight follows."})
     if not changed and familiarity == "known":
         cands.append({"key": "recent", "say": "trust the recent races more",
@@ -129,6 +140,19 @@ def next_steps(state: dict, *, familiarity: str, used: set[str], shown: dict[str
         cands.append({"key": "similar", "say": "show similar runners",
                       "why": "One of your changes goes against this runner's own times; similar runners show "
                              "what is typical."})
+    if changed and "second_opinion" not in used:
+        cands.append({"key": "second", "say": "what's the case against my changes?",
+                      "why": "A second view on your changes, from the data, so the model doesn't simply agree "
+                             "with you."})
+    weights = [float(r.get("weight", 0.5)) for r in races]
+    total, squares = sum(weights), sum(w * w for w in weights)
+    if races and squares and total * total / squares < 1.8:
+        cands.append({"key": "overfit", "say": "is the target overfitting?",
+                      "why": "The target now rests mostly on one race; check whether that is knowledge or a "
+                             "single good day."})
+    if not changed and familiarity == "unknown" and len(races) >= 3:
+        cands.append({"key": "least", "say": "which race should I trust least?",
+                      "why": "You don't know this runner, so start from what the data itself finds unusual."})
     if "chart" not in used and races:
         cands.append({"key": "chart", "say": "show the race contributions",
                       "why": "See which race is moving the target most, and which way."})

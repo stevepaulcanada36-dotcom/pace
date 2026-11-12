@@ -47,7 +47,8 @@ phrases:
                "jetlagged", "pregnant", "postpartum", "coming back from", "comeback race", "after surgery"]
   down:
     verb: ["count a bit less", "trust a bit less", "don't trust", "do not trust", "can't trust", "cannot trust"]
-    describe: ["not precise", imprecise, "not accurate", inaccurate, "not reliable", unreliable, "not typical",
+    describe: ["fast course", "downhill course", tailwind, "bad training block", "poor training",
+               "not precise", imprecise, "not accurate", inaccurate, "not reliable", unreliable, "not typical",
                "not normal", "an outlier", outlier, "a fluke", fluke, "a one-off", "one-off", "one off",
                "not correct", "not right", "is wrong", "looks wrong", "data is wrong", misleading,
                "doesn't reflect", "does not reflect", "can't be trusted", "cannot be trusted",

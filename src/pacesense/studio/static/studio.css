@@ -573,3 +573,16 @@ input[type="range"].moving::-moz-range-thumb { box-shadow: 0 0 0 6px var(--accen
 .sa-bar.best .sa-bar-name { font-weight: 650; color: var(--ink); }
 .sa-bar-val { text-align: right; color: var(--ink-2); }
 @media (max-width: 520px) { .sa-bar { grid-template-columns: 96px 1fr 70px; } }
+
+/* weigh it: the case for and against a change, and the second opinion */
+.consider { margin: 4px 12px 8px; font-size: 12.5px; }
+.consider > b { display: block; font-weight: 600; color: var(--ink); margin-bottom: 2px; }
+.consider ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+.consider li { display: grid; grid-template-columns: 74px 1fr; gap: 6px; color: var(--ink-2); line-height: 1.4; }
+.consider .c-tag { font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .03em; }
+.consider .c-for .c-tag { color: var(--accent); }
+.consider .c-against .c-tag { color: #b45309; }
+.consider .c-check .c-tag { color: var(--muted); }
+.opinion { padding-top: 8px; }
+.opinion .op-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 0 12px; }
+.opinion .op-verdict { margin: 4px 12px 6px; font-size: 13px; color: var(--ink); }

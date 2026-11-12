@@ -76,6 +76,8 @@ class Live:
     used: set = field(default_factory=set)            # features tried this session, for next-step advice
     first_estimate_s: float | None = None             # the coach's first stated estimate (Acceptance: Coach_pre)
     against_n: int = 0                                # changes that went against the runner's own times
+    changes: list = field(default_factory=list)       # each race change this session (race, old, new, verdict, cue)
+    last_card: dict | None = None                     # the most recent change card, for the second opinion
     guide_shown: dict = field(default_factory=dict)   # how often each next step has been offered
 
 
@@ -230,6 +232,26 @@ class StudioService:
         self._observe(sid, live, Event("utterance", text, source, data), out)
         out["voice_action_pending"] = source == "voice"
         out["adapt"]["speak"] = "" if source == "voice" else reply
+        live.hud.remember_turn(text, reply)
+        return out
+
+    def _second_opinion(self, sid: str, live: Live, text: str, source: str, voice: dict | None) -> dict:
+        """The case for and against the coach's current view, from the session's numbers."""
+        from ..hud.second_opinion import second_opinion, speak
+        live.used.add("second_opinion")
+        state = self.view(sid, live)
+        ai = self.ai_factory() if self.ai_factory else None
+        opinion = second_opinion(ai, state, said=self._coach_said(live), changes=live.changes,
+                                 last_card=live.last_card, analysis=state.get("session_analysis") or {},
+                                 question=text)
+        reply = speak(opinion)
+        out: dict[str, Any] = {"reply": reply, "actions": [], "card": None, "used": ["assistant"],
+                               "simulation": None, "state": state, "turn": None, "opinion": opinion}
+        data = {"applied": [], "turn": None, "estimate_s": None, "notes": [], "used": ["assistant"],
+                "ui_only": True, **({"voice": voice} if voice else {})}
+        self._observe(sid, live, Event("utterance", text, source, data), out)
+        out["adapt"]["speak"] = reply
+        out["voice_action_pending"] = False
         live.hud.remember_turn(text, reply)
         return out
 
@@ -893,6 +915,10 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
             live.used.add("against_data")
             live.against_n += against
         card = s.feedback_card(r.turn) if r.turn else None
+        if card and card.get("items"):
+            live.last_card = card
+            live.changes.extend({k: i.get(k) for k in ("race", "old", "new", "verdict", "cue")} for i in card["items"])
+            del live.changes[:-30]
         state = self.view(sid, live)
         out: dict[str, Any] = {"reply": r.reply, "actions": r.actions, "card": card, "used": r.used,
                                "simulation": sim, "state": state, "turn": r.turn}
@@ -999,6 +1025,9 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                 return self._guide(sid, live, text)
             if self._SESSION_RE.search(text) and not live.engine.pending:
                 return self._session_review(sid, live, text, source, voice)
+            from ..hud.second_opinion import SECOND_OPINION_RE
+            if SECOND_OPINION_RE.search(text):
+                return self._second_opinion(sid, live, text, source, voice)
             if source != "voice":
                 return answer(live, text)
             if self._is_noise(text):
