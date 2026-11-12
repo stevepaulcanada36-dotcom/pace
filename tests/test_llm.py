@@ -115,6 +115,14 @@ class SettingsTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             s.update("nope", model="a/b")
 
+    def test_boson_is_primary_when_both_hosted_keys_are_configured(self):
+        repo = Repository(":memory:")
+        fake = FakeOpenRouter()
+        ai = AIService(repo, env={"BOSON_API_KEY": "boson-test", "OPENROUTER_API_KEY": "or-test"},
+                       client=fake.client())
+        self.assertEqual(ai.provider, "boson")
+        self.assertEqual(ai.provider_name, "Boson")
+
     def test_every_task_uses_the_boson_model(self):
         repo = Repository(":memory:")
         fake = FakeOpenRouter()
