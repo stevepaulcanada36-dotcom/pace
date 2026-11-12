@@ -153,7 +153,7 @@
     const prev = app.st && app.st.races ? app.st.races.map((r) => r.weight) : null;
     app.st = st;
     renderHeader(st); renderKpis(st); renderRaces(st); animateWeights(prev, st);
-    renderPacing(st); renderSimilar(st); renderInsights(st); renderContributions(st); renderSuggestions();
+    renderPacing(st); renderSimilar(st); renderInsights(st); renderContributions(st); renderSession(st); renderSuggestions();
     $("#undo-btn").disabled = !st.session.can_undo;
     $("#ai-pill").hidden = !st.session.ai;
   }
@@ -454,6 +454,66 @@
     (st.scenarios || []).forEach((x) => sc.append(h("div", { class: "scenario" }, h("small", { text: x.name }), h("b", { text: x.finish }))));
   }
 
+  // ---------------------------------------------------------------- your session (the paper's measures)
+  function renderSession(st) {
+    const box = $("#session-analysis");
+    if (!box) return;
+    clear(box);
+    const a = st.session_analysis;
+    if (!a) return;
+    const section = (title, part, extra) => {
+      const el = h("section", { class: `sa-sec${part && part.available ? "" : " sa-off"}` },
+        h("h3", { text: title }), h("p", { text: (part && part.text) || "" }));
+      if (extra) el.append(extra);
+      box.append(el);
+    };
+    const wv = a.whose_view || {};
+    section(wv.available ? `Whose view · ${wv.label}` : "Whose view", wv, wv.available ? whoseViewChart(wv) : null);
+    const acc = a.accuracy || {};
+    const bars = acc.available ? accuracyBars(acc.rows) : null;
+    section("Accuracy against the hidden race (RQ4)", acc, bars);
+    if (bars) sizeBars(bars, acc.rows);
+    section("Recent races (paper: weights rose with race year)", a.recency);
+    const kn = a.knowledge || {};
+    section("Knowledge you used", kn, kn.available ? h("div", { class: "sa-tags" },
+      kn.categories.map((c) => h("span", { class: "chip neutral", text: `${c.name} ×${c.mentions}` }))) : null);
+    section("Familiarity (RQ2)", a.familiarity);
+    if (a.bias) section("Expertise or expectation?", a.bias);
+  }
+  /** The four acceptance cases as positions on one time line: where you and the model started and ended. */
+  function whoseViewChart(wv) {
+    const p = wv.points, W = 520, H = 96, m = { l: 14, r: 14 };
+    const vals = [p.model_initial_s, p.model_now_s, p.coach_first_s, p.coach_now_s];
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    const pad = Math.max(60, (hi - lo) * 0.15); lo -= pad; hi += pad;
+    const x = (v) => m.l + ((v - lo) / (hi - lo)) * (W - m.l - m.r);
+    const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, class: "sa-line", role: "img",
+      "aria-label": `Model ${fmt.time(p.model_initial_s, false)} to ${fmt.time(p.model_now_s, false)}; you ${fmt.time(p.coach_first_s, false)} to ${fmt.time(p.coach_now_s, false)}` });
+    const row = (y, from, to, cls, name) => {
+      svg.append(s("line", { x1: m.l, x2: W - m.r, y1: y, y2: y, class: "sa-axis" }));
+      svg.append(s("text", { x: m.l, y: y - 12, class: "sa-name", text: name }));
+      if (Math.abs(to - from) > 1) svg.append(s("line", { x1: x(from), x2: x(to), y1: y, y2: y, class: `sa-move ${cls}` }));
+      svg.append(s("circle", { cx: x(from), cy: y, r: 4.5, class: `sa-from ${cls}` }));
+      svg.append(s("circle", { cx: x(to), cy: y, r: 6, class: `sa-to ${cls}` }));
+      svg.append(s("text", { x: x(to), y: y + 20, "text-anchor": "middle", class: "sa-val", text: fmt.time(to, false) }));
+    };
+    row(30, p.model_initial_s, p.model_now_s, "model", "Model: ○ equal weights → ● now");
+    row(72, p.coach_first_s, p.coach_now_s, "coach", "You: ○ first estimate → ● now");
+    return svg;
+  }
+  function accuracyBars(rows) {
+    const best = Math.min(...rows.map((r) => r.pct ?? Infinity));
+    return h("div", { class: "sa-bars" }, rows.map((r) => h("div", { class: `sa-bar${r.pct === best ? " best" : ""}` },
+      h("span", { class: "sa-bar-name", text: r.name }),
+      h("span", { class: "sa-bar-track" }, Object.assign(h("span", { class: "sa-bar-fill" }), {})),
+      h("span", { class: "sa-bar-val mono", text: r.pct == null ? "–" : `${r.pct.toFixed(2)}% off` }))));
+  }
+  /** Widths are set through the style object: the page's content security policy blocks style attributes. */
+  function sizeBars(box, rows) {
+    const max = Math.max(1e-9, ...rows.map((r) => r.pct || 0));
+    box.querySelectorAll(".sa-bar-fill").forEach((el, i) => { el.style.width = `${Math.max(2, (100 * (rows[i].pct || 0)) / max)}%`; });
+  }
+
   // ---------------------------------------------------------------- race contribution chart
   function renderContributions(st) {
     const box = clear($("#contribution-chart"));
@@ -725,7 +785,7 @@
     } finally { setBusy(false); }
   }
 
-  const PANEL = { races: "#panel-races", prediction: ".kpis", pacing: "#panel-analysis", similar: "#panel-analysis", contributions: "#panel-analysis", analysis: "#panel-analysis",
+  const PANEL = { races: "#panel-races", prediction: ".kpis", pacing: "#panel-analysis", similar: "#panel-analysis", contributions: "#panel-analysis", analysis: "#panel-analysis", session: "#panel-analysis",
     simulator: "#panel-sim", feedback: "#loops-bar", steering: ".kpi-steer", chat: "#panel-notes" };
   async function handleActions(actions, sim, result = {}) {
     const outcome = { sessionChanged: false, success: false, confirmation: "", message: "" };
@@ -751,6 +811,7 @@
           else if (a.panel === "pacing") selectTab("tab-pacing");
           else if (a.panel === "contributions") selectTab("tab-contributions");
           else if (a.panel === "analysis") selectTab("tab-insights");
+          else if (a.panel === "session") selectTab("tab-session");
           outcome.success = focusPanel(PANEL[a.panel]);
           outcome.confirmation = `Opened the ${a.panel} panel.`;
         }
@@ -1199,7 +1260,7 @@
       $(`#${t.getAttribute("aria-controls")}`).hidden = !on;
     });
     storage.set("pacesense.tab", id);
-    if (app.st) { if (id === "tab-similar") renderSimilar(app.st); if (id === "tab-pacing") renderPacing(app.st); if (id === "tab-contributions") renderContributions(app.st); }
+    if (app.st) { if (id === "tab-similar") renderSimilar(app.st); if (id === "tab-pacing") renderPacing(app.st); if (id === "tab-contributions") renderContributions(app.st); if (id === "tab-session") renderSession(app.st); }
   }
 
   // ---------------------------------------------------------------- theme

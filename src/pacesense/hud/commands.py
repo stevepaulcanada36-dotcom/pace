@@ -216,6 +216,8 @@ def repair_mishearings(text: str) -> str:
 # ---- "show me a graph" -------------------------------------------------------------------------
 CHART_RE = re.compile(r"\b(?:graphs?|charts?|plots?|diagrams?|visuali[sz]\w*|visuals?)\b", re.IGNORECASE)
 CHARTS = {
+    "session": ("Here is your session measured the way the paper measured its coaches.",
+                re.compile(r"\b(?:my\s+session|session|whose\s+view|acceptance|accuracy|recency)\b", re.IGNORECASE)),
     "contributions": ("Here is how much each race moves the target: left is faster, right is slower.",
                       re.compile(r"\b(?:contribut\w*|breakdown|break\s+down|influence|pull\w*|weights?|which\s+race|"
                                  r"each\s+race|races?\s+(?:matter|count))\b", re.IGNORECASE)),

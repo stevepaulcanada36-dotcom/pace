@@ -135,6 +135,7 @@
         <button role="tab" id="tab-similar" aria-controls="view-similar" aria-selected="false" tabindex="-1">Similar runners</button>
         <button role="tab" id="tab-insights" aria-controls="view-insights" aria-selected="false" tabindex="-1">Insights</button>
         <button role="tab" id="tab-contributions" aria-controls="view-contributions" aria-selected="false" tabindex="-1">Race contributions</button>
+        <button role="tab" id="tab-session" aria-controls="view-session" aria-selected="false" tabindex="-1">Your session</button>
       </div>
       <p class="card-sub" id="analysis-sub"></p>
     </header>
@@ -152,6 +153,10 @@
     <div role="tabpanel" id="view-contributions" aria-labelledby="tab-contributions" class="tabview" hidden>
       <div class="chart" id="contribution-chart"></div>
       <p class="footnote">Each bar shows how much a race moves the target relative to the equal-weight baseline. Left means faster; right means slower. This is model influence, not proof that a race caused the result.</p>
+    </div>
+    <div role="tabpanel" id="view-session" aria-labelledby="tab-session" class="tabview" hidden>
+      <div class="session-analysis" id="session-analysis"></div>
+      <p class="footnote">The measures from Muijlwijk et al. (IUI ’24), applied to this session: Acceptance and Model adaptation (whose view), error against the hidden race (RQ4), weights against race year, the knowledge you used, and familiarity (RQ2).</p>
     </div>
   </section>
 

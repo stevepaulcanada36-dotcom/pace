@@ -74,6 +74,8 @@ class Live:
     voice_offer: dict | None = None      # a control PaceSense offered and is waiting for "yes" or "no" on
     voice_fragment: dict | None = None   # an unfinished spoken sentence, waiting for the rest of it
     used: set = field(default_factory=set)            # features tried this session, for next-step advice
+    first_estimate_s: float | None = None             # the coach's first stated estimate (Acceptance: Coach_pre)
+    against_n: int = 0                                # changes that went against the runner's own times
     guide_shown: dict = field(default_factory=dict)   # how often each next step has been offered
 
 
@@ -172,7 +174,14 @@ class StudioService:
         st["runner"].update({"gender": r.gender, "age": r.age, "n_races": len(st["races"])})
         if any(abs(float(x.get("weight", 0.5)) - 0.5) > 1e-9 for x in st["races"]):
             live.used.add("changed")
+        estimate = (st.get("steering") or {}).get("coach_estimate_s")
+        if estimate and live.first_estimate_s is None:
+            live.first_estimate_s = float(estimate)
         from ..hud.guide import next_steps
+        from ..hud.session_analysis import session_analysis
+        st["session_analysis"] = session_analysis(
+            st, coach_first_s=live.first_estimate_s, condition=live.engine.ctx.session.condition,
+            said=self._coach_said(live), against_data=live.against_n)
         st["next_steps"] = next_steps(st, familiarity=live.engine.ctx.session.condition, used=live.used,
                                       shown=live.guide_shown)
         if with_adapt:
@@ -196,6 +205,33 @@ class StudioService:
     _TERMS = ("data", "weight", "reduce", "increase", "decrease", "lower", "raise", "race", "prediction", "predict",
               "estimate", "accuracy", "percent", "percentage", "model", "target", "range", "representative",
               "precise", "accurate", "performance", "injury", "trust", "count")
+
+    @staticmethod
+    def _coach_said(live: Live) -> list[str]:
+        said = [str(m.get("content", "")) for m in live.hud.history if m.get("role") == "user"]
+        notes = (live.engine.ctx.profile.get("runner_notes") or {}).get(live.hud.source_runner) or []
+        return said + [str(n.get("text", "")) for n in notes]
+
+    _SESSION_RE = re.compile(
+        r"\b(?:how\s+(?:did|am|have)\s+i\s+(?:do|doing|done)|how\s+(?:well|good)\s+(?:did|were)\s+(?:i|my\s+changes)|"
+        r"(?:analy[sz]e|analysis\s+of|review|summari[sz]e|summary\s+of)\s+(?:my|this|the)\s+session|"
+        r"session\s+(?:analysis|summary|review)|whose\s+view|did\s+my\s+changes\s+help|"
+        r"(?:show|open)\s+(?:me\s+)?(?:my|your)\s+session)\b", re.IGNORECASE)
+
+    def _session_review(self, sid: str, live: Live, text: str, source: str, voice: dict | None) -> dict:
+        """"How did I do?": open the session analysis and say what it shows, from PaceSense's numbers."""
+        from ..hud.session_analysis import summary
+        state = self.view(sid, live)
+        reply = summary(state["session_analysis"])
+        out: dict[str, Any] = {"reply": reply, "actions": [{"type": "focus", "panel": "session"}], "card": None,
+                               "used": ["ui"], "simulation": None, "state": state, "turn": None}
+        data = {"applied": [], "turn": None, "estimate_s": None, "notes": [], "used": ["ui"], "ui_only": True,
+                **({"voice": voice} if voice else {})}
+        self._observe(sid, live, Event("utterance", text, source, data), out)
+        out["voice_action_pending"] = source == "voice"
+        out["adapt"]["speak"] = "" if source == "voice" else reply
+        live.hud.remember_turn(text, reply)
+        return out
 
     @staticmethod
     def _pull_text(race: dict) -> str:
@@ -308,6 +344,18 @@ class StudioService:
             "facts above that they could not read off the screen in a second, for example which race is pulling "
             "the target most and which way, a race that stands out from the others, or what their changes did "
             "to the target. Do not read the target and range back to them.")
+        try:
+            from ..hud.session_analysis import session_analysis
+            sa = session_analysis(state, coach_first_s=live.first_estimate_s,
+                                  condition=live.engine.ctx.session.condition,
+                                  said=StudioService._coach_said(live), against_data=live.against_n)
+            facts = [sa[k]["text"] for k in ("whose_view", "accuracy", "recency", "knowledge", "bias")
+                     if (sa.get(k) or {}).get("available")]
+            if facts:
+                lines.append("Session analysis (the paper's measures for this session; use these when the coach "
+                             "asks how they did or what their changes achieved): " + " ".join(facts))
+        except Exception as exc:  # noqa: BLE001 - the analysis is optional context
+            log.debug("session analysis unavailable for the assistant: %s", exc)
         try:
             from ..hud.guide import next_steps
             steps = next_steps(state, familiarity=live.engine.ctx.session.condition, used=live.used,
@@ -840,8 +888,10 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                 live.used.add("chart")
                 if a.get("panel") == "similar":
                     live.used.add("similar")
-        if any(x.get("verdict") == "against_data" for x in (r.turn or {}).get("applied", [])):
+        against = sum(1 for x in (r.turn or {}).get("applied", []) if x.get("verdict") == "against_data")
+        if against:
             live.used.add("against_data")
+            live.against_n += against
         card = s.feedback_card(r.turn) if r.turn else None
         state = self.view(sid, live)
         out: dict[str, Any] = {"reply": r.reply, "actions": r.actions, "card": card, "used": r.used,
@@ -947,6 +997,8 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                 return taken
             if self._GUIDE_RE.match(text):
                 return self._guide(sid, live, text)
+            if self._SESSION_RE.search(text) and not live.engine.pending:
+                return self._session_review(sid, live, text, source, voice)
             if source != "voice":
                 return answer(live, text)
             if self._is_noise(text):

@@ -116,6 +116,9 @@ def next_steps(state: dict, *, familiarity: str, used: set[str], shown: dict[str
         cands.append({"key": "reveal", "say": "reveal the real result",
                       "why": f"{holdout['label']} is hidden. Revealing it shows whether your changes moved the "
                              f"prediction closer."})
+    if holdout.get("revealed"):
+        cands.append({"key": "review", "say": "how did I do?",
+                      "why": "See whose view won and whether your changes helped, measured as in the paper."})
     if holdout.get("revealed") and changed:
         err, base = holdout.get("error_pct"), holdout.get("equal_weights_error_pct")
         if err is not None and base is not None and float(err) > float(base):
