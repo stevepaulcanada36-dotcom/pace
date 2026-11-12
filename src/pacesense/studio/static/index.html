@@ -134,6 +134,7 @@
         <button role="tab" id="tab-pacing" aria-controls="view-pacing" aria-selected="true">Pacing plan</button>
         <button role="tab" id="tab-similar" aria-controls="view-similar" aria-selected="false" tabindex="-1">Similar runners</button>
         <button role="tab" id="tab-insights" aria-controls="view-insights" aria-selected="false" tabindex="-1">Insights</button>
+        <button role="tab" id="tab-contributions" aria-controls="view-contributions" aria-selected="false" tabindex="-1">Race contributions</button>
       </div>
       <p class="card-sub" id="analysis-sub"></p>
     </header>
@@ -147,6 +148,10 @@
     <div role="tabpanel" id="view-insights" aria-labelledby="tab-insights" class="tabview" hidden>
       <ul class="insights" id="insights"></ul>
       <div class="scenarios" id="scenarios"></div>
+    </div>
+    <div role="tabpanel" id="view-contributions" aria-labelledby="tab-contributions" class="tabview" hidden>
+      <div class="chart" id="contribution-chart"></div>
+      <p class="footnote">Each bar shows how much a race moves the target relative to the equal-weight baseline. Left means faster; right means slower. This is model influence, not proof that a race caused the result.</p>
     </div>
   </section>
 
