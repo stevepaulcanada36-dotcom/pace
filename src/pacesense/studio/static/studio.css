@@ -537,3 +537,14 @@ input[type="range"].moving::-moz-range-thumb { box-shadow: 0 0 0 6px var(--accen
 .runner-filters label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; }
 .runner-filters select { width: 100%; min-width: 0; }
 @media (max-width: 420px) { .runner-filters { grid-template-columns: 1fr; } }
+
+/* reasoning under a change, and the suggested next step */
+.fcard .why { margin: 4px 12px 8px; font-size: 12.5px; color: var(--ink-2); }
+.fcard .why summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+.fcard .why ol { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 2px; }
+.next-step { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 12.5px; color: var(--ink-2); padding: 2px 0 6px; }
+.next-step .next-lbl { font-weight: 600; color: var(--accent-ink); }
+.next-step .next-why { flex-basis: 100%; }
+/* The feed is a flex column with a fixed height: without this, a long conversation squashed each change
+   card (which clips its overflow) down to a thin line. */
+.feed > li { flex-shrink: 0; }

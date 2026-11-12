@@ -114,6 +114,7 @@ class HudSession:
         pr = st["prediction"]
         delta = turn["finish_after_s"] - turn["finish_before_s"]
         card = {"n": turn["n"], "said": turn.get("said", turn["text"]), "items": items, "notes": turn["notes"],
+                "target_before_s": turn["finish_before_s"],
                 "target": pr["finish"], "target_delta": None if not items else _signed(delta),
                 "range": [format_time(pr["low_s"]), format_time(pr["high_s"])] if pr["low_s"] else None,
                 "steering": st["steering"], "suggestions": []}
@@ -137,13 +138,18 @@ class HudSession:
         if not items and not turn["notes"]:
             card["suggestions"] += ["2016 was a hot day", "trust the recent races more"]
         card["suggestions"] = list(dict.fromkeys(card["suggestions"]))[:4]
+        from .guide import reasoning
+        card["reasoning"] = reasoning(card, self.state().get("races") or [])
         return card
 
     def feedback_text(self, turn: dict) -> str:
         c = self.feedback_card(turn)
         if not c["items"]:
             return " ".join(c["notes"]) or "Nothing changed."
-        parts = [f"{i['race']} {i['old']:.1f} → {i['new']:.1f}: {i['verdict_text']}." for i in c["items"]]
+        from .guide import because
+        races = self.state().get("races") or []
+        before = c.get("target_before_s") if len(c["items"]) == 1 else None
+        parts = [f"{i['race']} {i['old']:.1f} → {i['new']:.1f}: {because(i, races, before)}." for i in c["items"]]
         parts.append(f"Target {c['target']} ({c['target_delta']}).")
         acc = c.get("accuracy")
         if acc and self.revealed:

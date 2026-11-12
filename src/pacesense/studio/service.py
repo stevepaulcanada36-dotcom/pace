@@ -12,7 +12,7 @@ import logging
 import re
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .. import __version__
@@ -73,6 +73,8 @@ class Live:
     coach_id: str
     voice_offer: dict | None = None      # a control PaceSense offered and is waiting for "yes" or "no" on
     voice_fragment: dict | None = None   # an unfinished spoken sentence, waiting for the rest of it
+    used: set = field(default_factory=set)            # features tried this session, for next-step advice
+    guide_shown: dict = field(default_factory=dict)   # how often each next step has been offered
 
 
 class StudioService:
@@ -168,6 +170,11 @@ class StudioService:
                          "can_undo": bool(s.steer._undo), "ai": st.pop("ai", False), "coach_id": live.coach_id}
         r = self.coach.runner(s.runner_id)
         st["runner"].update({"gender": r.gender, "age": r.age, "n_races": len(st["races"])})
+        if any(abs(float(x.get("weight", 0.5)) - 0.5) > 1e-9 for x in st["races"]):
+            live.used.add("changed")
+        from ..hud.guide import next_steps
+        st["next_steps"] = next_steps(st, familiarity=live.engine.ctx.session.condition, used=live.used,
+                                      shown=live.guide_shown)
         if with_adapt:
             st["adapt"] = live.engine.snapshot()
         return st
@@ -301,6 +308,19 @@ class StudioService:
             "facts above that they could not read off the screen in a second, for example which race is pulling "
             "the target most and which way, a race that stands out from the others, or what their changes did "
             "to the target. Do not read the target and range back to them.")
+        try:
+            from ..hud.guide import next_steps
+            steps = next_steps(state, familiarity=live.engine.ctx.session.condition, used=live.used,
+                               shown=live.guide_shown)
+        except Exception:  # noqa: BLE001 - suggestions are optional context
+            steps = []
+        if steps:
+            lines.append("Useful next steps for this coach, worked out by PaceSense (best first): " + " | ".join(
+                f"say \"{x['say']}\": {x['why']}" for x in steps) + ". When the coach asks what to do, seems "
+                "unsure, or the conversation stalls, recommend the first of these in one sentence with its reason.")
+        lines.append(
+            "Reasoning: every answer that states a judgement must say why in a few words, using a number from "
+            "this context (\"because 2019 was 26 min slower than her other races\"). Never give a bare verdict.")
         lines.append(StudioService._speaking_style(live))
         lines.append(
             "Acting on this session: you can change it only by calling set_race_weight, set_coach_estimate or "
@@ -813,10 +833,29 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                 live.engine.set_condition(a["value"])
             if a["type"] == "simulate":
                 sim = s.simulate(a["temp_c"], a["wind_kmh"], a["profile"])
+        for a in r.actions:
+            if a.get("type") == "simulate":
+                live.used.add("sim")
+            if a.get("type") == "focus" and a.get("panel") in ("contributions", "pacing", "similar", "analysis"):
+                live.used.add("chart")
+                if a.get("panel") == "similar":
+                    live.used.add("similar")
+        if any(x.get("verdict") == "against_data" for x in (r.turn or {}).get("applied", [])):
+            live.used.add("against_data")
         card = s.feedback_card(r.turn) if r.turn else None
         state = self.view(sid, live)
         out: dict[str, Any] = {"reply": r.reply, "actions": r.actions, "card": card, "used": r.used,
                                "simulation": sim, "state": state, "turn": r.turn}
+        top = (state.get("next_steps") or [None])[0]
+        if top and card and card.get("items"):
+            # After a change, suggest one thing to do next. It is spoken only the first time it is offered,
+            # so the coach is not told the same thing after every change.
+            first_time = live.guide_shown.get(top["key"], 0) == 0
+            live.guide_shown[top["key"]] = live.guide_shown.get(top["key"], 0) + 1
+            out["next_step"] = top
+            if first_time and not live.engine.pending:
+                from ..hud.guide import guidance_line
+                out["next_say"] = guidance_line(top)
         if voice_intent:
             out["voice_intent"] = {key: voice_intent[key] for key in
                                    ("status", "intent", "arguments", "confidence", "evidence") if key in voice_intent}
@@ -1048,7 +1087,10 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
         return self.command(sid, f"I think she can run {format_time(secs)}")
 
     def simulate(self, sid: str, temp_c: float, wind_kmh: float, profile: str) -> dict:
-        return self._with(sid, lambda live: live.hud.simulate(temp_c, wind_kmh, profile))
+        def run(live: Live) -> dict:
+            live.used.add("sim")
+            return live.hud.simulate(temp_c, wind_kmh, profile)
+        return self._with(sid, run)
 
     def _reveal_event(self, live: Live) -> Event:
         st = live.hud.state()["holdout"] or {}

@@ -105,7 +105,8 @@ class SessionTests(unittest.TestCase):
         self.assertIn(card["accuracy"]["text"], ("closer to her real result", "further from her real result",
                                                  "no closer to her real result"))
         self.assertTrue(card["suggestions"])
-        self.assertIn("the data agrees", r.reply)
+        self.assertIn("went on to run", r.reply)                  # the spoken reply gives the reason
+        self.assertTrue(card["reasoning"])
 
     def test_simulating_a_hot_day_never_changes_a_race(self):
         s = self.demo()

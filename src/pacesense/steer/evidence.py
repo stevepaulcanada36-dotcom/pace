@@ -8,7 +8,7 @@ Four measures, all plain arithmetic on the model's own numbers (no AI, no random
 2. **Evidence check** (`check_change`). When a coach lowers or raises a race, does the data point the same
    way? Lowering a race that was unusually slow is *supported*; lowering a typical race *rests on the coach's
    knowledge* (which may be exactly right: an injury does not show in a finish time); lowering one of the
-   runner's fastest races goes *against the data* and makes the target slower.
+   runner's fastest races goes *against the data*.
 3. **Influence** (`influence`). How much each race pulls the combined prediction, in seconds:
    pull_i = w_i (t_i - F) / sum(w), where t_i is the race's own prediction and F the combined one. The pulls
    sum to zero. Also the exact change if the race were left out.
@@ -100,9 +100,9 @@ def check_change(ev: RaceEvidence, old: float, new: float, name: str = "this rac
         return EvidenceCheck("supported", f"The data agrees: {name} was {what} than this runner's other races.")
     if lowering:
         return EvidenceCheck("against_data", f"{name} was a fast race for this runner ({gap} faster than the "
-                                             f"others), so counting it less slows the target.")
+                                             f"others), and you are counting it less.")
     return EvidenceCheck("against_data", f"{name} was a slow race for this runner ({gap} slower than the "
-                                         f"others), so counting it more slows the target.")
+                                         f"others), and you are counting it more.")
 
 
 @dataclass(frozen=True)

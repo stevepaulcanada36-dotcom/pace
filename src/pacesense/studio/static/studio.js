@@ -601,6 +601,10 @@
         inlineSlider(it)));
     }
     const li = h("li", { class: "fcard" }, items);
+    if (card.reasoning && card.reasoning.length) {
+      li.append(h("details", { class: "why", open: "" }, h("summary", { text: "Why" }),
+        h("ol", null, card.reasoning.map((line) => h("li", { text: line })))));
+    }
     if (card.notes && card.notes.length) li.append(h("ul", { class: "notes-list" }, card.notes.map((n) => h("li", { text: n }))));
     if (card.accuracy) {
       const a = card.accuracy, cls = a.closer ? "closer" : a.same ? "same" : "further";
@@ -654,13 +658,11 @@
 
   function renderSuggestions(list) {
     const box = clear($("#suggestions"));
-    let items = list && list.length ? list : null;
-    if (!items && app.st) {
-      const slow = app.st.races.find((r) => r.evidence.direction > 0) || app.st.races[0];
-      items = [`${slow.year} was a hot day`, "trust the recent races more", "I think she can run "
-        + fmt.time(app.st.prediction.finish_s - 240, false), "simulate 25 degrees", "what does the likely range mean?"];
-    }
-    (items || []).forEach((t) => box.append(h("button", { type: "button", class: "chip-btn", text: t, onclick: () => send(t, "typed") })));
+    // Change-specific options ("undo") first, then the next steps PaceSense worked out for this session.
+    const extra = (list || []).filter((t) => typeof t === "string" && /^undo$/i.test(t)).map((t) => ({ say: t, why: "Reverse the last change." }));
+    const steps = (app.st && app.st.next_steps) || [];
+    [...extra, ...steps].slice(0, 4).forEach((x) => box.append(h("button", {
+      type: "button", class: "chip-btn", text: x.say, title: x.why, onclick: () => send(x.say, "typed") })));
   }
 
   // ---------------------------------------------------------------- actions
@@ -687,7 +689,7 @@
         ? (outcome.confirmation || "Done.")
         : (outcome.message || "I couldn't complete that action. Nothing was changed.");
       addReply(message);
-      if (outcome.success && hooks.speak) hooks.speak(message);
+      if (outcome.success && hooks.speak) hooks.speak(r.next_say ? `${message} ${r.next_say}` : message);
     } else if (runnerAction) {
       const message = outcome.success
         ? (outcome.confirmation || "Runner opened.")
@@ -695,7 +697,15 @@
       addReply(message);
       if (outcome.success && hooks.speak) hooks.speak(message);
     }
+    if (r.next_step) addNext(r.next_step);
     if (!r.simulation && !outcome.sessionChanged) runSim();
+  }
+  /** "Next: say …" with the reason, under the turn. Tapping it sends it. */
+  function addNext(step) {
+    const b = h("button", { type: "button", class: "chip-btn", text: step.say, onclick: () => send(step.say, "typed") });
+    feed.append(h("li", { class: "next-step" }, h("span", { class: "next-lbl", text: "Next" }), b,
+      h("span", { class: "next-why", text: step.why })));
+    scrollFeed();
   }
   async function sendNow(text, source, signals) {
     text = text.trim();
@@ -792,9 +802,9 @@
         const changed = turn.source === "undo" || (turn.applied && turn.applied.length)
           || turn.estimate_s != null;
         outcome.success = !!changed;
-        outcome.confirmation = turn.source === "undo" ? "Undid the last change."
-          : (turn.applied && turn.applied.length ? "Updated the race weights."
-            : "Saved the coach's estimate.");
+        // Say what changed and why (the server's reasoning), not a fixed "Updated the race weights."
+        outcome.confirmation = (result.reply && result.reply.trim()) || (turn.source === "undo" ? "Undid the last change."
+          : (turn.applied && turn.applied.length ? "Updated the race weights." : "Saved the coach's estimate."));
         outcome.message = result.reply || "I couldn't confirm a session change. Please clarify which race or adjustment you meant.";
       } else {
         outcome.success = false;
