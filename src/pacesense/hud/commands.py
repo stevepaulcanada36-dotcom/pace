@@ -23,6 +23,8 @@ from typing import Any
 
 PANELS = {
     "races": ("races", "sliders", "weights", "past races"),
+    "contributions": ("graphs", "charts", "visualizations", "visualisations", "contributions", "prediction breakdown", "weight breakdown"),
+    "analysis": ("analysis", "insights", "explanations"),
     "prediction": ("prediction", "target", "forecast", "likely range", "range"),
     "pacing": ("pacing", "pace plan", "splits", "pace band"),
     "similar": ("similar runners", "neighbours", "neighbors", "similar", "lookalikes"),
@@ -52,8 +54,8 @@ def _alts(words) -> str:
     return "|".join(re.escape(w) for w in sorted(words, key=len, reverse=True))
 
 
-PANEL_RE = re.compile(r"\b(show|open|bring up|display|hide|close|remove|minimi[sz]e|focus on|zoom (?:in )?on|pin)\s+"
-                      r"(?:me\s+)?(?:the\s+|my\s+|her\s+|his\s+)?(" + _alts(w for ws in PANELS.values() for w in ws) +
+PANEL_RE = re.compile(r"\b(show|open|bring up|display|present|generate|plot|visuali[sz]e|hide|close|remove|minimi[sz]e|focus on|zoom (?:in )?on|pin)\s+"
+                      r"(?:me\s+)?(?:some\s+)?(?:the\s+|my\s+|her\s+|his\s+)?(" + _alts(w for ws in PANELS.values() for w in ws) +
                       r")(?:\s+panel)?\b", re.I)
 PERSP_RE = re.compile(r"\b(?:switch|change|go)\s+(?:to\s+)?(?:the\s+)?(" + _alts(w for ws in PERSPECTIVES.values() for w in ws)
                       + r")\s+(?:view|mode|perspective)\b|\b(" + _alts(w for ws in PERSPECTIVES.values() for w in ws)
