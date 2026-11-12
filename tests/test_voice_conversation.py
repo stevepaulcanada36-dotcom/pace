@@ -333,6 +333,68 @@ class AssistantActionTests(unittest.TestCase):
         self.assertIn("% away from that result", system)
 
 
+class ChartsAndOffersTests(unittest.TestCase):
+    def open(self, claim):
+        client = ToolCallingClient(None, None, claim=claim)
+        coach = CoachService(helpers.model(), helpers.runners(), Repository(":memory:"))
+        service = StudioService(coach, settings=Settings(), ai_factory=lambda: ScriptedAI(client))
+        sid = service.create()[0]
+        live = service.sessions.entry(sid).value
+        service.command(sid, "not at all", source="voice")
+        service.command(sid, "no", source="voice")
+        return service, sid, live, client
+
+    def test_asking_for_a_graph_opens_one(self):
+        service, sid, _live, client = self.open("unused")
+        for said, panel in (("I want you to present some graphs so it is easy to interpret", "pacing"),
+                            ("show me a chart of similar runners please", "similar"),
+                            ("can I see a visualization for a hot day", "simulator")):
+            out = service.command(sid, said, source="voice")
+            self.assertEqual(out["actions"], [{"type": "focus", "panel": panel}], said)
+        self.assertEqual(client.calls, [])
+
+    def test_a_promised_weight_change_becomes_an_offer_that_yes_carries_out(self):
+        service, sid, live, _client = self.open("unused")
+        race = live.hud.steer.races[-1]
+        name = f"{race['event']} {race['year']}"
+        _client.claim = f"I hear you. I'll set {name} to 0.8 instead of 0.5."
+        asked = service.command(sid, "it is fine but I believe it needs to be changed somehow", source="voice")
+        self.assertEqual(asked["reply"], f"Shall I set {name} to 0.8?")
+        self.assertEqual(round(live.hud.steer.state()["races"][-1]["weight"], 2), 0.5)
+        done = service.command(sid, "Go ahead.", source="voice")
+        self.assertEqual(round(live.hud.steer.state()["races"][-1]["weight"], 2), 0.8)
+        self.assertIsNotNone(done["card"])
+
+    def test_a_promised_undo_and_estimate_become_offers_and_no_declines(self):
+        service, sid, live, client = self.open("I'll undo that last change for you.")
+        out = service.command(sid, "hmm I am not happy with what happened there", source="voice")
+        self.assertEqual(out["reply"], "Shall I undo the last change?")
+        self.assertEqual(service.command(sid, "no", source="voice")["reply"], "Okay, nothing changed.")
+        client.claim = "I'll set your estimate to 3:50:00, a bit slower than the model."
+        out = service.command(sid, "keep it somewhere near ten to four if you ask me", source="voice")
+        self.assertEqual(out["reply"], "Shall I record your estimate as 3:50:00?")
+        service.command(sid, "yes", source="voice")
+        self.assertEqual(live.hud.state()["steering"]["coach_estimate_s"], 3 * 3600 + 50 * 60)
+
+    def test_the_same_race_changed_twice_in_one_sentence_is_reported_once(self):
+        coach = CoachService(helpers.model(), helpers.runners(), Repository(":memory:"))
+        service = StudioService(coach, settings=Settings())
+        sid = service.create()[0]
+        live = service.sessions.entry(sid).value
+        race = live.hud.steer.races[0]
+        name = f"{race['event']} {race['year']}"
+        out = service.command(sid, f"set {name} to 0.4 and then set {name} to 0.6", source="typed")
+        items = [i for i in out["card"]["items"] if i["race"] == name]
+        self.assertEqual([(round(i["old"], 1), round(i["new"], 1)) for i in items], [(0.5, 0.6)])
+
+    def test_the_assistant_is_given_what_drives_the_target(self):
+        service, sid, _live, client = self.open("It is the slow race.")
+        service.command(sid, "so what do you make of all this then", source="voice")
+        system = client.calls[-1][1][0]["content"]
+        self.assertIn("pulls the target", system)
+        self.assertIn("What is on screen", system)
+
+
 class TurnTakingTests(unittest.TestCase):
     """A pause is not the end of a turn: half a sentence is held, quietly, and joined to the rest."""
 

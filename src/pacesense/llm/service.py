@@ -167,6 +167,8 @@ class AIService:
         self.key_source = ("browser session" if session_key and self.provider == "boson" else
                            boson_source if self.provider == "boson" else openrouter_source)
         self.backup_provider: str | None = None
+        self.transcribe_provider: str = self.provider
+        self._stt_client: Any = None
         if self.offline_forced:
             self.client = None
         elif client is not None:
@@ -194,6 +196,18 @@ class AIService:
                     BOSON_MODEL if other == "boson" else self._openrouter_model("transcribe"))
             else:
                 self.client = primary
+            # Speech to text can use a different provider from the analysis. Boson's transcription is
+            # fast and already proven in this app, so it keeps that job when its key is present, while
+            # OpenRouter (when configured) does the reasoning. PACESENSE_TRANSCRIBE_PROVIDER overrides.
+            stt = (self.env.get("PACESENSE_TRANSCRIBE_PROVIDER") or "").strip().lower()
+            if stt not in clients:
+                stt = "boson" if "boson" in clients else self.provider
+            if stt in clients and stt != self.provider:
+                self.transcribe_provider = stt
+                self._stt_client = FailoverClient(
+                    clients[stt], stt, clients[self.provider], self.provider,
+                    BOSON_MODEL if self.provider == "boson" else self._openrouter_model("assistant"),
+                    BOSON_MODEL if self.provider == "boson" else self._openrouter_model("transcribe"))
         self.language = self.env.get("PACESENSE_LANGUAGE") or config.get("voice", {}).get("language") or None
 
     def _openrouter_model(self, task: str) -> str:
@@ -252,6 +266,9 @@ class AIService:
         if model is None and self.transcription_backend == "local":
             from .local_whisper import transcribe as local_transcribe
             return local_transcribe(audio, fmt, self.language)
+        if model is None and self._stt_client is not None and self.online:
+            m = BOSON_MODEL if self.transcribe_provider == "boson" else self._openrouter_model("transcribe")
+            return self._stt_client.transcribe(m, audio, fmt, self.language)
         m, _ = self.config("transcribe", model)
         return self._need("Speech to text").transcribe(m, audio, fmt, self.language)
 

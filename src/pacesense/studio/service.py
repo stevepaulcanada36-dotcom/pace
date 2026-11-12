@@ -104,7 +104,8 @@ class StudioService:
                     "online": probe.online, "provider": probe.provider if probe.online else None,
                     "backup": probe.backup_provider, "key_source": probe.key_source,
                     "assistant_model": probe.config("assistant")[0] if probe.online else None,
-                    "transcribe_model": probe.config("transcribe")[0] if probe.online else None}})
+                    "transcribe_model": probe.config("transcribe")[0] if probe.online else None,
+                    "transcribe_provider": getattr(probe, "transcribe_provider", None) if probe.online else None}})
             except Exception as exc:  # noqa: BLE001 - a startup log line must never stop the server
                 log.warning("could not describe the AI provider: %s", exc)
         return cls(coach, info, settings, ai)
@@ -190,6 +191,14 @@ class StudioService:
               "precise", "accurate", "performance", "injury", "trust", "count")
 
     @staticmethod
+    def _pull_text(race: dict) -> str:
+        pull = (race.get("influence") or {}).get("pull_s")
+        if pull is None or abs(float(pull)) < 1:
+            return ""
+        return (f", pulls the target {format_time(abs(float(pull)))[2:]} "
+                f"{'slower' if float(pull) > 0 else 'faster'}")
+
+    @staticmethod
     def _speaking_style(live: Live) -> str:
         """How this coach talks, measured from their own turns, so the reply can be given the same way."""
         said = [str(m.get("content", "")) for m in live.hud.history if m.get("role") == "user"][-8:]
@@ -247,7 +256,8 @@ class StudioService:
                 f"{r.get('event', 'Marathon')} {r.get('year', '')}: finished in "
                 f"{r.get('finish', 'an unknown time')}, "
                 f"{(r.get('evidence') or {}).get('label') or 'no comparison available'}, "
-                f"current weight {float(r.get('weight', 0.5)):.2f}" for r in races))
+                f"current weight {float(r.get('weight', 0.5)):.2f}"
+                f"{StudioService._pull_text(r)}" for r in races))
         prediction = state.get("prediction") or {}
         if prediction.get("finish") and prediction.get("low_s") and prediction.get("high_s"):
             lines.append("Current model target for the next marathon: " + str(prediction["finish"]))
@@ -273,6 +283,22 @@ class StudioService:
                          "from the model and from you. The target is the prediction for that race. The coach can "
                          "say \"reveal the real result\" to compare; you do not know the result.")
             lines.append(check + f" {holdout['label']} is therefore not in the race history above.")
+        if prediction.get("initial_s") and prediction.get("finish_s"):
+            moved = float(prediction["finish_s"]) - float(prediction["initial_s"])
+            lines.append(f"With equal weights the target would be {format_time(prediction['initial_s'])}; the "
+                         f"coach's changes have moved it {abs(moved):.0f} s "
+                         f"{'slower' if moved > 0 else 'faster'}." if abs(moved) >= 1 else
+                         "The weights are equal, so the coach has not moved the target yet.")
+        lines.append(
+            "What is on screen: a pacing chart (the plan against the past races), a similar-runners chart, a "
+            "race-day simulator, and the likely-range bar. You cannot draw new charts; when the coach wants a "
+            "visual, name the one that fits and tell them to say \"show the pacing chart\", \"show similar "
+            "runners\" or \"open the simulator\".")
+        lines.append(
+            "When the coach asks what you think, asks you to interpret, or asks why: give one insight from the "
+            "facts above that they could not read off the screen in a second, for example which race is pulling "
+            "the target most and which way, a race that stands out from the others, or what their changes did "
+            "to the target. Do not read the target and range back to them.")
         lines.append(StudioService._speaking_style(live))
         lines.append(
             "Acting on this session: you can change it only by calling set_race_weight, set_coach_estimate or "
@@ -511,7 +537,7 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
     # Words that can ask for a screen control. Deliberately broad: it only decides whether the control
     # classifier is worth a call, and the classifier and validator still decide what, if anything, to do.
     _UI_REQUEST_RE = re.compile(
-        r"\b(open|show|display|view|see|bring\s+up|pull\s+up|look\s+up|search|find|filter|list|browse|"
+        r"\b(open|show|present|display|view|see|bring\s+up|pull\s+up|look\s+up|search|find|filter|list|browse|"
         r"select|choose|pick|switch|load|go\s+to|take\s+me|close|hide|dismiss|minimi[sz]e|pin|focus|"
         r"simulat\w*|what\s+if|reveal|undo|revert|database|panel|dashboard|"
         r"familiar\w*|unfamiliar|know\s+(?:this|the|him|her)|coach\s+(?:this|the|him|her)|new\s+to\s+me|"
@@ -590,8 +616,10 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
         names = {str(r.get("event") or "").casefold() for r in (live.hud.steer.races or [])}
         return not (set(words) & names)
 
-    _TRAILING = frozenset(
-        ["but", "and", "so", "or", "because", "cause", "like", "the", "a", "an", "of", "to", "in", "on", "at", "with", "for", "from", "that", "which", "who", "was", "is", "are", "were", "i've", "i'm", "have", "has", "had", "seen", "then", "than", "when", "if", "my", "maybe", "um", "uh", "well", "wait"])
+    _TRAILING = frozenset({
+        "but", "and", "so", "or", "because", "cause", "like", "the", "a", "an", "of", "to", "in", "on", "at",
+        "with", "for", "from", "that", "which", "who", "was", "is", "are", "were", "i've", "i'm", "have", "has",
+        "had", "seen", "than", "when", "if", "my", "maybe", "um", "uh", "well", "wait"})
     _HOLD_RE = re.compile(r"\b(?:wait|hold on|hang on|let me (?:complete|finish|think|say)(?: (?:it|this|that|"
                           r"the (?:statement|sentence)))?|one (?:second|moment|sec)|i'?m not (?:done|finished))\b[,.]?\s*",
                           re.IGNORECASE)
@@ -671,6 +699,16 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
         if len(words.split()) > 6 or not (YES.match(words) or NO.match(words)):
             return None
         live.voice_offer = None
+        if offer.get("say"):
+            if NO.match(words):
+                reply = "Okay, nothing changed."
+                live.hud.remember_turn(text, reply)
+                return {"reply": reply, "actions": [], "card": None, "used": ["prompt"], "simulation": None,
+                        "state": self.view(sid, live), "turn": None,
+                        "adapt": live.engine.snapshot() | {"speak": reply}}
+            # "Yes" to a change the assistant proposed: make it through the normal instruction path.
+            return self._run_command(sid, live, offer["say"], source,
+                                     extra={"prompt_answer": "voice_offer", **({"voice": voice} if voice else {})})
         if NO.match(words):
             r = Routed(reply="Okay, I've left the screen as it is.", used=["prompt"])
         else:
@@ -700,9 +738,10 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
         # classifier off for exactly the paraphrases it exists to understand.
         # The intent classifier only understands screen controls. Run it when the words could be asking
         # for one; a question or a comment goes straight to the conversation path, which has the history.
+        from ..hud.commands import chart_request
         voice_intent = (self._interpret_voice_intent(text, live, voice_signals)
                         if source == "voice" and self._wants_ui_action(text)
-                        and not self._small_talk(text)
+                        and not self._small_talk(text) and not chart_request(text)
                         and not self._is_race_comment(text, live) else None)
         unmapped_clarification = ""
         if voice_intent and voice_intent.get("status") == "clarify" and voice_intent.get("unmapped"):
@@ -762,6 +801,8 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
             r = route(text, s, source)
         if unmapped_clarification and not set(r.used) & {"steer", "assistant", "ui"}:
             r.reply = unmapped_clarification
+        if getattr(r, "offer", None):
+            live.voice_offer = dict(r.offer or {})
         sim, revealed = None, False
         for a in r.actions:
             if a["type"] == "reveal" and s.truth_s is not None:
@@ -819,7 +860,7 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
             ai = self.ai_factory()
             if not getattr(ai, "online", False):
                 return {"text": "", "available": False, "source": "none", "latency_s": 0.0}
-            provider = str(getattr(ai, "provider", "server"))
+            provider = str(getattr(ai, "transcribe_provider", None) or getattr(ai, "provider", "server"))
             result = ai.transcribe(audio, fmt)
         except Exception as exc:  # noqa: BLE001 - any provider or decoding failure falls back to the browser transcript
             log.warning("server transcription unavailable; the browser transcript will be used: %s", exc)

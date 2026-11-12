@@ -129,6 +129,18 @@ class SteeringSession:
         return Turn(len(self.turns) + 1, text, source, finish_before_s=self.plan.model_finish)
 
     def _end(self, turn: Turn) -> Turn:
+        # A long sentence can touch the same race twice ("0.5 → 0.4" then "0.4 → 0.6"). Report the net
+        # change once, and nothing at all if it came back to where it started.
+        merged: dict[int, Applied] = {}
+        for a in turn.applied:
+            if a.index in merged:
+                first = merged[a.index]
+                merged[a.index] = Applied(a.index, a.race, first.old, a.new, a.cue, a.reasoned or first.reasoned,
+                                          a.verdict, a.evidence)
+            else:
+                merged[a.index] = a
+        if len(merged) != len(turn.applied):
+            turn.applied[:] = [a for a in merged.values() if round(a.new - a.old, 2) != 0]
         turn.finish_after_s = self.plan.model_finish
         if not turn.applied:
             self._undo.pop()

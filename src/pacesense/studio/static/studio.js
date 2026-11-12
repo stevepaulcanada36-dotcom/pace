@@ -857,7 +857,7 @@
   function resetUtterance() { Object.assign(voice, { buf: [], conf: [], t0: 0, barge: false, holds: 0 }); clearTimeout(voice.timer); }
   // A pause is not always the end of a turn. If the words so far stop on "but", "and", "I've seen", or the
   // coach said "wait, let me finish", keep the turn open and add what comes next to the same sentence.
-  const UNFINISHED_RE = /(?:\b(?:but|and|so|or|because|cause|like|the|a|an|of|to|in|on|at|with|for|from|that|which|who|was|is|are|were|i've|i'm|have|has|had|seen|then|than|when|if|my|maybe|um|uh|well|wait)|,)[\s.…]*$/i;
+  const UNFINISHED_RE = /(?:\b(?:but|and|so|or|because|cause|like|the|a|an|of|to|in|on|at|with|for|from|that|which|who|was|is|are|were|i've|i'm|have|has|had|seen|than|when|if|my|maybe|um|uh|well|wait)|,)[\s.…]*$/i;
   const HOLD_RE = /\b(?:wait|hold on|hang on|let me (?:complete|finish|think|say)|one (?:second|moment|sec)|not (?:done|finished))\b/i;
   const HOLD_MS = 2200, HOLD_LIMIT_MS = 25000;
   function keepTurnOpen(text) {

@@ -61,6 +61,17 @@ class ProviderSelectionTests(unittest.TestCase):
         self.assertIsInstance(ai.client, FailoverClient)
         self.assertEqual(ai.client.backup_model, "higgs-realtime")
 
+    def test_analysis_and_transcription_can_use_different_providers(self):
+        ai = self.ai(OPENROUTER_API_KEY="o", BOSON_API_KEY="b")
+        self.assertEqual((ai.provider, ai.transcribe_provider), ("openrouter", "boson"))
+        heard = Recorder("boson-stt")
+        ai._stt_client.primary = heard
+        self.assertEqual(ai.transcribe(b"audio", "wav").text, "boson-stt")
+        self.assertEqual(heard.calls, [("transcribe", "higgs-realtime")])
+        ai = self.ai(OPENROUTER_API_KEY="o", BOSON_API_KEY="b", PACESENSE_TRANSCRIBE_PROVIDER="openrouter")
+        self.assertEqual(ai.transcribe_provider, "openrouter")
+        self.assertEqual(self.ai(BOSON_API_KEY="b").transcribe_provider, "boson")
+
     def test_provider_can_be_pinned_and_models_overridden(self):
         ai = self.ai(OPENROUTER_API_KEY="o", BOSON_API_KEY="b", PACESENSE_AI_PROVIDER="boson")
         self.assertEqual((ai.provider, ai.backup_provider), ("boson", "openrouter"))

@@ -46,6 +46,7 @@ class Routed:
     turn: dict | None = None
     used: list[str] = field(default_factory=list)       # "ui", "steer", "assistant"
     steps: list[dict] = field(default_factory=list)
+    offer: dict | None = None                            # {"say": ...}: carried out if the coach says yes
 
 
 def _alts(words) -> str:
@@ -210,6 +211,61 @@ def repair_mishearings(text: str) -> str:
     return _RAISE_AS_RACE[1].sub(lambda m: f"race{m.group(1)} {m.group(2)}", text)
 
 
+# ---- "show me a graph" -------------------------------------------------------------------------
+CHART_RE = re.compile(r"\b(?:graphs?|charts?|plots?|diagrams?|visuali[sz]\w*|visuals?)\b", re.IGNORECASE)
+CHARTS = {
+    "similar": ("Here is how runners like this one went on to finish.",
+                re.compile(r"\b(?:similar|other runners|runners like|neighbou?rs|compar\w+)\b", re.IGNORECASE)),
+    "simulator": ("Here is the race-day simulator: heat, wind and pacing against the plan.",
+                  re.compile(r"\b(?:simulat\w*|heat|hot|wind|weather|race day|conditions)\b", re.IGNORECASE)),
+    "prediction": ("Here is the target and the likely range.",
+                   re.compile(r"\b(?:likely range|range|uncertain\w*|interval)\b", re.IGNORECASE)),
+    "pacing": ("Here is the pacing chart: the plan against the past races, darker lines count more. "
+               "Say “similar runners” or “simulator” for the other charts.", None),
+}
+
+
+def chart_request(text: str) -> tuple[str, str] | None:
+    """(panel, what to say) when the coach asks to see a graph or a visual; PaceSense has four."""
+    if not CHART_RE.search(text) or re.search(r"\b(?:hide|close|remove)\b", text, re.IGNORECASE):
+        return None
+    for panel, (line, pattern) in CHARTS.items():
+        if pattern is None or pattern.search(text):
+            return panel, line
+    return None
+
+
+# The assistant promising a change ("I'll set Rotterdam 2014 to 0.8") without having made it.
+PROMISE_RE = re.compile(
+    r"\b(?:I(?:'ll| will|'m going to| am going to| can)|let me|let's|we(?:'ll| can| will))\s+(?:now\s+|just\s+|go ahead and\s+)?"
+    r"(?:set|change|update|adjust|reduce|lower|decrease|raise|increase|undo|revert|record|note|put|move)\b",
+    re.IGNORECASE)
+
+
+def promised_change(reply: str, hud: Any) -> tuple[str, str] | None:
+    """Turn a change the assistant only talked about into an offer: (instruction, question to ask)."""
+    if not PROMISE_RE.search(reply or ""):
+        return None
+    if re.search(r"\b(?:undo|revert)\b", reply, re.IGNORECASE):
+        return "undo", "Shall I undo the last change?"
+    m = re.search(r"\bestimate\b[^.?!]{0,40}?\b(\d:\d{2}(?::\d{2})?)\b", reply, re.IGNORECASE)
+    if m:
+        return f"I think the finish will be {m.group(1)}", f"Shall I record your estimate as {m.group(1)}?"
+    races = getattr(getattr(hud, "steer", None), "races", None) or []
+    value = re.search(r"\b(?:to|at)\s+([01](?:\.\d{1,2})?)\b(?!\s*[:\d])", reply)
+    if not value:
+        return None
+    lowered = reply.casefold()
+    named = [r for r in races if f"{str(r['event']).casefold()} {r['year']}" in lowered]
+    if not named:
+        named = [r for r in races if re.search(rf"(?<!\d){r['year']}(?!\d)", reply)
+                 and sum(x["year"] == r["year"] for x in races) == 1]
+    if len(named) != 1:
+        return None
+    name, weight = f"{named[0]['event']} {named[0]['year']}", round(float(value.group(1)), 1)
+    return f"set {name} to {weight:.1f}", f"Shall I set {name} to {weight:.1f}?"
+
+
 # The assistant saying that it changed something. Without a function call behind it, that is not true.
 CLAIMED_CHANGE_RE = re.compile(
     r"\bI(?:'ve| have)\s+(?:now\s+)?(?:set|changed|updated|adjusted|reduced|lowered|raised|increased|recorded|"
@@ -253,6 +309,12 @@ def is_question(text: str) -> bool:
 def route(text: str, hud: Any, source: str = "typed") -> Routed:
     """`hud` is a HudSession (web/hud_api.py): .steer (SteeringSession), .ask(question) -> (answer, steps)."""
     out = Routed()
+    chart = chart_request(text)
+    if chart:
+        out.actions.append({"type": "focus", "panel": chart[0]})
+        out.used.append("ui")
+        out.reply = chart[1]
+        return out
     if source == "voice":
         text = repair_mishearings(text)
     actions, said, rest = ui_commands(text)
@@ -297,7 +359,11 @@ def route(text: str, hud: Any, source: str = "typed") -> Routed:
             out.reply = hud.feedback_text(out.turn)
         elif source == "voice":
             out.reply = brief(out.reply, _reply_sentences(hud))
-        if not made and CLAIMED_CHANGE_RE.search(out.reply or ""):
+        promised = None if made else promised_change(out.reply, hud)
+        if promised:
+            # It said it would change something but called no function. Ask, and do it on "yes".
+            out.offer, out.reply = {"say": promised[0]}, promised[1]
+        elif not made and (CLAIMED_CHANGE_RE.search(out.reply or "") or PROMISE_RE.search(out.reply or "")):
             out.reply = ("Nothing has changed yet. To change a race, say for example “set Amsterdam 2017 to 0.3” "
                          "or “count 2017 less”; for your own estimate, say “I think the finish will be 4:30”.")
     if said:
@@ -309,4 +375,4 @@ def route(text: str, hud: Any, source: str = "typed") -> Routed:
     return out
 
 
-__all__ = ["route", "ui_commands", "is_question", "brief", "Routed", "PANELS", "PERSPECTIVES"]
+__all__ = ["route", "ui_commands", "is_question", "brief", "chart_request", "promised_change", "Routed", "PANELS", "PERSPECTIVES"]
