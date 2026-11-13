@@ -235,6 +235,94 @@ class StudioService:
         live.hud.remember_turn(text, reply)
         return out
 
+    _UNSURE_HELP_RE = re.compile(
+        r"\b(?:what\s+(?:can|should|do|could)\s+i\s+do|what\s+(?:now|next)\b|you\s+suggest|suggest\s+me|"
+        r"you\s+(?:decide|tell\s+me\s+what)|(?:i'?m|i\s+am)\s+(?:so\s+|kind\s+of\s+|totally\s+)?(?:clueless|lost|confused|stuck)|"
+        r"clueless|don'?t\s+know\s+what\s+to\s+(?:do|say)|where\s+(?:do|should)\s+i\s+start|help\s+me\s+(?:out|here|decide)|"
+        r"explain\s+(?:it|this|everything)\s+to\s+me|give\s+me\s+(?:an\s+)?explanation)\b", re.IGNORECASE)
+    _FUTURE_RE = re.compile(r"\b(?:upcoming|tomorrow|next\s+(?:week|month|year|race|marathon|one)|future\s+(?:race|marathon)|"
+                            r"coming\s+(?:race|marathon))\b", re.IGNORECASE)
+
+    @staticmethod
+    def _mentions_listed_race(text: str, live: Live) -> bool:
+        races = live.hud.steer.races or []
+        years = {str(r.get("year")) for r in races}
+        return bool(set(re.findall(r"(?<!\d)(?:19|20)\d{2}(?!\d)", text)) & years) or any(
+            str(r.get("event", "")).casefold() in text.casefold() for r in races if r.get("event"))
+
+    def _is_future_question(self, text: str, live: Live) -> bool:
+        """A question about a race that is not in her history: "the 2026 marathon", "the race tomorrow"."""
+        if self._mentions_listed_race(text, live) or re.search(r"\b\d:\d{2}\b", text):
+            return False
+        years = [int(y) for y in re.findall(r"(?<!\d)(?:19|20)\d{2}(?!\d)", text)]
+        latest = max([int(r.get("year") or 0) for r in (live.hud.steer.races or [])] + [0])
+        future_year = any(y > latest and y >= 2020 for y in years)
+        holdout = (live.hud.state().get("holdout") or {}).get("label", "")
+        hidden_year = holdout[-4:] if holdout else ""
+        if hidden_year and hidden_year in text:
+            return False
+        asks = re.search(r"\b(?:predict\w*|perform\w*|how\s+(?:fast|long|much|quick|well)|finish\w*|complete|"
+                         r"target|range|expect\w*|time|visuali[sz]\w*|show|accura\w*|estimate|forecast)\b",
+                         text, re.IGNORECASE)
+        return bool((future_year or self._FUTURE_RE.search(text)) and asks)
+
+    def _plain_reply(self, sid: str, live: Live, text: str, source: str, voice: dict | None, reply: str,
+                     actions: list[dict] | None = None, used: str = "assistant") -> dict:
+        state = self.view(sid, live)
+        out: dict[str, Any] = {"reply": reply, "actions": actions or [], "card": None, "used": [used],
+                               "simulation": None, "state": state, "turn": None}
+        data = {"applied": [], "turn": None, "estimate_s": None, "notes": [], "used": [used], "ui_only": True,
+                **({"voice": voice} if voice else {})}
+        self._observe(sid, live, Event("utterance", text, source, data), out)
+        out["voice_action_pending"] = source == "voice" and bool(actions)
+        out["adapt"]["speak"] = "" if out["voice_action_pending"] else reply
+        live.hud.remember_turn(text, reply)
+        return out
+
+    @staticmethod
+    def _picture(state: dict) -> str:
+        """The prediction in two sentences: what it is, and which race drives it most and why."""
+        pred = state.get("prediction") or {}
+        races = state.get("races") or []
+        if not pred.get("finish_s"):
+            return ""
+        out = (f"Her target is {format_time(pred['finish_s'])}, likely {format_time(pred['low_s'])} to "
+               f"{format_time(pred['high_s'])}: what runners with races like hers went on to run on a good day.")
+        pulls = [(r, float((r.get("influence") or {}).get("pull_s") or 0)) for r in races]
+        pulls = [p for p in pulls if abs(p[1]) >= 30]
+        if pulls:
+            r, pull = max(pulls, key=lambda p: abs(p[1]))
+            from ..hud.guide import _gap
+            gap = _gap(r)
+            out += (f" {r['event']} {r['year']} moves it most, {format_time(abs(pull))[2:]} "
+                    f"{'slower' if pull > 0 else 'faster'}" + (f"; it was {gap}." if gap else "."))
+        return out
+
+    def _future(self, sid: str, live: Live, text: str, source: str, voice: dict | None) -> dict:
+        """"How will she do in the 2026 marathon?": the target is that prediction; the accuracy check is separate."""
+        state = self.view(sid, live)
+        holdout = state.get("holdout") or {}
+        reply = "For her next marathon, in 2026 or tomorrow, the prediction is the target. " + self._picture(state)
+        if holdout.get("label"):
+            reply += (f" The accuracy check is separate: her best past race, {holdout['label']}, was hidden from the "
+                      f"model to test it, as in the paper.")
+            if holdout.get("revealed") and holdout.get("error_pct") is not None:
+                reply += f" Against it, the target is {float(holdout['error_pct']):.2f}% off."
+        return self._plain_reply(sid, live, text, source, voice, reply, [{"type": "focus", "panel": "prediction"}])
+
+    def _brief(self, sid: str, live: Live, text: str, source: str, voice: dict | None) -> dict:
+        """"I'm clueless, what should I do?": the picture in plain words, then one concrete thing to try."""
+        state = self.view(sid, live)
+        steps = state.get("next_steps") or []
+        top = steps[0] if steps else None
+        lead = ("Since you don't know her, let the data lead and question it where it looks odd. "
+                if live.engine.ctx.session.condition == "unknown" else "")
+        reply = self._picture(state) + " " + lead
+        if top:
+            live.guide_shown[top["key"]] = live.guide_shown.get(top["key"], 0) + 1
+            reply += f"Try saying “{top['say']}”. {top['why']}"
+        return self._plain_reply(sid, live, text, source, voice, " ".join(reply.split()))
+
     def _second_opinion(self, sid: str, live: Live, text: str, source: str, voice: dict | None) -> dict:
         """The case for and against the coach's current view, from the session's numbers."""
         from ..hud.second_opinion import second_opinion, speak
@@ -325,15 +413,18 @@ class StudioService:
                 f"{StudioService._pull_text(r)}" for r in races))
         prediction = state.get("prediction") or {}
         if prediction.get("finish") and prediction.get("low_s") and prediction.get("high_s"):
-            lines.append("Current model target for the next marathon: " + str(prediction["finish"]))
+            lines.append("Current model target for her next marathon (any upcoming race, for example one in "
+                         "2026 or tomorrow; a good-day goal from what similar runners went on to run): "
+                         + str(prediction["finish"]))
             lines.append("Current likely range: " + format_time(prediction["low_s"]) +
                          " to " + format_time(prediction["high_s"]))
         notes = (live.engine.ctx.profile.get("runner_notes") or {}).get(hud.source_runner, [])
         holdout = state.get("holdout") or {}
         if holdout.get("label"):
             if holdout.get("revealed") and holdout.get("truth_s"):
-                check = (f"Accuracy check: this demo runner's real next marathon, {holdout['label']}, was hidden "
-                         f"from the model and has now been revealed: {format_time(holdout['truth_s'])}. ")
+                check = (f"Accuracy check: as in the paper, this runner's best past race, {holdout['label']}, was "
+                         f"held out from the model to test the prediction, and has now been revealed: "
+                         f"{format_time(holdout['truth_s'])}. It is in the past; it is not the next race. ")
                 if holdout.get("error_pct") is not None:
                     check += (f"The current target is {float(holdout['error_pct']):.2f}% away from that result "
                               "(\"% off\" is the gap between target and real result as a share of the real "
@@ -344,9 +435,10 @@ class StudioService:
                               + ("helped." if float(holdout.get("error_pct") or 0) <
                                  float(holdout["equal_weights_error_pct"]) else "did not help."))
             else:
-                check = (f"Accuracy check: this demo runner's real next marathon, {holdout['label']}, is hidden "
-                         "from the model and from you. The target is the prediction for that race. The coach can "
-                         "say \"reveal the real result\" to compare; you do not know the result.")
+                check = (f"Accuracy check: as in the paper, this runner's best past race, {holdout['label']}, is "
+                         "held out from the model and from you, to test the prediction. It is in the past; it is "
+                         "not the next race. The coach can say \"reveal the real result\" to compare; you do not "
+                         "know the result.")
             lines.append(check + f" {holdout['label']} is therefore not in the race history above.")
         if prediction.get("initial_s") and prediction.get("finish_s"):
             moved = float(prediction["finish_s"]) - float(prediction["initial_s"])
@@ -357,10 +449,9 @@ class StudioService:
         lines.append(
             "Charts on screen: race contributions (how far each race pulls the target, using the pull figures "
             "above), the pacing chart (plan against past races), similar runners, the race-day simulator, and the "
-            "likely-range bar. You cannot draw new charts. When the coach asks about a chart, explain it in one "
-            "or two sentences from these facts; when they want a visual, name the chart and the words that open "
-            "it: \"show the race contributions\", \"show the pacing chart\", \"show similar runners\", "
-            "\"open the simulator\".")
+            "likely-range bar. You cannot draw new charts, but you can open these: when the coach wants to see one, "
+            "call open_panel with contributions, pacing, similar, simulator, prediction or session, and then "
+            "explain it in one or two sentences from these facts. Never say you cannot open a panel.")
         lines.append(
             "When the coach asks what you think, asks you to interpret, or asks why: give one insight from the "
             "facts above that they could not read off the screen in a second, for example which race is pulling "
@@ -1028,6 +1119,10 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
             from ..hud.second_opinion import SECOND_OPINION_RE
             if SECOND_OPINION_RE.search(text):
                 return self._second_opinion(sid, live, text, source, voice)
+            if self._UNSURE_HELP_RE.search(text) and not self._mentions_listed_race(text, live):
+                return self._brief(sid, live, text, source, voice)
+            if self._is_future_question(text, live):
+                return self._future(sid, live, text, source, voice)
             if source != "voice":
                 return answer(live, text)
             if self._is_noise(text):

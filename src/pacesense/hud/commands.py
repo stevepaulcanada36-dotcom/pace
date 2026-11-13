@@ -57,35 +57,35 @@ def _alts(words) -> str:
 
 PANEL_RE = re.compile(r"\b(show|open|bring up|display|present|generate|plot|visuali[sz]e|hide|close|remove|minimi[sz]e|focus on|zoom (?:in )?on|pin)\s+"
                       r"(?:me\s+)?(?:some\s+)?(?:the\s+|my\s+|her\s+|his\s+)?(" + _alts(w for ws in PANELS.values() for w in ws) +
-                      r")(?:\s+panel)?\b", re.I)
+                      r")(?:\s+panel)?\b", re.IGNORECASE)
 PERSP_RE = re.compile(r"\b(?:switch|change|go)\s+(?:to\s+)?(?:the\s+)?(" + _alts(w for ws in PERSPECTIVES.values() for w in ws)
                       + r")\s+(?:view|mode|perspective)\b|\b(" + _alts(w for ws in PERSPECTIVES.values() for w in ws)
-                      + r")\s+(?:view|mode|perspective)\b", re.I)
-SIM_RE = re.compile(r"\b(simulate|simulation|run the race|play the race|replay the race|race[- ]day|what if)\b", re.I)
-TEMP_RE = re.compile(r"(-?\d{1,2})\s*(?:°\s*c|degrees(?:\s+celsius)?|celsius|c\b)", re.I)
+                      + r")\s+(?:view|mode|perspective)\b", re.IGNORECASE)
+SIM_RE = re.compile(r"\b(simulate|simulation|run the race|play the race|replay the race|race[- ]day|what if)\b", re.IGNORECASE)
+TEMP_RE = re.compile(r"(-?\d{1,2})\s*(?:°\s*c|degrees(?:\s+celsius)?|celsius|c\b)", re.IGNORECASE)
 WIND_RE = re.compile(r"(\d{1,2})\s*(?:km/?h|kph|kilometres per hour|kilometers per hour)\s*(?:head)?wind|"
-                     r"(?:head)?wind\s*(?:of\s*)?(\d{1,2})\s*(?:km/?h|kph)?", re.I)
+                     r"(?:head)?wind\s*(?:of\s*)?(\d{1,2})\s*(?:km/?h|kph)?", re.IGNORECASE)
 CALM_RE = re.compile(r"\b(calm mode|focus mode|quiet mode|stop (?:rotating|spinning|moving)|pause the hologram|"
-                     r"less motion|reduce motion)\b", re.I)
-SPIN_RE = re.compile(r"\b(start (?:rotating|spinning)|rotate (?:her|him|the (?:body|hologram|runner))|resume)\b", re.I)
+                     r"less motion|reduce motion)\b", re.IGNORECASE)
+SPIN_RE = re.compile(r"\b(start (?:rotating|spinning)|rotate (?:her|him|the (?:body|hologram|runner))|resume)\b", re.IGNORECASE)
 RUNNER_RE = re.compile(r"\b(?:open|load|switch to|show)\s+(?:runner\s+)?([RCK]-?[0-9A-Za-z]{4,12})\b")
-DEMO_RE = re.compile(r"\b(demo runner|new demo|another runner|next runner)\b", re.I)
-LAYOUT_RE = re.compile(r"\b(reset (?:the )?layout|tidy (?:up )?(?:the )?(?:screen|panels)|arrange (?:the )?panels)\b", re.I)
+DEMO_RE = re.compile(r"\b(demo runner|new demo|another runner|next runner)\b", re.IGNORECASE)
+LAYOUT_RE = re.compile(r"\b(reset (?:the )?layout|tidy (?:up )?(?:the )?(?:screen|panels)|arrange (?:the )?panels)\b", re.IGNORECASE)
 REVEAL_RE = re.compile(r"\b(reveal|show me the (?:real|actual|true) (?:best|result)|how (?:close|accurate) (?:am i|was i|is it))\b",
-                       re.I)
+                       re.IGNORECASE)
 # These phrases refer to existing database records, not adding new runners.
-DATABASE_RE = re.compile(r"\b(?:open|show|view|browse|search)\s+(?:the\s+)?(?:runner\s+)?(?:database|directory|roster)\b|\bshow\s+(?:me\s+)?all\s+runners\b", re.I)
+DATABASE_RE = re.compile(r"\b(?:open|show|view|browse|search)\s+(?:the\s+)?(?:runner\s+)?(?:database|directory|roster)\b|\bshow\s+(?:me\s+)?all\s+runners\b", re.IGNORECASE)
 UNKNOWN_RE = re.compile(
     r"\b(?:i\s+(?:do\s+not|don't|dont)\s+know\s+(?:this\s+)?(?:the\s+)?runner|"
     r"i\s+have\s+not\s+coached\s+(?:this\s+)?runner|i\s+haven't\s+coached\s+(?:this\s+)?runner|"
     r"i\s+have\s+never\s+coached\s+(?:this\s+)?runner|not\s+familiar\s+with\s+(?:this\s+)?runner|"
     r"unfamiliar\s+(?:to\s+me|with\s+(?:this\s+)?runner)|unknown\s+to\s+me|"
     r"(?:this\s+)?runner\s+(?:is\s+)?new\s+to\s+me|new\s+runner\s+to\s+me|"
-    r"mark\s+(?:this\s+)?runner\s+(?:as\s+)?(?:unknown|unfamiliar)(?:\s+to\s+me)?)\b", re.I)
+    r"mark\s+(?:this\s+)?runner\s+(?:as\s+)?(?:unknown|unfamiliar)(?:\s+to\s+me)?)\b", re.IGNORECASE)
 KNOWN_RE = re.compile(
     r"\b(?:i\s+know\s+(?:this\s+)?runner|i\s+coach\s+(?:this\s+)?runner|"
     r"i\s+am\s+familiar\s+with\s+(?:this\s+)?runner|familiar\s+with\s+(?:this\s+)?runner|"
-    r"(?:this\s+)?runner\s+is\s+known\s+to\s+me|known\s+to\s+me|mark\s+(?:this\s+)?runner\s+as\s+known)\b", re.I)
+    r"(?:this\s+)?runner\s+is\s+known\s+to\s+me|known\s+to\s+me|mark\s+(?:this\s+)?runner\s+as\s+known)\b", re.IGNORECASE)
 
 
 def _panel_key(word: str) -> str:
@@ -129,10 +129,10 @@ def ui_commands(text: str) -> tuple[list[dict], list[str], str]:
     if SIM_RE.search(text):
         t = TEMP_RE.search(text)
         w = WIND_RE.search(text)
-        temp = float(t.group(1)) if t else (27.0 if re.search(r"\b(hot|heat|warm|humid)\b", text, re.I) else
-                                            5.0 if re.search(r"\b(cold|freezing)\b", text, re.I) else 12.0)
-        wind = float(w.group(1) or w.group(2)) if w else (25.0 if re.search(r"\bwindy|strong wind", text, re.I) else 0.0)
-        prof = next((k for k, ws in PROFILE_WORDS.items() if re.search(_alts(ws), text, re.I)), "on_plan")
+        temp = float(t.group(1)) if t else (27.0 if re.search(r"\b(hot|heat|warm|humid)\b", text, re.IGNORECASE) else
+                                            5.0 if re.search(r"\b(cold|freezing)\b", text, re.IGNORECASE) else 12.0)
+        wind = float(w.group(1) or w.group(2)) if w else (25.0 if re.search(r"\bwindy|strong wind", text, re.IGNORECASE) else 0.0)
+        prof = next((k for k, ws in PROFILE_WORDS.items() if re.search(_alts(ws), text, re.IGNORECASE)), "on_plan")
         actions.append({"type": "simulate", "temp_c": temp, "wind_kmh": wind, "profile": prof})
         said.append(f"simulated the race at {temp:g} °C" + (f", {wind:g} km/h headwind" if wind else "")
                     + ("" if prof == "on_plan" else f", {prof.replace('_', ' ')}"))
@@ -152,7 +152,7 @@ def ui_commands(text: str) -> tuple[list[dict], list[str], str]:
         rest = LAYOUT_RE.sub(" ", rest)
     if REVEAL_RE.search(text):
         actions.append({"type": "reveal"}); said.append("revealed the hidden best race"); rest = REVEAL_RE.sub(" ", rest)
-    rest = re.sub(r"\b(and|then|also|please|can you|could you)\b", " ", rest, flags=re.I)
+    rest = re.sub(r"\b(and|then|also|please|can you|could you)\b", " ", rest, flags=re.IGNORECASE)
     return actions, said, " ".join(rest.split())
 
 
@@ -173,7 +173,7 @@ def _steering_candidate(text: str, hud: Any) -> bool:
         r"fast|faster|slow|slower|hot|cold|injur\w*|ill|sick|good|bad|"
         r"best|worst|unusual|typical|outlier|recent|precise|imprecise|accurate|inaccurate|reliable|unreliable|"
         r"correct|wrong|right|normal|fluke|misleading|reflect\w*|odd|strange|weird|anomal\w*|exception\w*)\b",
-        text, re.I,
+        text, re.IGNORECASE,
     )
     return bool(steering_language and (names_or_years or has_context))
 
@@ -203,7 +203,7 @@ _RAISE_AS_RACE = (
     re.compile(r"\b(the|that|this|which|what|they|a|one|last|first|latest|recent|same|every|each|any|\d{4}|"
                r"amsterdam|rotterdam|eindhoven|marathon)\s+raise(s?)\b", re.IGNORECASE),
     re.compile(r"\braise(s?)\s+(which|that|in|on|from|of|was|is|were|are|happened|i'm|i am|you're|you are|"
-               r"he|she|we|at|history|day|time|result|results)\b", re.IGNORECASE),
+               r"he|she|we|at|history|day|time|result|results|contribution|contributions)\b", re.IGNORECASE),
 )
 
 
@@ -214,7 +214,9 @@ def repair_mishearings(text: str) -> str:
 
 
 # ---- "show me a graph" -------------------------------------------------------------------------
-CHART_RE = re.compile(r"\b(?:graphs?|charts?|plots?|diagrams?|visuali[sz]\w*|visuals?)\b", re.IGNORECASE)
+CHART_RE = re.compile(r"\b(?:graphs?|charts?|plots?|diagrams?|visuali[sz]\w*|visuals?|contributions?(?:\s+(?:panel|tab|chart))?|"
+                      r"breakdown|simulator|similar\s+runners|pacing\s+(?:chart|panel|plan)|insights?\s+(?:panel|tab)|"
+                      r"(?:my|your)\s+session)\b", re.IGNORECASE)
 CHARTS = {
     "session": ("Here is your session measured the way the paper measured its coaches.",
                 re.compile(r"\b(?:my\s+session|session|whose\s+view|acceptance|accuracy|recency)\b", re.IGNORECASE)),
@@ -232,14 +234,17 @@ CHARTS = {
     "analysis": ("Here are the insights for this runner.",
                  re.compile(r"\b(?:insights?|analysis|scenarios?)\b", re.IGNORECASE)),
 }
-DEFAULT_CHART = ("contributions", "Here is how much each race moves the target. "
-                 "You can also ask for the pacing chart, similar runners or the simulator.")
+DEFAULT_CHART = ("contributions", ("Here is how much each race moves the target. "
+                                   "You can also ask for the pacing chart, similar runners or the simulator."))
 
 
 def chart_request(text: str) -> tuple[str, str] | None:
     """(panel, what to say) when the coach asks to see a graph or a visual; PaceSense has four."""
     if not CHART_RE.search(text) or re.search(r"\b(?:hide|close|remove)\b", text, re.IGNORECASE):
         return None
+    if not re.search(r"\b(?:show|open|see|view|display|visuali[sz]\w*|present|plot|bring|pull|take|go|graphs?|charts?|"
+                     r"panel|tab|where)\b", text, re.IGNORECASE):
+        return None                                         # "the contributions are odd" is not a request to open
     for panel, (line, pattern) in CHARTS.items():
         if pattern.search(text):
             return panel, line
@@ -312,6 +317,30 @@ def _reply_sentences(hud: Any) -> int:
     return {"brief": 1, "full": 3}.get(style, 2)
 
 
+_RACE_WORDS = re.compile(
+    r"\b(?:(?:recent|last|first|latest|oldest|newest|earliest|fastest|slowest|best|worst|older|earlier|newer|"
+    r"later|all|every|each|those|these|that|this|the\s+slow|the\s+fast|other|previous)\s+(?:\w+\s+)?"
+    r"(?:races?|ones?|marathons?|results?)|races|weights?|equal(?:ly)?|reset|undo|recency|recent\s+form)\b",
+    re.IGNORECASE)
+_TIME_RE = re.compile(r"\b\d:\d{2}(?::\d{2})?\b|\b(?:sub|under|around|about)\s*[2-6]\b|\b[2-6]\s*hours?\b",
+                      re.IGNORECASE)
+
+
+def refers_to_race(text: str, races: list[dict]) -> bool:
+    """True when the words point at one of this runner's races, at the races in general, or give a finish time
+    (the coach's own estimate). A year that is not one of her races (2026, a future race) points elsewhere."""
+    years = {str(r.get("year")) for r in races}
+    said_years = set(re.findall(r"(?<!\d)(?:19|20)\d{2}(?!\d)", text))
+    if said_years & years:
+        return True
+    if said_years - years:
+        return bool(_TIME_RE.search(text))                     # "I think she can run 4:10 in 2026"
+    lowered = text.casefold()
+    if any(str(r.get("event", "")).casefold() in lowered for r in races if r.get("event")):
+        return True
+    return bool(_RACE_WORDS.search(text) or _TIME_RE.search(text))
+
+
 def is_question(text: str) -> bool:
     """True when the coach is asking something, not telling PaceSense about a race."""
     return bool(QUESTION_RE.search(text)) and not DIRECTIVE_RE.search(text)
@@ -333,8 +362,10 @@ def route(text: str, hud: Any, source: str = "typed") -> Routed:
         out.actions += actions
         out.used.append("ui")
     steered = False
-    # A question is answered, never applied: asking "what happened in 2019?" must not move a weight.
-    if rest and len(rest) > 2 and not is_question(rest):
+    # A question is answered, never applied: asking "what happened in 2019?" must not move a weight. And a
+    # weight moves only when the words point at a race: "this is totally meaningless" or "I am asking about
+    # the 2026 marathon" must not change whichever race was mentioned last.
+    if rest and len(rest) > 2 and not is_question(rest) and refers_to_race(rest, hud.steer.races):
         from ..steer.intent import interpret
         it = interpret(rest, hud.steer.races, hud.steer.context, hud.steer.lexicon)
         strong = [a for a in it.actions if a.kind in ("reset", "undo", "recency") or a.confidence >= 0.8]
@@ -360,6 +391,11 @@ def route(text: str, hud: Any, source: str = "typed") -> Routed:
             answer, steps = hud.ask(rest)
         out.reply, out.steps = answer, steps
         out.used.append("assistant")
+        for action in list(getattr(hud, "tool_actions", None) or []):
+            if action not in out.actions:
+                out.actions.append(action)
+                if "ui" not in out.used:
+                    out.used.append("ui")
         made = list(getattr(hud, "tool_turns", None) or [])
         if made:
             # The assistant changed the session through a function. Report it the way every other change
@@ -386,4 +422,4 @@ def route(text: str, hud: Any, source: str = "typed") -> Routed:
     return out
 
 
-__all__ = ["route", "ui_commands", "is_question", "brief", "chart_request", "promised_change", "Routed", "PANELS", "PERSPECTIVES"]
+__all__ = ["PANELS", "PERSPECTIVES", "Routed", "brief", "chart_request", "is_question", "promised_change", "refers_to_race", "route", "ui_commands"]

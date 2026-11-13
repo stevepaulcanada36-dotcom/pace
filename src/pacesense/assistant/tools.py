@@ -15,15 +15,16 @@ from __future__ import annotations
 import json
 import math
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from .. import racewatch
 from ..coach import CoachService
 from ..domain import ValidationError, format_time, parse_time
-from ..study import NotFound
 from ..explain import HELP
-from ..planning import LABELS, PlanSession, parse_pace, pace_text
+from ..planning import LABELS, PlanSession, pace_text, parse_pace
+from ..study import NotFound
 from .intake import check_runner, parse_duration
 
 RACE_SCHEMA = {
@@ -94,6 +95,11 @@ SESSION_SPECS: list[dict] = [
         "model's target. finish: h:mm or h:mm:ss, for example '4:30'.",
         {"finish": {"type": "string"}}, ["finish"]),
     _fn("undo_last_change", "Undo the most recent change to the race weights."),
+    _fn("open_panel", "Show the coach one of PaceSense's views: contributions (how much each race moves the "
+        "target), pacing, similar (similar runners), simulator, prediction, or session (the coach's session "
+        "analysis).",
+        {"panel": {"type": "string", "enum": ["contributions", "pacing", "similar", "simulator", "prediction",
+                                               "session"]}}, ["panel"]),
 ]
 
 
@@ -117,6 +123,7 @@ class AssistantTools:
     session: Any = None                    # the live HudSession, when the assistant may act on it
     source: str = "typed"
     turns: list = field(default_factory=list)   # steering turns these functions produced, newest last
+    actions: list = field(default_factory=list)  # screen actions these functions asked for
 
     @property
     def specs(self) -> list[dict]:
@@ -180,6 +187,13 @@ class AssistantTools:
             return {"applied": False, "error": "an estimate should be between 2:00 and 7:00, as h:mm"}
         turn = self.session.steer.hear(f"I think the finish will be {format_time(secs)}", self.source)
         return self._session_result(turn, turn.estimate_s is not None) | {"coach_estimate": format_time(secs)}
+
+    def _t_open_panel(self, panel: str) -> dict:
+        panels = {"contributions", "pacing", "similar", "simulator", "prediction", "session"}
+        if panel not in panels:
+            return {"opened": False, "error": "unknown panel", "panels": sorted(panels)}
+        self.actions.append({"type": "focus", "panel": panel})
+        return {"opened": True, "panel": panel}
 
     def _t_undo_last_change(self) -> dict:
         turn = self.session.steer.undo()

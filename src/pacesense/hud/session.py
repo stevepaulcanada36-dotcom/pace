@@ -50,6 +50,7 @@ class HudSession:
     assistant_context: str = field(init=False, default="")
     reply_style: str = field(init=False, default="normal")     # brief | normal | full, from the voice style
     tool_turns: list = field(init=False, default_factory=list)
+    tool_actions: list = field(init=False, default_factory=list)
     source_runner: str = field(init=False, default="")
 
     def __post_init__(self) -> None:
@@ -77,6 +78,7 @@ class HudSession:
         # steering engine, and the turns they produce are picked up by the caller as `tool_turns`.
         tools = AssistantTools(self.coach, plan=lambda: self.plan, session=self if online else None, source=source)
         self.tool_turns = tools.turns
+        self.tool_actions = tools.actions
         try:
             ans = Assistant(model, tools).ask(question, self.history, self.assistant_context)
         except AssistantError:

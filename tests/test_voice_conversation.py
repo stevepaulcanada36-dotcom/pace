@@ -82,7 +82,7 @@ class VoiceConversationTests(unittest.TestCase):
         _, messages = client.calls[-1]
         system = messages[0]["content"]
         self.assertIn(f"{race['event']} {race['year']}: finished in", system)
-        self.assertIn("for the next marathon", system)
+        self.assertIn("for her next marathon", system)
         self.assertIn("always mean the active runner", system)
         earlier = [m["content"] for m in messages[1:-1] if m["role"] == "user"]
         self.assertIn("so what does the likely range mean", earlier)
@@ -325,7 +325,7 @@ class AssistantActionTests(unittest.TestCase):
     def test_the_revealed_race_is_explained_to_the_assistant(self):
         service, sid, _live, client = self.open(None, None, claim="It is the hidden race.")
         service.command(sid, "what is the accuracy check about", source="voice")
-        self.assertIn("is hidden from the model", client.calls[-1][1][0]["content"])
+        self.assertIn("is held out from the model", client.calls[-1][1][0]["content"])
         service.reveal(sid)
         service.command(sid, "so how are we predicting that year", source="voice")
         system = client.calls[-1][1][0]["content"]
@@ -484,7 +484,8 @@ class ReplyStyleTests(unittest.TestCase):
         sid = service.create()[0]
         for said in ("so what do you think like reducing the data or increasing it maybe",
                      "right now do you have any suggestions it's kind of confusing for me",
-                     "you maybe like you decide what to do because I don't know what to do now"):
+                     "you maybe like you decide what to do because I don't know what to do now",
+                     "and maybe what does the likely range mean then"):
             service.command(sid, said, source="voice")
         system = client.calls[-1][1][0]["content"]
         self.assertIn("How to talk to this coach", system)
