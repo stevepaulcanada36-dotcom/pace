@@ -35,6 +35,8 @@ import math
 import re
 import time
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from importlib import resources
 from typing import Any, TypeVar
 
@@ -446,7 +448,14 @@ def create_app(service: StudioService, settings: Settings | None = None) -> Star
     handlers: dict[Any, Any] = {
         Problem: on_problem, SessionNotFound: on_missing_session, NotFound: on_not_found, DomainError: on_domain,
         HTTPException: on_http, Exception: on_error}
-    app = Starlette(routes=routes, middleware=middleware, exception_handlers=handlers)
+    @asynccontextmanager
+    async def lifespan(_app: Starlette) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            service.coach.repo.close()      # close SQLite cleanly when the server stops
+
+    app = Starlette(routes=routes, middleware=middleware, exception_handlers=handlers, lifespan=lifespan)
     app.state.service = service
     metrics.routes = routes
     return app

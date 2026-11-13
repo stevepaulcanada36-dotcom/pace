@@ -295,3 +295,31 @@ class TranscribeApiTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ShutdownTests(unittest.TestCase):
+    def test_repository_close_is_idempotent(self):
+        repo = Repository(":memory:")
+        repo.close()
+        repo.close()                       # a second close (or garbage collection) must not raise
+
+    def test_server_shutdown_closes_the_database(self):
+        import asyncio
+        import sqlite3
+
+        repo = Repository(":memory:")
+        app = create_app(StudioService(CoachService(helpers.model(), helpers.runners(), repo), settings=Settings()))
+        sent: list[dict] = []
+        events = iter([{"type": "lifespan.startup"}, {"type": "lifespan.shutdown"}])
+
+        async def receive():
+            return next(events)
+
+        async def send(message):
+            sent.append(message)
+
+        asyncio.run(app({"type": "lifespan", "asgi": {"version": "3.0"}, "state": {}}, receive, send))
+        self.assertEqual([m["type"] for m in sent],
+                         ["lifespan.startup.complete", "lifespan.shutdown.complete"])
+        with self.assertRaises(sqlite3.ProgrammingError):
+            repo._conn.execute("SELECT 1")
