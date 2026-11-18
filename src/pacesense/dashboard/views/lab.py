@@ -1,4 +1,4 @@
-"""Model lab: run the same test cases through several OpenRouter models and choose one per task."""
+"""Boson evaluation lab: score PaceSense tasks against repeatable test cases."""
 from __future__ import annotations
 
 import json
@@ -13,13 +13,11 @@ from .. import ui
 
 
 def render() -> None:
-    ui.page_header("Model lab", "Run the same test cases through several OpenRouter models, compare score, speed "
-                                "and cost, and choose the model for each task.")
+    ui.page_header("Boson evaluation lab", "Run repeatable test cases against Boson Higgs Realtime and inspect accuracy and speed.")
     ui.show_toasts()
     ai, coach = ui.ai(), ui.services().coach
     if not ai.online:
-        st.info("The Model lab calls OpenRouter models, so it needs an OpenRouter key. Add it under Settings › AI "
-                "models. Saved results from earlier runs are still shown below.")
+        st.info("The evaluation lab needs BOSON_API_KEY configured on the server. Saved results from earlier runs are still shown below.")
         ui.link("settings", "Open Settings")
 
     task_key = st.selectbox("Task", list(TASKS), format_func=lambda k: TASKS[k].title, key="lab_task")
@@ -27,12 +25,8 @@ def render() -> None:
     current = ai.settings.get(task_key)
     st.caption(f"{task.what} Now using **{current['model']}** (from {current['source']}).")
 
-    models_key = f"lab_models_{task_key}"
-    st.session_state.setdefault(models_key, "\n".join(dict.fromkeys([current["model"], *task.suggestions])))
-    models_text = st.text_area("Models to compare: one OpenRouter model id per line", key=models_key, height=120,
-                               help="Find ids with 'Load the model list' under Settings › AI models, or on "
-                                    "openrouter.ai/models. The suggestions are starting points; models change.")
-    models = [m.strip() for m in models_text.splitlines() if m.strip()]
+    models = ["higgs-realtime"]
+    st.caption("Model: higgs-realtime (Boson). PaceSense uses one hosted model across all AI tasks.")
 
     built_in = evals.cases(task_key, coach)
     labels = {c.id: f"{c.id}: {c.input[:70]}{'…' if len(c.input) > 70 else ''}" for c in built_in}
@@ -95,7 +89,7 @@ def show_results(task_key: str, results: list) -> None:
     st.subheader("Results")
     table = evals.summary(results)
     st.dataframe(table, hide_index=True)
-    st.caption("Best first: highest average score, then fastest. Cost is what OpenRouter reported for these runs.")
+    st.caption("Results evaluate Boson Higgs Realtime against the selected cases. Provider cost is not currently reported by this integration.")
     rows = pd.DataFrame([{"Model": r.model, "Case": r.case_id, "Score": r.score, "Passed": "yes" if r.passed else "",
                           "Seconds": r.latency_s, "Cost (USD)": r.cost_usd, "Notes": r.error or "; ".join(r.details),
                           "Output": r.output[:300]} for r in results])
@@ -105,8 +99,8 @@ def show_results(task_key: str, results: list) -> None:
         best = a.selectbox(f"Use this model for {TASKS[task_key].title}", list(table["Model"]), key="lab_pick")
         b.write("")
         if b.button("Use it", key="lab_use", type="primary"):
-            ui.ai().settings.update(task_key, model=best)
-            st.success(f"{TASKS[task_key].title} now uses {best}. Change it any time under Settings › AI models.")
+            ui.ai().settings.update(task_key, model="higgs-realtime")
+            st.success(f"{TASKS[task_key].title} continues to use Boson Higgs Realtime. Adjust temperature under Settings.")
 
 
 def history(task_key: str) -> None:

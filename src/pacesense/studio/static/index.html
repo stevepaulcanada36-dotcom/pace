@@ -29,7 +29,7 @@
   </button>
 
   <span class="mode-pill" id="mode-pill" hidden></span>
-  <button class="cond-pill" id="cond-pill" type="button" title="Do you know this runner? Known and unknown runners get different help (and different feedback loops).">Runner: known?</button>
+  <button class="cond-pill" id="cond-pill" type="button" title="Is this an athlete you personally know, or an existing database runner who is unfamiliar to you?">Runner familiarity?</button>
 
   <button class="persona-chip" id="persona-btn" aria-haspopup="dialog" aria-controls="profile-dialog" title="How PaceSense sees you (and how to change it)">
     <svg class="ring" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="15" class="ring-bg"/><circle cx="18" cy="18" r="15" class="ring-fg" id="persona-ring"/></svg>
@@ -37,6 +37,7 @@
   </button>
 
   <div class="top-actions">
+    <button class="btn ghost" id="settings-btn" type="button" title="Open PaceSense profile and interface settings">Settings</button>
     <button class="btn talk" id="talk-btn" aria-pressed="false" title="Talk to PaceSense: the screen turns into a conversation (V)">
       <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="1.5" width="5" height="9" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 8a5 5 0 0010 0M8 13v2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg><span>Talk to PaceSense</span></button>
     <button class="btn ghost" id="guide-btn" title="Answer a few questions instead (G)">
@@ -133,6 +134,8 @@
         <button role="tab" id="tab-pacing" aria-controls="view-pacing" aria-selected="true">Pacing plan</button>
         <button role="tab" id="tab-similar" aria-controls="view-similar" aria-selected="false" tabindex="-1">Similar runners</button>
         <button role="tab" id="tab-insights" aria-controls="view-insights" aria-selected="false" tabindex="-1">Insights</button>
+        <button role="tab" id="tab-contributions" aria-controls="view-contributions" aria-selected="false" tabindex="-1">Race contributions</button>
+        <button role="tab" id="tab-session" aria-controls="view-session" aria-selected="false" tabindex="-1">Your session</button>
       </div>
       <p class="card-sub" id="analysis-sub"></p>
     </header>
@@ -146,6 +149,14 @@
     <div role="tabpanel" id="view-insights" aria-labelledby="tab-insights" class="tabview" hidden>
       <ul class="insights" id="insights"></ul>
       <div class="scenarios" id="scenarios"></div>
+    </div>
+    <div role="tabpanel" id="view-contributions" aria-labelledby="tab-contributions" class="tabview" hidden>
+      <div class="chart" id="contribution-chart"></div>
+      <p class="footnote">Each bar shows how much a race moves the target relative to the equal-weight baseline. Left means faster; right means slower. This is model influence, not proof that a race caused the result.</p>
+    </div>
+    <div role="tabpanel" id="view-session" aria-labelledby="tab-session" class="tabview" hidden>
+      <div class="session-analysis" id="session-analysis"></div>
+      <p class="footnote">The measures from Muijlwijk et al. (IUI ’24), applied to this session: Acceptance and Model adaptation (whose view), error against the hidden race (RQ4), weights against race year, the knowledge you used, and familiarity (RQ2).</p>
     </div>
   </section>
 
@@ -213,13 +224,23 @@
 <!-- Runner picker -->
 <dialog id="runner-dialog" class="dialog" aria-labelledby="runner-dialog-h">
   <form method="dialog" class="dialog-inner">
-    <header><h2 id="runner-dialog-h">Open a runner</h2><button class="btn icon ghost" value="close" aria-label="Close">✕</button></header>
-    <input type="search" id="runner-search" placeholder="Search by id or name…" aria-label="Search runners">
+    <header><h2 id="runner-dialog-h">Runner database</h2><button class="btn icon ghost" value="close" aria-label="Close">✕</button></header>
+    <p class="muted small-print">Browse runners already in PaceSense. Search by name or ID, then choose a record. “Known” means you coach or personally know this runner; “unknown” means they are new to you, not new to the database.</p>
+    <p class="muted small-print" id="runner-db-count" aria-live="polite">Loading existing runner records…</p>
+    <input type="search" id="runner-search" placeholder="Search existing runners by ID or name…" aria-label="Search runners">
+    <div class="runner-filters">
+      <label><span>Gender</span><select id="runner-gender-filter" aria-label="Filter by gender">
+        <option value="">All</option><option value="F">Female</option><option value="M">Male</option>
+      </select></label>
+      <label><span>Previous marathons</span><select id="runner-min-races-filter" aria-label="Filter by minimum number of marathons">
+        <option value="0">Any number</option><option value="4">At least 4</option><option value="8">At least 8</option>
+      </select></label>
+    </div>
     <ul class="runner-list" id="runner-list" role="listbox" aria-label="Runners"></ul>
     <fieldset class="segmented cond-choice" id="cond-choice">
-      <legend>Do you know this runner? <span class="muted">(the paper's familiar / unfamiliar conditions)</span></legend>
-      <label><input type="radio" name="cond" value="known"><span>I know them</span></label>
-      <label><input type="radio" name="cond" value="unknown"><span>I don't</span></label>
+      <legend>Do you know this runner personally? <span class="muted">(the paper's familiar / unfamiliar conditions)</span></legend>
+      <label><input type="radio" name="cond" value="known"><span>Known to me</span></label>
+      <label><input type="radio" name="cond" value="unknown"><span>Unfamiliar to me (already in database)</span></label>
       <label><input type="radio" name="cond" value="ask" checked><span>Ask me</span></label>
     </fieldset>
     <label class="check"><input type="checkbox" id="holdout-check" checked> Hide the best race to check accuracy</label>

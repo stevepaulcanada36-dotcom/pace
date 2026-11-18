@@ -95,8 +95,15 @@ class SteeringSession:
         return f"{r['event']} {r['year']}"
 
     def _set(self, turn: Turn, i: int, new: float, cue: str, reasoned: bool, say_if_unchanged: bool = False) -> None:
-        new = round(min(1.0, max(0.0, new)), 1)
+        raw = min(1.0, max(0.0, new))
+        new = round(raw, 1)
         old = self.plan.weights[i]
+        if new == old and abs(raw - old) >= 0.03:
+            # Weights move in steps of 0.1. "0.35" from 0.3 is a request to go up, so take the next step
+            # in that direction instead of answering that nothing changed.
+            new = round(min(1.0, max(0.0, old + (0.1 if raw > old else -0.1))), 1)
+            if new != old:
+                turn.notes.append(f"Weights move in steps of 0.1, so {self._name(i)} went to {new:.1f}.")
         if new == old:
             if say_if_unchanged:
                 what = "counts for nothing" if old == 0 else "counts fully" if old == 1 else f"is at {old:.1f}"
@@ -122,6 +129,18 @@ class SteeringSession:
         return Turn(len(self.turns) + 1, text, source, finish_before_s=self.plan.model_finish)
 
     def _end(self, turn: Turn) -> Turn:
+        # A long sentence can touch the same race twice ("0.5 → 0.4" then "0.4 → 0.6"). Report the net
+        # change once, and nothing at all if it came back to where it started.
+        merged: dict[int, Applied] = {}
+        for a in turn.applied:
+            if a.index in merged:
+                first = merged[a.index]
+                merged[a.index] = Applied(a.index, a.race, first.old, a.new, a.cue, a.reasoned or first.reasoned,
+                                          a.verdict, a.evidence)
+            else:
+                merged[a.index] = a
+        if len(merged) != len(turn.applied):
+            turn.applied[:] = [a for a in merged.values() if round(a.new - a.old, 2) != 0]
         turn.finish_after_s = self.plan.model_finish
         if not turn.applied:
             self._undo.pop()

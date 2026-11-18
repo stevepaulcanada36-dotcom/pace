@@ -1,27 +1,30 @@
-"""AIService: every AI feature in PaceSense goes through here, each task with its own OpenRouter model.
+"""AIService: every AI feature in PaceSense goes through here, each task through Boson Higgs Realtime.
 
     voice recording ──transcribe──> text ──extract──> form fields ──check──> fields shown to the coach
                                       └──refine──> clearer version + what changed + questions (coach decides)
 
-Without an OpenRouter key (or with PACESENSE_AI=offline) the text tasks fall back to simple rules and chat
-to the offline helper. Speech-to-text defaults to local Whisper, which is free to run but must be installed.
+Without a Boson API key (or with PACESENSE_AI=offline) the text tasks fall back to simple rules and chat
+to the offline helper. Speech-to-text uses Boson by default; local Whisper remains an optional fallback.
 """
 from __future__ import annotations
 
+import logging
 import os
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
 from ..storage import Repository
 from .forms import FORMS, FormCheck, fact_text, facts
-from .config import load_config, openrouter_api_key
+from .config import boson_api_key, load_config, openrouter_api_key
 from .openrouter import LLMError, OpenRouterClient, Transcript, Usage, parse_json_answer
+from .boson import BosonClient
 from .tasks import TASKS, ModelSettings
 
 
 class AIUnavailable(LLMError):
-    """The feature needs an OpenRouter key."""
+    """The feature needs a Boson API key."""
 
 
 @dataclass
@@ -81,31 +84,141 @@ Rewrite it as a clearer, more precise version. Rules:
 Return only JSON: {{"refined": "the refined text", "changes": ["what you changed, briefly"], "questions": ["..."]}}"""
 
 
+log = logging.getLogger("pacesense.llm")
+
+PROVIDER_NAMES = {"openrouter": "OpenRouter", "boson": "Boson"}
+# The models PaceSense used with OpenRouter before the Boson integration. Override per deployment with
+# PACESENSE_OPENROUTER_MODEL (chat, interpretation, forms) and PACESENSE_OPENROUTER_TRANSCRIBE_MODEL.
+OPENROUTER_CHAT_MODEL = "openai/gpt-4o-mini"
+OPENROUTER_TRANSCRIBE_MODEL = "openai/whisper-1"
+BOSON_MODEL = "higgs-realtime"
+# After a provider rejects its key or runs out of credit, skip it for a while instead of failing every turn.
+_PROVIDER_COOLDOWN_S = 300.0
+_provider_down_until: dict[str, float] = {}
+
+
+def _is_account_failure(error: LLMError) -> bool:
+    return getattr(error, "status", None) in (401, 402, 403)
+
+
+class FailoverClient:
+    """Use the primary provider; if a call fails, answer that call with the backup provider.
+
+    The two providers name their models differently, so each call is given the model for whichever
+    provider handles it. A key or credit failure parks the primary for a few minutes.
+    """
+
+    def __init__(self, primary: Any, primary_name: str, backup: Any, backup_name: str,
+                 backup_model: str, backup_transcribe_model: str) -> None:
+        self.primary, self.primary_name = primary, primary_name
+        self.backup, self.backup_name = backup, backup_name
+        self.backup_model, self.backup_transcribe_model = backup_model, backup_transcribe_model
+
+    def _primary_available(self) -> bool:
+        return time.monotonic() >= _provider_down_until.get(self.primary_name, 0.0)
+
+    def _failed(self, what: str, error: LLMError) -> None:
+        if _is_account_failure(error):
+            _provider_down_until[self.primary_name] = time.monotonic() + _PROVIDER_COOLDOWN_S
+        log.warning("%s %s failed (%s); using %s for this request", PROVIDER_NAMES[self.primary_name], what,
+                    error, PROVIDER_NAMES[self.backup_name])
+
+    def chat(self, model: str, messages: list[dict], **kwargs: Any):
+        if self._primary_available():
+            try:
+                return self.primary.chat(model, messages, **kwargs)
+            except LLMError as error:
+                self._failed("chat", error)
+        return self.backup.chat(self.backup_model, messages, **kwargs)
+
+    def transcribe(self, model: str, audio: bytes, fmt: str = "wav", language: str | None = None):
+        if self._primary_available():
+            try:
+                return self.primary.transcribe(model, audio, fmt, language)
+            except LLMError as error:
+                self._failed("transcription", error)
+        return self.backup.transcribe(self.backup_transcribe_model, audio, fmt, language)
+
+    def __getattr__(self, name: str) -> Any:            # models(), and anything else, from the primary
+        return getattr(self.primary, name)
+
+
 class AIService:
     def __init__(self, repo: Repository, api_key: str | None = None, env: dict[str, str] | None = None,
-                 client: OpenRouterClient | None = None):
+                 client: Any | None = None):
         self.repo = repo
         self.env = dict(os.environ if env is None else env)
         self.settings = ModelSettings(repo, self.env)
         self.offline_forced = self.env.get("PACESENSE_AI", "auto") == "offline"
         config = load_config()
-        configured_key, configured_source = openrouter_api_key()
-        key = api_key or self.env.get("OPENROUTER_API_KEY") or configured_key
-        self.key_source = ("browser session" if api_key else
-                           "environment" if self.env.get("OPENROUTER_API_KEY") else configured_source)
-        provider = config.get("openrouter", {})
+        session_key = api_key.strip() if isinstance(api_key, str) else ""
+        boson_key, boson_source = boson_api_key(self.env)
+        boson_key = session_key or boson_key
+        openrouter_key, openrouter_source = openrouter_api_key(self.env)
+        wanted = (self.env.get("PACESENSE_AI_PROVIDER") or "auto").strip().lower()
+        if wanted not in ("auto", "openrouter", "boson"):
+            wanted = "auto"
+        # With one key, that provider does everything. With both, OpenRouter does the analysis (chat, voice
+        # intent, race interpretation) and Boson keeps speech to text (see transcribe_provider below), each
+        # backing the other up. PACESENSE_AI_PROVIDER pins the analysis provider.
+        if wanted == "boson" or (wanted == "auto" and not openrouter_key):
+            self.provider = "boson"
+        else:
+            self.provider = "openrouter"
+        self.key_source = ("browser session" if session_key and self.provider == "boson" else
+                           boson_source if self.provider == "boson" else openrouter_source)
+        self.backup_provider: str | None = None
+        self.transcribe_provider: str = self.provider
+        self._stt_client: Any = None
         if self.offline_forced:
             self.client = None
         elif client is not None:
             self.client = client
         else:
-            self.client = (OpenRouterClient(
-                key,
-                base_url=str(provider.get("base_url") or "https://openrouter.ai/api/v1"),
-                app_name=str(provider.get("app_name") or "PaceSense"),
-                app_url=self.env.get("PACESENSE_APP_URL") or provider.get("app_url"),
-            ) if key else None)
+            provider_config = config.get("openrouter", {})
+            clients: dict[str, Any] = {}
+            if openrouter_key:
+                clients["openrouter"] = OpenRouterClient(
+                    openrouter_key,
+                    base_url=str(provider_config.get("base_url") or "https://openrouter.ai/api/v1"))
+            if boson_key:
+                clients["boson"] = BosonClient(boson_key)
+            primary = clients.get(self.provider)
+            other = "boson" if self.provider == "openrouter" else "openrouter"
+            if primary is None and other in clients:        # the requested provider has no key
+                self.provider, other = other, self.provider
+                primary = clients[self.provider]
+                self.key_source = boson_source if self.provider == "boson" else openrouter_source
+            if primary is not None and other in clients:
+                self.backup_provider = other
+                self.client = FailoverClient(
+                    primary, self.provider, clients[other], other,
+                    BOSON_MODEL if other == "boson" else self._openrouter_model("assistant"),
+                    BOSON_MODEL if other == "boson" else self._openrouter_model("transcribe"))
+            else:
+                self.client = primary
+            # Speech to text can use a different provider from the analysis. Boson's transcription is
+            # fast and already proven in this app, so it keeps that job when its key is present, while
+            # OpenRouter (when configured) does the reasoning. PACESENSE_TRANSCRIBE_PROVIDER overrides.
+            stt = (self.env.get("PACESENSE_TRANSCRIBE_PROVIDER") or "").strip().lower()
+            if stt not in clients:
+                stt = "boson" if "boson" in clients else self.provider
+            if stt in clients and stt != self.provider:
+                self.transcribe_provider = stt
+                self._stt_client = FailoverClient(
+                    clients[stt], stt, clients[self.provider], self.provider,
+                    BOSON_MODEL if self.provider == "boson" else self._openrouter_model("assistant"),
+                    BOSON_MODEL if self.provider == "boson" else self._openrouter_model("transcribe"))
         self.language = self.env.get("PACESENSE_LANGUAGE") or config.get("voice", {}).get("language") or None
+
+    def _openrouter_model(self, task: str) -> str:
+        if task == "transcribe":
+            return (self.env.get("PACESENSE_OPENROUTER_TRANSCRIBE_MODEL") or "").strip() or OPENROUTER_TRANSCRIBE_MODEL
+        return (self.env.get("PACESENSE_OPENROUTER_MODEL") or "").strip() or OPENROUTER_CHAT_MODEL
+
+    @property
+    def provider_name(self) -> str:
+        return PROVIDER_NAMES[self.provider]
 
     @property
     def online(self) -> bool:
@@ -116,41 +229,47 @@ class AIService:
             return None
         if self.offline_forced:
             return "AI is set to offline (PACESENSE_AI=offline)."
-        return "No OpenRouter key: chat and form tasks use offline rules; local Whisper can transcribe voice if installed."
+        return "No BOSON_API_KEY: PaceSense uses offline rules. Set BOSON_API_KEY in the server environment to enable Boson."
 
     def config(self, task: str, model: str | None = None) -> tuple[str, float]:
         c = self.settings.get(task)
-        return model or c["model"], c["temperature"]
+        if model:
+            return model, c["temperature"]
+        if self.provider == "openrouter":
+            return self._openrouter_model(task), c["temperature"]
+        return c["model"], c["temperature"]
 
     def label(self, task: str) -> str:
-        return f"{self.config(task)[0]} via OpenRouter" if self.online else "offline rules (no AI)"
+        return f"{self.config(task)[0]} via {self.provider_name}" if self.online else "offline rules (no AI)"
 
-    def _need(self, what: str) -> OpenRouterClient:
+    def _need(self, what: str) -> Any:
         if self.client is None:
-            raise AIUnavailable(f"{what} needs an OpenRouter key (OPENROUTER_API_KEY, or paste one in Settings)")
+            raise AIUnavailable(f"{what} needs a Boson API key (set BOSON_API_KEY in the server environment)")
         return self.client
 
     # ---- tasks ---------------------------------------------------------------------------------
     def chat_model(self, model: str | None = None):
-        """The model for Ask PaceSense: OpenRouter with the assistant task's settings, or the offline helper."""
-        from ..assistant.chat import OpenRouterModel
+        """The model for Ask PaceSense: Boson Higgs Realtime, or the offline helper."""
+        from ..assistant.chat import BosonModel
         from ..assistant.offline import OfflineModel
         if not self.online:
             return OfflineModel()
         m, temp = self.config("assistant", model)
-        return OpenRouterModel(self.client, m, temp)
+        return BosonModel(self.client, m, temp, provider=self.provider_name)
 
     @property
     def transcription_backend(self) -> str:
-        """The dashboard defaults to local Whisper; Model lab can pass a model to test OpenRouter."""
-        return str(self.repo.get_setting("transcription_backend", self.env.get("PACESENSE_TRANSCRIBE_BACKEND", "local")))
+        """Boson handles voice by default; local Whisper is an explicit offline fallback."""
+        return str(self.repo.get_setting("transcription_backend", self.env.get("PACESENSE_TRANSCRIBE_BACKEND", "boson")))
 
     def transcribe(self, audio: bytes, fmt: str = "wav", model: str | None = None) -> Transcript:
-        # An explicit model is used by the Model lab to compare OpenRouter models. Ordinary voice input
-        # follows the selected backend and defaults to local transcription to avoid API charges.
+        # Voice uses Boson by default. Local Whisper is available only when explicitly selected as the backend.
         if model is None and self.transcription_backend == "local":
             from .local_whisper import transcribe as local_transcribe
             return local_transcribe(audio, fmt, self.language)
+        if model is None and self._stt_client is not None and self.online:
+            m = BOSON_MODEL if self.transcribe_provider == "boson" else self._openrouter_model("transcribe")
+            return self._stt_client.transcribe(m, audio, fmt, self.language)
         m, _ = self.config("transcribe", model)
         return self._need("Speech to text").transcribe(m, audio, fmt, self.language)
 

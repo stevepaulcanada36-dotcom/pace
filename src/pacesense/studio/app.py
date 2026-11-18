@@ -15,6 +15,7 @@ Routes (all JSON under /api/v1; errors are RFC 9457 problem documents with a req
     GET    /api/v1/sessions/{sid}                                       -> state
     DELETE /api/v1/sessions/{sid}                                       -> 204
     POST   /api/v1/sessions/{sid}/commands     Command                  -> {reply, card, actions, simulation, state}
+    POST   /api/v1/sessions/{sid}/transcribe   audio bytes              -> {text, available, source, latency_s}
     PUT    /api/v1/sessions/{sid}/weights      SetWeight                -> {card, state}
     POST   /api/v1/sessions/{sid}/undo                                  -> {card, state}
     POST   /api/v1/sessions/{sid}/estimate     Estimate                 -> as commands
@@ -25,14 +26,19 @@ Routes (all JSON under /api/v1; errors are RFC 9457 problem documents with a req
 """
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
 import logging
 import math
 import re
 import time
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from importlib import resources
-from typing import Any
+from typing import Any, TypeVar
 
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticError
@@ -58,6 +64,9 @@ from .store import SessionNotFound
 log = logging.getLogger("pacesense.studio")
 access = logging.getLogger("pacesense.studio.access")
 MAX_BODY = 64 * 1024
+MAX_AUDIO_BODY = 4 * 1024 * 1024       # one spoken utterance: 16 kHz mono WAV is about 2 MB a minute
+AUDIO_TYPES = {"audio/wav": "wav", "audio/x-wav": "wav", "audio/wave": "wav", "audio/webm": "webm",
+               "audio/ogg": "ogg", "audio/mp4": "m4a", "audio/mpeg": "mp3", "audio/flac": "flac"}
 
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; "
        "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; "
@@ -94,7 +103,10 @@ def problem(request: Request, status: int, title: str, detail: str = "", errors:
     return JSON(body, status, media_type="application/problem+json")
 
 
-async def body_of(request: Request, model: type[BaseModel]) -> BaseModel:
+BodyT = TypeVar("BodyT", bound=BaseModel)
+
+
+async def body_of(request: Request, model: type[BodyT]) -> BodyT:
     raw = await request.body()
     if len(raw) > MAX_BODY:
         raise Problem(413, "Request too large", f"bodies are limited to {MAX_BODY // 1024} KB")
@@ -190,12 +202,54 @@ class Observe:
                             extra={"request_id": rid, "status": status[0], "ms": round(dt * 1000, 1), "route": route})
 
 
+
+
+class BasicAuth:
+    """Optional HTTP Basic authentication for a public single-user deployment."""
+
+    def __init__(self, app, username: str, password: str) -> None:
+        self.app, self.username, self.password = app, username, password
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope.get("path") not in ("/healthz", "/readyz"):
+            headers = dict(scope.get("headers", []))
+            raw = headers.get(b"authorization", b"")
+            valid = False
+            if raw.startswith(b"Basic "):
+                try:
+                    decoded = base64.b64decode(raw[6:], validate=True).decode("utf-8")
+                    username, password = decoded.split(":", 1)
+                    valid = (hmac.compare_digest(username, self.username)
+                             and hmac.compare_digest(password, self.password))
+                except (ValueError, UnicodeDecodeError):
+                    valid = False
+            if not valid:
+                body = b"Authentication required"
+                await send({"type": "http.response.start", "status": 401, "headers": [
+                    (b"www-authenticate", b'Basic realm="PaceSense", charset="UTF-8"'),
+                    (b"content-type", b"text/plain; charset=utf-8"),
+                    (b"content-length", str(len(body)).encode()),
+                    (b"cache-control", b"no-store"),
+                ]})
+                await send({"type": "http.response.body", "body": body})
+                return
+        await self.app(scope, receive, send)
+
+
 # ---- the app ------------------------------------------------------------------------------------
 def create_app(service: StudioService, settings: Settings | None = None) -> Starlette:
     settings = settings or service.settings
     metrics = Metrics()
     static_dir = resources.files("pacesense.studio").joinpath("static")
-    index_html = static_dir.joinpath("index.html").read_text(encoding="utf-8").replace("{{version}}", __version__)
+    # The script address changes whenever a static file changes, so a browser never runs an old script
+    # against a new server (the release number alone stays the same between deployments).
+    digest = hashlib.sha256()
+    for name in ("studio.js", "adaptive.js", "studio.css"):
+        asset = static_dir.joinpath(name)
+        if asset.is_file():
+            digest.update(asset.read_bytes())
+    asset_version = f"{__version__}-{digest.hexdigest()[:10]}"
+    index_html = static_dir.joinpath("index.html").read_text(encoding="utf-8").replace("{{version}}", asset_version)
 
     async def call(fn, *a):
         return await run_in_threadpool(fn, *a)
@@ -225,7 +279,17 @@ def create_app(service: StudioService, settings: Settings | None = None) -> Star
     # runners and sessions
     async def runners(request: Request):
         q = request.query_params.get("q", "")[:64]
-        return JSON(await call(service.runners, q))
+        gender = request.query_params.get("gender") or None
+        if gender not in (None, "F", "M"):
+            raise Problem(422, "Invalid request", "gender must be F or M")
+        raw_min_races = request.query_params.get("min_races", "0")
+        try:
+            min_races = int(raw_min_races)
+        except ValueError:
+            raise Problem(422, "Invalid request", "min_races must be a whole number") from None
+        if not 0 <= min_races <= 20:
+            raise Problem(422, "Invalid request", "min_races must be between 0 and 20")
+        return JSON(await call(service.runners, q, 50, gender, min_races))
 
     async def create(request: Request):
         b = await body_of(request, schemas.CreateSession)
@@ -243,6 +307,19 @@ def create_app(service: StudioService, settings: Settings | None = None) -> Star
         b = await body_of(request, schemas.Command)
         voice = b.voice.model_dump(exclude_none=True) if b.voice else None
         return JSON(await call(service.command, request.path_params["sid"], b.text, b.source, voice))
+
+    async def transcribe(request: Request):
+        """Raw utterance audio (WAV, WebM, Ogg or MP4) -> Boson's transcript, for the browser voice control."""
+        raw = await request.body()
+        if len(raw) > MAX_AUDIO_BODY:
+            raise Problem(413, "Recording too large", f"utterances are limited to {MAX_AUDIO_BODY // (1024 * 1024)} MB")
+        if not raw:
+            raise Problem(400, "Empty recording", "send the recorded audio as the request body")
+        kind = request.headers.get("content-type", "").split(";")[0].strip().lower()
+        fmt = AUDIO_TYPES.get(kind)
+        if fmt is None:
+            raise Problem(415, "Unsupported audio type", f"send one of: {', '.join(sorted(AUDIO_TYPES))}")
+        return JSON(await call(service.transcribe, request.path_params["sid"], raw, fmt))
 
     async def weights(request: Request):
         b = await body_of(request, schemas.SetWeight)
@@ -327,6 +404,7 @@ def create_app(service: StudioService, settings: Settings | None = None) -> Star
         Route("/api/v1/sessions", create, methods=["POST"]),
         Route(S, get_state, methods=["GET"]), Route(S, delete, methods=["DELETE"]),
         Route(S + "/commands", command, methods=["POST"]), Route(S + "/weights", weights, methods=["PUT"]),
+        Route(S + "/transcribe", transcribe, methods=["POST"]),
         Route(S + "/undo", undo, methods=["POST"]), Route(S + "/estimate", estimate, methods=["POST"]),
         Route(S + "/simulations", simulate, methods=["POST"]), Route(S + "/reveal", reveal, methods=["POST"]),
         Route(S + "/reactions", react, methods=["POST"]), Route(S + "/export", export, methods=["GET"]),
@@ -362,12 +440,22 @@ def create_app(service: StudioService, settings: Settings | None = None) -> Star
 
     from starlette.exceptions import HTTPException
     middleware = [Middleware(Observe, metrics=metrics), Middleware(GZipMiddleware, minimum_size=1024)]
+    if settings.access_user and settings.access_password:
+        middleware.append(Middleware(BasicAuth, username=settings.access_user, password=settings.access_password))
     if settings.cors_origins:
         middleware.append(Middleware(CORSMiddleware, allow_origins=settings.cors_origins,
                                      allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["content-type", "x-request-id"]))
-    app = Starlette(routes=routes, middleware=middleware, exception_handlers={
+    handlers: dict[Any, Any] = {
         Problem: on_problem, SessionNotFound: on_missing_session, NotFound: on_not_found, DomainError: on_domain,
-        HTTPException: on_http, Exception: on_error})
+        HTTPException: on_http, Exception: on_error}
+    @asynccontextmanager
+    async def lifespan(_app: Starlette) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            service.coach.repo.close()      # close SQLite cleanly when the server stops
+
+    app = Starlette(routes=routes, middleware=middleware, exception_handlers=handlers, lifespan=lifespan)
     app.state.service = service
     metrics.routes = routes
     return app
@@ -396,8 +484,15 @@ def openapi_document() -> dict:
             "info": {"title": "PaceSense Studio API", "version": __version__,
                      "description": "Case-based marathon prediction you can steer by talking (after Muijlwijk et al., IUI '24)."},
             "paths": {
-                "/api/v1/runners": {"get": {"summary": "Find runners", "parameters": [
-                    {"name": "q", "in": "query", "schema": {"type": "string"}}], "responses": {"200": {"description": "OK"}}}},
+                "/api/v1/runners": {"get": {"summary": "Find and filter existing runners", "parameters": [
+                    {"name": "q", "in": "query", "schema": {"type": "string", "maxLength": 64},
+                     "description": "Optional runner name or ID search."},
+                    {"name": "gender", "in": "query", "schema": {"type": "string", "enum": ["F", "M"]},
+                     "description": "Optional gender filter."},
+                    {"name": "min_races", "in": "query", "schema": {"type": "integer", "minimum": 0, "maximum": 20},
+                     "description": "Minimum number of previous marathons."}],
+                    "responses": {"200": {"description": "Matching existing runner records"},
+                                  "422": {"description": "Invalid filter (problem+json)"}}}},
                 "/api/v1/sessions": {"post": op("Open a runner", "CreateSession", "201", params=False)},
                 S: {"get": op("Session state"), "delete": op("Close a session", ok="204")},
                 S + "/commands": {"post": op("Say or type something", "Command")},

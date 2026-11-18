@@ -4,7 +4,6 @@ from __future__ import annotations
 import streamlit as st
 
 from ...domain import ValidationError
-from ...llm.openrouter import LLMError
 from ...llm.tasks import TASKS
 from .. import ui
 
@@ -39,96 +38,48 @@ def render() -> None:
 
 
 def ai_models() -> None:
-    """One OpenRouter model (and temperature) per AI task. Saved in the database."""
+    """Boson provider status and per-task temperature settings."""
     import os
-    st.subheader("AI models and voice input")
-    st.caption("Chat, field filling and refinement use the per-task OpenRouter models below. Voice transcription can "
-               "run locally for no API fee, or use OpenRouter (which may require credits).")
+    st.subheader("Boson AI and voice input")
+    st.caption("PaceSense uses Boson Higgs Realtime for hosted chat, speech transcription, field extraction and refinement. "
+               "The API key is configured on the server and is never entered or stored in this dashboard.")
     repo = ui.services().repo
-    backend = str(repo.get_setting("transcription_backend", os.environ.get("PACESENSE_TRANSCRIBE_BACKEND", "local")))
-    selected = st.radio("Speech-to-text method", ["local", "openrouter"], index=0 if backend == "local" else 1,
-                        format_func={"local": "Local Whisper — no per-recording API charge",
-                                     "openrouter": "OpenRouter — may cost money"}.get,
-                        key=f"transcription_backend_{backend}", horizontal=False,
-                        help="Local mode needs the optional faster-whisper package and downloads a model on first use.")
+    backend = str(repo.get_setting("transcription_backend",
+                                   os.environ.get("PACESENSE_TRANSCRIBE_BACKEND", "boson")))
+    selected = st.radio("Speech-to-text method", ["boson", "local"],
+                        index=0 if backend != "local" else 1,
+                        format_func={"boson": "Boson Higgs Realtime", "local": "Local Whisper — offline fallback"}.get,
+                        key=f"transcription_backend_{backend}", horizontal=False)
     if selected != backend:
         repo.set_setting("transcription_backend", selected)
         st.session_state.setdefault("toasts", []).append("Speech-to-text method saved.")
         st.rerun()
-    if backend == "local":
-        st.caption('Local model: faster-whisper/base by default. Install with: pip install -e ".[local-stt]". '
-                   "Set PACESENSE_LOCAL_WHISPER_MODEL=small for better accuracy on a capable computer.")
-    else:
-        st.caption("OpenRouter transcription uses the Speech to text model below and may be blocked by balance limits.")
+    if selected == "local":
+        st.caption('Local fallback uses faster-whisper. Install with: pip install -e ".[local-stt]".')
     ai = ui.ai()
     if ai.online:
-        source = ai.key_source or "configuration"
-        st.success(f"OpenRouter key loaded from {source}.")
-        if source == "browser session":
-            a, b = st.columns([3, 1])
-            a.caption("Key is held for this browser session only.")
-            b.button("Forget the key", key="ai_forget_key", on_click=lambda: st.session_state.pop("openrouter_key", None))
+        st.success(f"Boson API key loaded from {ai.key_source or 'server configuration'}. Model: higgs-realtime.")
     else:
-        st.caption("Preferred setup: put the key in config/local.yaml (copy config/local.example.yaml), or set OPENROUTER_API_KEY.")
-        # Kept as a convenience fallback; not required when the local YAML config has a key.
-        st.text_input("Temporary OpenRouter API key (this browser session only)", key="ai_key_input",
-                      type="password", placeholder="sk-or-…", on_change=_store_key,
-                      help="Create a key at openrouter.ai/keys. A local config file is the easiest persistent setup.")
-        st.info(ai.why_offline())
-    settings = ai.settings
+        st.warning("Boson AI is offline. Add BOSON_API_KEY to the server environment (Render → your service → Environment), then redeploy.")
+        st.caption(ai.why_offline() or "")
     for key, task in TASKS.items():
-        cur = settings.get(key)
+        cur = ai.settings.get(key)
         with st.container(border=True):
             st.markdown(f"**{task.title}**  \n{task.what}")
-            a, b, c = st.columns([3, 1.3, 1])
-            model = a.text_input("Model", value=cur["model"], key=f"ai_model_{key}_{cur['model']}",
-                                 help="Starting points: " + ", ".join(task.suggestions))
-            temp = b.number_input("Temperature", min_value=0.0, max_value=2.0, value=float(cur["temperature"]),
-                                  step=0.1, key=f"ai_temp_{key}_{cur['temperature']}",
-                                  help="0 = the same answer every time; higher = more varied wording.")
-            c.write("")
-            c.button("Default", key=f"ai_reset_{key}", on_click=settings.reset, args=(key,),
-                     disabled=not settings.has_saved(key), help=f"Back to {task.default_model} (or the environment).")
-            st.caption(f"Now: {cur['model']} · from {cur['source']}")
-            new_model = model.strip() if model.strip() != cur["model"] else None      # save only what changed
+            st.caption(f"Model: higgs-realtime · settings source: {cur['source']}")
+            a, b = st.columns([2, 1])
+            temp = a.number_input("Temperature", min_value=0.0, max_value=2.0,
+                                  value=float(cur["temperature"]), step=0.1,
+                                  key=f"boson_temp_{key}_{cur['temperature']}",
+                                  help="Lower values are more consistent; higher values allow more variation.")
+            b.write("")
+            b.button("Default", key=f"boson_reset_{key}", on_click=ai.settings.reset, args=(key,),
+                     disabled=not ai.settings.has_saved(key))
             new_temp = float(temp) if abs(float(temp) - cur["temperature"]) > 1e-9 else None
-            if new_model is not None or new_temp is not None:
+            if new_temp is not None:
                 try:
-                    settings.update(key, model=new_model, temperature=new_temp)
-                    st.session_state.setdefault("toasts", []).append(f"{task.title}: {model.strip() or 'default'}")
+                    ai.settings.update(key, temperature=new_temp)
+                    st.session_state.setdefault("toasts", []).append(f"{task.title}: temperature saved.")
                     st.rerun()
                 except ValidationError as e:
                     st.error(str(e))
-    model_list(ai)
-
-
-def _store_key() -> None:
-    key = (st.session_state.get("ai_key_input") or "").strip()
-    if key:
-        st.session_state["openrouter_key"] = key
-
-
-def model_list(ai) -> None:
-    if not ai.online:
-        return
-    if st.button("Load the model list from OpenRouter", key="ai_load_models"):
-        try:
-            st.session_state["or_models"] = ai.client.models()
-        except LLMError as e:
-            st.error(f"Could not load the model list: {e}")
-    models = st.session_state.get("or_models")
-    if models:
-        import pandas as pd
-        q = st.text_input("Filter models", key="ai_model_filter", placeholder="e.g. gemini, transcribe, llama")
-        kind = st.radio("Show", ["all", "function calling (for chat)", "audio input (for speech to text)"],
-                        horizontal=True, key="ai_model_kind")
-        rows = [m for m in models if q.lower() in (m["id"] + " " + m["name"]).lower()
-                and (kind == "all" or (m["tools"] if kind.startswith("function") else "audio" in m["inputs"]
-                                       or "transcribe" in m["id"] or "whisper" in m["id"]))]
-        st.dataframe(pd.DataFrame([{"Model id": m["id"], "Name": m["name"], "$ per M input tokens": m["prompt_usd_per_mtok"],
-                                    "$ per M output tokens": m["completion_usd_per_mtok"], "Context": m["context"],
-                                    "Inputs": ", ".join(m["inputs"]), "Tools": "yes" if m["tools"] else ""}
-                                   for m in rows[:300]]), hide_index=True)
-        shown = min(300, len(rows))
-        st.caption(f"Showing {shown} of {len(rows)} matching models ({len(models)} catalog entries). Copy an id "
-                   "into a task above or into the Model lab.")

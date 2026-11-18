@@ -530,3 +530,66 @@ input[type="range"].moving::-moz-range-thumb { box-shadow: 0 0 0 6px var(--accen
   .legend { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+
+/* Runner database filters */
+.runner-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0 14px; }
+.runner-filters label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; }
+.runner-filters select { width: 100%; min-width: 0; }
+@media (max-width: 420px) { .runner-filters { grid-template-columns: 1fr; } }
+
+/* reasoning under a change, and the suggested next step */
+.fcard .why { margin: 4px 12px 8px; font-size: 12.5px; color: var(--ink-2); }
+.fcard .why summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+.fcard .why ol { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 2px; }
+.fcard .thinking { margin: 6px 12px 4px; padding: 8px 10px; border-left: 3px solid var(--accent, #3b82f6); background: color-mix(in srgb, var(--accent, #3b82f6) 7%, transparent); border-radius: 6px; font-size: 12.5px; color: var(--ink-2); }
+.fcard .thinking summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+.fcard .thinking ol { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 3px; }
+.claims { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
+.claims li { padding: 6px 8px; border: 1px solid var(--line, rgba(127,127,127,.25)); border-radius: 6px; font-size: 12.5px; }
+.claims .claim-top { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.claims q { display: block; margin-top: 3px; color: var(--ink-2); font-style: italic; }
+.next-step { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 12.5px; color: var(--ink-2); padding: 2px 0 6px; }
+.next-step .next-lbl { font-weight: 600; color: var(--accent-ink); }
+.next-step .next-why { flex-basis: 100%; }
+/* The feed is a flex column with a fixed height: without this, a long conversation squashed each change
+   card (which clips its overflow) down to a thin line. */
+.feed > li { flex-shrink: 0; }
+
+/* your session: the paper's measures */
+.session-analysis { display: grid; gap: 14px; padding: 4px 2px; }
+.sa-sec h3 { margin: 0 0 4px; font-size: 13px; font-weight: 650; color: var(--ink); }
+.sa-sec p { margin: 0; font-size: 13px; line-height: 1.45; color: var(--ink-2); }
+.sa-sec.sa-off h3 { color: var(--muted); }
+.sa-line { width: 100%; max-width: 560px; height: auto; margin-top: 8px; overflow: visible; }
+.sa-axis { stroke: var(--line); stroke-width: 1; }
+.sa-name { font-size: 11px; fill: var(--muted); }
+.sa-val { font-size: 11px; fill: var(--ink-2); font-family: var(--mono, ui-monospace, monospace); }
+.sa-move { stroke-width: 3; stroke-linecap: round; opacity: .55; }
+.sa-move.model, .sa-to.model { stroke: var(--accent); fill: var(--accent); }
+.sa-move.coach, .sa-to.coach { stroke: #c2410c; fill: #c2410c; }
+.sa-from { fill: var(--surface); stroke-width: 2; }
+.sa-from.model { stroke: var(--accent); }
+.sa-from.coach { stroke: #c2410c; }
+.sa-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.sa-bars { display: grid; gap: 6px; margin-top: 8px; max-width: 560px; }
+.sa-bar { display: grid; grid-template-columns: 140px 1fr 80px; align-items: center; gap: 8px; font-size: 12.5px; }
+.sa-bar-track { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.sa-bar-fill { display: block; height: 100%; background: var(--muted); border-radius: 4px; }
+.sa-bar.best .sa-bar-fill { background: var(--accent); }
+.sa-bar.best .sa-bar-name { font-weight: 650; color: var(--ink); }
+.sa-bar-val { text-align: right; color: var(--ink-2); }
+@media (max-width: 520px) { .sa-bar { grid-template-columns: 96px 1fr 70px; } }
+
+/* weigh it: the case for and against a change, and the second opinion */
+.consider { margin: 4px 12px 8px; font-size: 12.5px; }
+.consider > b { display: block; font-weight: 600; color: var(--ink); margin-bottom: 2px; }
+.consider ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+.consider li { display: grid; grid-template-columns: 74px 1fr; gap: 6px; color: var(--ink-2); line-height: 1.4; }
+.consider .c-tag { font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .03em; }
+.consider .c-for .c-tag { color: var(--accent); }
+.consider .c-against .c-tag { color: #b45309; }
+.consider .c-check .c-tag { color: var(--muted); }
+.opinion { padding-top: 8px; }
+.opinion .op-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 0 12px; }
+.opinion .op-verdict { margin: 4px 12px 6px; font-size: 13px; color: var(--ink); }

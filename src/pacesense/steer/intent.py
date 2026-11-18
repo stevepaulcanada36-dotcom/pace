@@ -287,7 +287,7 @@ def _explicit_sets(clause: str, refs: list[_Ref], taken: list[tuple[int, int]]) 
         taken.append(m.span())
         before = [r for r in refs if r.end <= m.start()]
         target = before[-1] if before else (refs[0] if refs else None)
-        out.append((target, round(v, 1), m.group(0).strip(), m.start()))
+        out.append((target, round(v, 2), m.group(0).strip(), m.start()))
     return out
 
 

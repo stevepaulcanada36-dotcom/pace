@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from ..assistant.chat import Assistant
+from ..assistant.chat import Assistant, AssistantError
 from ..assistant.tools import AssistantTools
 from ..cbr import holdout_best
 from ..coach import CoachService
@@ -41,12 +41,16 @@ class HudSession:
     runner_id: str
     holdout: bool = False
     ai: object | None = None            # AIService (offline unless a key is configured)
-    ai_reader: bool = False             # let the AI read paraphrases for the sliders (checked by code)
+    ai_reader: bool = True              # use validated AI interpretation for natural-language race steering
     truth_s: float | None = field(init=False, default=None)
     truth_label: str = field(init=False, default="")
     revealed: bool = field(init=False, default=False)
     reactions: list[dict] = field(init=False, default_factory=list)
     history: list[dict] = field(init=False, default_factory=list)
+    assistant_context: str = field(init=False, default="")
+    reply_style: str = field(init=False, default="normal")     # brief | normal | full, from the voice style
+    tool_turns: list = field(init=False, default_factory=list)
+    tool_actions: list = field(init=False, default_factory=list)
     source_runner: str = field(init=False, default="")
 
     def __post_init__(self) -> None:
@@ -66,14 +70,38 @@ class HudSession:
         self._per_race = self.coach.model.per_race(self.coach.runner(rid), self.coach.runner(rid).recent(5))
 
     # ---- assistant ----------------------------------------------------------------------------
-    def ask(self, question: str) -> tuple[str, list[dict]]:
+    def ask(self, question: str, source: str = "typed") -> tuple[str, list[dict]]:
         from ..assistant.offline import OfflineModel
         model = self.ai.chat_model() if self.ai is not None else OfflineModel()
-        tools = AssistantTools(self.coach, plan=lambda: self.plan)
-        ans = Assistant(model, tools).ask(question, self.history)
-        self.history += [{"role": "user", "content": question}, {"role": "assistant", "content": ans.text}]
+        online = self.ai is not None and getattr(self.ai, "online", False)
+        # Only the hosted model is given the functions that change this session; they run through the
+        # steering engine, and the turns they produce are picked up by the caller as `tool_turns`.
+        tools = AssistantTools(self.coach, plan=lambda: self.plan, session=self if online else None, source=source)
+        self.tool_turns = tools.turns
+        self.tool_actions = tools.actions
+        try:
+            ans = Assistant(model, tools).ask(question, self.history, self.assistant_context)
+        except AssistantError:
+            # A configured key must not turn a temporary provider outage into an HTTP 500.
+            # Fall back to the deterministic local helper for this turn only; never
+            # pretend that Boson answered or silently change race weights.
+            if self.ai is None or not getattr(self.ai, "online", False):
+                raise
+            ans = Assistant(OfflineModel(), tools).ask(question, self.history, self.assistant_context)
+            ans.text = "The AI service is temporarily unavailable, so I used PaceSense's local fallback. " + ans.text
+        self.remember_turn(question, ans.text)
         steps = [{"function": s.name, "arguments": s.arguments} for s in ans.steps]
         return ans.text, steps
+
+    def remember_turn(self, question: str, answer: str) -> None:
+        """Keep every coach turn, including actions and adaptive follow-up questions, in chat context."""
+        if (len(self.history) >= 2 and self.history[-2].get("role") == "user"
+                and self.history[-2].get("content") == question):
+            self.history[-1] = {"role": "assistant", "content": answer}
+        else:
+            self.history.extend([{"role": "user", "content": question},
+                                 {"role": "assistant", "content": answer}])
+        self.history = self.history[-24:]
 
     # ---- accuracy (demo mode) -------------------------------------------------------------------
     def error_pct(self, finish_s: float) -> float | None:
@@ -88,6 +116,7 @@ class HudSession:
         pr = st["prediction"]
         delta = turn["finish_after_s"] - turn["finish_before_s"]
         card = {"n": turn["n"], "said": turn.get("said", turn["text"]), "items": items, "notes": turn["notes"],
+                "target_before_s": turn["finish_before_s"],
                 "target": pr["finish"], "target_delta": None if not items else _signed(delta),
                 "range": [format_time(pr["low_s"]), format_time(pr["high_s"])] if pr["low_s"] else None,
                 "steering": st["steering"], "suggestions": []}
@@ -111,19 +140,31 @@ class HudSession:
         if not items and not turn["notes"]:
             card["suggestions"] += ["2016 was a hot day", "trust the recent races more"]
         card["suggestions"] = list(dict.fromkeys(card["suggestions"]))[:4]
+        from .critique import consider
+        from .guide import reasoning
+        state = self.state()
+        card["reasoning"] = reasoning(card, state.get("races") or [])
+        card["consider"] = consider(card, state, str(turn.get("said") or turn.get("text") or ""))
         return card
 
     def feedback_text(self, turn: dict) -> str:
         c = self.feedback_card(turn)
         if not c["items"]:
             return " ".join(c["notes"]) or "Nothing changed."
-        parts = [f"{i['race']} {i['old']:.1f} → {i['new']:.1f}: {i['verdict_text']}." for i in c["items"]]
+        from .guide import because
+        races = self.state().get("races") or []
+        before = c.get("target_before_s") if len(c["items"]) == 1 else None
+        parts = [f"{i['race']} {i['old']:.1f} → {i['new']:.1f}: {because(i, races, before)}." for i in c["items"]]
         parts.append(f"Target {c['target']} ({c['target_delta']}).")
         acc = c.get("accuracy")
         if acc and self.revealed:
             parts.append(f"That is {acc['text']} ({acc['after_pct']:.2f}% off).")
         elif acc:
             parts.append(f"That moved the prediction {acc['text'].split(' to ')[0]}.")
+        from .critique import spoken
+        counter = spoken(c.get("consider") or [])
+        if counter:
+            parts.append(counter)
         return " ".join(parts)
 
     def react(self, turn_n: int, value: str, note: str = "") -> dict:

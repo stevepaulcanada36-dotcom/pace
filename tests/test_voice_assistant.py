@@ -5,6 +5,7 @@ import unittest
 from pacesense.adaptive import AdaptiveEngine, Event, Persona
 from pacesense.adaptive.answers import is_bare_answer, match_choice
 from pacesense.adaptive.explain import explain
+from pacesense.adaptive.loops import ClarifyLoop, LoopContext, SessionContext
 from pacesense.coach import CoachService
 from pacesense.storage import Repository
 from pacesense.studio import Settings, StudioService
@@ -91,6 +92,12 @@ class ConditionTests(unittest.TestCase):
         self.assertIn("knee injury", msg)
         self.assertIn("training really well", msg)
 
+    def test_trial_run_injury_is_not_misassigned_to_a_marathon(self):
+        ctx = LoopContext(Persona(), {}, {}, SessionContext(
+            state={"races": [{"event": "Amsterdam", "year": 2016}]}, condition="unknown"))
+        out = ClarifyLoop().observe(utter("She did a trial run in 2026 and had a leg injury"), ctx)
+        self.assertEqual(out, [])
+
     def test_switching_condition_mid_session(self):
         e, r = self.engine("known")
         r = e.set_condition("unknown")
@@ -150,7 +157,7 @@ class VoicePersonaTests(unittest.TestCase):
 
     def test_explanations_use_the_session_numbers(self):
         self.assertIn("18 minutes slower", explain("race", STATE, 1))
-        self.assertIn("middle 60 percent", explain("range", STATE))
+        self.assertIn("20th to 80th percentiles", explain("range", STATE))
 
 
 class VoiceApiTests(unittest.TestCase):

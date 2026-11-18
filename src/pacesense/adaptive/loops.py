@@ -43,6 +43,36 @@ CUE_RE = re.compile(r"\b(hot|heat|injur\w*|sick|ill|flu|covid|wind\w*|rain\w*|co
                     r"representative|typical|fun run|dnf)\b", re.IGNORECASE)
 
 
+# The coach is describing the runner as they are now, not one of the past races on screen.
+NOW_RE = re.compile(
+    r"\b(right now|currently|at the moment|at present|these days|this (?:week|month|morning)|last (?:week|night)|"
+    r"yesterday|today|tonight|recently|lately|just now|"
+    r"(?:a|an|one|two|three|four|five|six|seven|a few|a couple of|couple of|few|\d+)\s+(?:days?|weeks?)\s+"
+    r"(?:ago|back|before)|since (?:last|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|"
+    r"(?:is|he's|she's|he is|she is|they're|they are)\s+(?:now\s+|still\s+|currently\s+)?"
+    r"(?:injured|sick|ill|carrying|recovering|struggling))\b", re.IGNORECASE)
+ASKING_RE = re.compile(
+    r"^\s*(?:so\s+|and\s+|but\s+)*(?:what|which|why|how|when|who|where|is it|is that|are you|does|did|do you|"
+    r"tell me|explain)\b|\?\s*$|\bwhat happened\b|\bi (?:just )?(?:want|need) to know\b", re.IGNORECASE)
+# An answer to "Which race was that?" meaning: none, it is not about a race.
+NOT_A_RACE_RE = re.compile(
+    r"\b(?:not|n't|never)\b.{0,40}\b(?:during|in|at|on|about)\s+(?:a|the|any|that|those|these)?\s*(?:race|races|marathon)|"
+    r"\bnone\s+of\s+(?:them|those|these|the\s+races)|\bnot\s+a\s+race\b|\bno\s+race\b|"
+    r"\boutside\s+(?:of\s+)?(?:a\s+|the\s+)?rac", re.IGNORECASE)
+CURRENT_NOTE = ("Noted as how the runner is now, not as one of the past races. The model only sees past "
+                "races, so the target does not include it. Tell me your own estimate, for example "
+                "“I think the finish will be 4:55”, and I'll track it beside the model.")
+
+
+def remember_note(ctx: LoopContext, ev: Event) -> None:
+    """Keep what the coach said about this runner, so later answers in the conversation can use it."""
+    runner = (ctx.session.state.get("session") or {}).get("source_runner") or "runner"
+    notes = ctx.profile.setdefault("runner_notes", {}).setdefault(runner, [])
+    if ev.text and not any(n.get("text") == ev.text for n in notes):
+        notes.append({"t": ev.t, "text": ev.text[:200]})
+        del notes[:-20]
+
+
 def cue_category(cue: str) -> str:
     c = cue.lower()
     for cat, keys in CUE_CATEGORIES.items():
@@ -72,6 +102,9 @@ class SessionContext:
     voice_style: dict = field(default_factory=dict)
     knowledge_noted: bool = False
     suggest_done: bool = False
+    voice_want: str = ""                                    # the preset the last turns pointed to...
+    voice_want_n: int = 0                                   # ...and for how many turns in a row
+    clarify_asked: set = field(default_factory=set)         # cue categories Clarify already asked about
 
 
 @dataclass
@@ -124,9 +157,9 @@ class EvidenceLoop(FeedbackLoop):
             return []
         a = bad[0]
         fam = ctx.persona.value("familiarity")
-        hint = (" You know this runner well, so it may well be right; it just isn't in the data."
-                if fam >= 0.7 else " Say what you know that the times don't show, or undo it.")
-        return [self.adapt("prompt", f"{a['race']}: {a.get('evidence', 'her own times disagree with this change.')}{hint}",
+        hint = (" You know this runner well, so it may be right; it just isn't in the data."
+                if fam >= 0.7 else " Keep it, or undo?")
+        return [self.adapt("prompt", f"{a.get('evidence') or 'The runner’s own times disagree with this change.'}{hint}",
                            "a change went against the runner's own data",
                            choices=[{"label": "Keep it: I know something the data doesn't", "action": "keep",
                                      "turn": ev.data.get("turn"), "yes": True},
@@ -151,7 +184,23 @@ class ClarifyLoop(FeedbackLoop):
         races = ctx.session.state.get("races") or []
         if not m or not races:
             return []
+        # A cue explicitly attached to a trial/training run or relay is not ambiguous marathon history.
+        # Let the conversation assistant discuss it as context instead of asking which old marathon it was.
+        if re.search(r"\b(trial run|training run|training session|relay|time trial|track session|parkrun)\b",
+                     ev.text or "", re.IGNORECASE):
+            return []
+        if NOW_RE.search(ev.text or ""):
+            # "He hurt his back two days ago" is about today. Asking which old marathon it was would be wrong.
+            ctx.session.clarify_asked.add(cue_category(m.group(0)))
+            remember_note(ctx, ev)
+            return [self.adapt("insight", CURRENT_NOTE, "you described the runner as they are now")]
+        if ASKING_RE.search(ev.text or ""):
+            return []                                        # a question is answered, not turned into a quiz
         cue = m.group(0)
+        category = cue_category(cue)
+        if category in ctx.session.clarify_asked:
+            return []                                        # asked once already; do not keep asking
+        ctx.session.clarify_asked.add(category)
         choices = [{"label": f"{r['event']} {r['year']}", "say": f"{r['event']} {r['year']}: {ev.text}"} for r in races]
         return [self.adapt("prompt", f'Which race was "{cue}"?', "a cue was heard but no race was named",
                            choices=choices + [{"label": "None of them", "action": "dismiss"}])]
@@ -419,6 +468,8 @@ class KnowledgeLoop(FeedbackLoop):
                 return []
             ctx.session.knowledge_noted = True
             return [self.adapt("insight", "I'll remember that about her for next time.", "runner knowledge")]
+        if NOW_RE.search(ev.text) and "form" not in set(topics_in(ev.text)):
+            return [self.adapt("insight", CURRENT_NOTE, "you described the runner as they are now")]
         races = ctx.session.state.get("races") or []
         topics = set(topics_in(ev.text))
         keep = {"label": "No, just remember it", "action": "dismiss", "no": True}
@@ -479,7 +530,18 @@ class TurnTakingLoop(FeedbackLoop):
         want = self.desired(ctx)
         old = ctx.session.voice_style.get("preset")
         if want == old:
+            ctx.session.voice_want, ctx.session.voice_want_n = "", 0
             return []
+        # One fast or slow sentence is not a change of style. Switch only when three turns in a row point
+        # to the same preset (a preset the coach locked, or the very first one, applies at once).
+        if old is not None and ctx.profile.get("voice_preset") not in self.PRESETS:
+            if ctx.session.voice_want == want:
+                ctx.session.voice_want_n += 1
+            else:
+                ctx.session.voice_want, ctx.session.voice_want_n = want, 1
+            if ctx.session.voice_want_n < 3:
+                return []
+        ctx.session.voice_want, ctx.session.voice_want_n = "", 0
         ctx.session.voice_style = {"preset": want, **self.PRESETS[want]}
         if old is None and want == "balanced":
             return []

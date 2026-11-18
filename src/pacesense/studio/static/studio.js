@@ -108,7 +108,13 @@
 
   // ---------------------------------------------------------------- session lifecycle
   async function openRunner(runnerId = "demo", holdout = null, condition = null) {
+    const explicitCondition = condition != null;
     condition = condition || storage.get("pacesense.condition") || "ask";
+    if (explicitCondition) {
+      storage.set("pacesense.condition", condition);
+      const choice = $(`#cond-choice input[value="${condition}"]`);
+      if (choice) choice.checked = true;
+    }
     setBusy(true);
     try {
       const r = await api("POST", "/sessions", { runner_id: runnerId, holdout, coach_id: coachId(), condition });
@@ -120,7 +126,8 @@
       renderFeedFromTurns(r.state);
       adapt(r.state.adapt, { fresh: true });
       runSim();
-    } catch (e) { toast(e.message, "error"); } finally { setBusy(false); }
+      return true;
+    } catch (e) { toast(e.message, "error"); return false; } finally { setBusy(false); }
   }
 
   async function resume() {
@@ -146,7 +153,7 @@
     const prev = app.st && app.st.races ? app.st.races.map((r) => r.weight) : null;
     app.st = st;
     renderHeader(st); renderKpis(st); renderRaces(st); animateWeights(prev, st);
-    renderPacing(st); renderSimilar(st); renderInsights(st); renderSuggestions();
+    renderPacing(st); renderSimilar(st); renderInsights(st); renderContributions(st); renderSession(st); renderSuggestions();
     $("#undo-btn").disabled = !st.session.can_undo;
     $("#ai-pill").hidden = !st.session.ai;
   }
@@ -447,6 +454,118 @@
     (st.scenarios || []).forEach((x) => sc.append(h("div", { class: "scenario" }, h("small", { text: x.name }), h("b", { text: x.finish }))));
   }
 
+  // ---------------------------------------------------------------- your session (the paper's measures)
+  function renderSession(st) {
+    const box = $("#session-analysis");
+    if (!box) return;
+    clear(box);
+    const a = st.session_analysis;
+    if (!a) return;
+    const section = (title, part, extra) => {
+      const el = h("section", { class: `sa-sec${part && part.available ? "" : " sa-off"}` },
+        h("h3", { text: title }), h("p", { text: (part && part.text) || "" }));
+      if (extra) el.append(extra);
+      box.append(el);
+    };
+    const wv = a.whose_view || {};
+    section(wv.available ? `Whose view · ${wv.label}` : "Whose view", wv, wv.available ? whoseViewChart(wv) : null);
+    const acc = a.accuracy || {};
+    const bars = acc.available ? accuracyBars(acc.rows) : null;
+    section("Accuracy against the hidden race (RQ4)", acc, bars);
+    if (bars) sizeBars(bars, acc.rows);
+    section("Recent races (paper: weights rose with race year)", a.recency);
+    const kn = a.knowledge || {};
+    section("Knowledge you used", kn, kn.available ? h("div", { class: "sa-tags" },
+      kn.categories.map((c) => h("span", { class: "chip neutral", text: `${c.name} ×${c.mentions}` }))) : null);
+    section("Familiarity (RQ2)", a.familiarity);
+    if (a.bias) section("Expertise or expectation?", a.bias);
+    const claims = st.claims || [];
+    const revealed = !!(st.holdout && st.holdout.revealed);
+    section("Your claims and what tested them", {
+      available: claims.length > 0,
+      text: !claims.length ? "Each change you make becomes a claim about the runner. PaceSense keeps them here and tests them when the hidden race is revealed."
+        : revealed ? "Each claim tested on its own: the same session with only that race put back to an equal weight."
+          : "Reveal the hidden race to see which of these calls helped." }, claims.length ? claimList(claims) : null);
+  }
+  /** The coach's claims, newest first, each with what tested it (the runner's own times, or the hidden race). */
+  function claimList(claims) {
+    const cls = { helped: "supported", backed: "supported", hurt: "against_data", questioned: "against_data", knowledge: "your_knowledge", neutral: "neutral", undone: "neutral" };
+    return h("ul", { class: "claims" }, claims.slice().reverse().map((c) => h("li", null,
+      h("div", { class: "claim-top" }, h("b", { text: c.race }),
+        h("span", { class: "wchange", text: `${c.direction} · ${c.old.toFixed(2)} → ${c.new.toFixed(2)}` }),
+        h("span", { class: `chip ${(VERDICT[cls[c.status]] || ["neutral"])[0]}`,
+          text: c.effect_pct != null && (c.status === "helped" || c.status === "hurt") ? `${c.status_text} (${Math.abs(c.effect_pct).toFixed(2)} pts)` : c.status_text })),
+      c.cue ? h("q", { text: c.cue }) : "")));
+  }
+  /** The four acceptance cases as positions on one time line: where you and the model started and ended. */
+  function whoseViewChart(wv) {
+    const p = wv.points, W = 520, H = 96, m = { l: 14, r: 14 };
+    const vals = [p.model_initial_s, p.model_now_s, p.coach_first_s, p.coach_now_s];
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    const pad = Math.max(60, (hi - lo) * 0.15); lo -= pad; hi += pad;
+    const x = (v) => m.l + ((v - lo) / (hi - lo)) * (W - m.l - m.r);
+    const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, class: "sa-line", role: "img",
+      "aria-label": `Model ${fmt.time(p.model_initial_s, false)} to ${fmt.time(p.model_now_s, false)}; you ${fmt.time(p.coach_first_s, false)} to ${fmt.time(p.coach_now_s, false)}` });
+    const row = (y, from, to, cls, name) => {
+      svg.append(s("line", { x1: m.l, x2: W - m.r, y1: y, y2: y, class: "sa-axis" }));
+      svg.append(s("text", { x: m.l, y: y - 12, class: "sa-name", text: name }));
+      if (Math.abs(to - from) > 1) svg.append(s("line", { x1: x(from), x2: x(to), y1: y, y2: y, class: `sa-move ${cls}` }));
+      svg.append(s("circle", { cx: x(from), cy: y, r: 4.5, class: `sa-from ${cls}` }));
+      svg.append(s("circle", { cx: x(to), cy: y, r: 6, class: `sa-to ${cls}` }));
+      svg.append(s("text", { x: x(to), y: y + 20, "text-anchor": "middle", class: "sa-val", text: fmt.time(to, false) }));
+    };
+    row(30, p.model_initial_s, p.model_now_s, "model", "Model: ○ equal weights → ● now");
+    row(72, p.coach_first_s, p.coach_now_s, "coach", "You: ○ first estimate → ● now");
+    return svg;
+  }
+  function accuracyBars(rows) {
+    const best = Math.min(...rows.map((r) => r.pct ?? Infinity));
+    return h("div", { class: "sa-bars" }, rows.map((r) => h("div", { class: `sa-bar${r.pct === best ? " best" : ""}` },
+      h("span", { class: "sa-bar-name", text: r.name }),
+      h("span", { class: "sa-bar-track" }, Object.assign(h("span", { class: "sa-bar-fill" }), {})),
+      h("span", { class: "sa-bar-val mono", text: r.pct == null ? "–" : `${r.pct.toFixed(2)}% off` }))));
+  }
+  /** Widths are set through the style object: the page's content security policy blocks style attributes. */
+  function sizeBars(box, rows) {
+    const max = Math.max(1e-9, ...rows.map((r) => r.pct || 0));
+    box.querySelectorAll(".sa-bar-fill").forEach((el, i) => { el.style.width = `${Math.max(2, (100 * (rows[i].pct || 0)) / max)}%`; });
+  }
+
+  // ---------------------------------------------------------------- race contribution chart
+  function renderContributions(st) {
+    const box = clear($("#contribution-chart"));
+    const rows = (st.races || []).map((r) => ({ race: r, pull: Number(r.influence && r.influence.pull_s || 0) }))
+      .filter((x) => Number.isFinite(x.pull));
+    if (!rows.length) { box.append(h("p", { class: "muted", text: "No race-influence data is available for this prediction." })); return; }
+    rows.sort((a, b) => Math.abs(b.pull) - Math.abs(a.pull));
+    const W = chartWidth(box), narrow = W < 520, rowH = 38;
+    const m = { l: narrow ? 112 : 174, r: 28, t: 18, b: 34 }, H = m.t + rows.length * rowH + m.b;
+    const max = Math.max(30, ...rows.map((x) => Math.abs(x.pull)));
+    const half = (W - m.l - m.r) / 2, mid = m.l + half;
+    const x = (v) => mid + (v / max) * half;
+    const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img",
+      "aria-label": "Race-by-race influence on the predicted finish relative to equal weights" });
+    const grid = s("g", { class: "grid" }), axis = s("g", { class: "axis" });
+    [-max, -max / 2, 0, max / 2, max].forEach((v) => {
+      grid.append(s("line", { x1: x(v), x2: x(v), y1: m.t - 5, y2: H - m.b, class: v === 0 ? "zero" : "" }));
+      axis.append(s("text", { x: x(v), y: H - m.b + 17, "text-anchor": "middle",
+        text: v === 0 ? "no change" : fmt.signed(v) }));
+    });
+    svg.append(grid, axis);
+    rows.forEach(({ race, pull }, i) => {
+      const cy = m.t + i * rowH + rowH / 2, end = x(pull), start = Math.min(mid, end);
+      const label = `${race.event} ${race.year}`;
+      svg.append(
+        s("text", { x: 0, y: cy + 4, class: "rowlbl", text: label.length > (narrow ? 17 : 25) ? label.slice(0, narrow ? 16 : 24) + "…" : label }),
+        s("rect", { x: start, y: cy - 7, width: Math.max(1, Math.abs(end - mid)), height: 14, rx: 4,
+          fill: pull < 0 ? "var(--good)" : pull > 0 ? "var(--warn)" : "var(--past)", opacity: race.weight === 0 ? 0.35 : 0.85 }),
+        s("text", { x: pull < 0 ? Math.max(m.l, end - 6) : Math.min(W - m.r, end + 6), y: cy + 4,
+          "text-anchor": pull < 0 ? "end" : "start", class: "lbl", text: fmt.signed(pull) })
+      );
+    });
+    box.append(svg);
+  }
+
   // ---------------------------------------------------------------- simulator
   function simParams() {
     return { temp_c: Number($("#sim-temp").value), wind_kmh: Number($("#sim-wind").value),
@@ -559,6 +678,22 @@
         inlineSlider(it)));
     }
     const li = h("li", { class: "fcard" }, items);
+    if (card.thinking && card.thinking.length) {
+      // The model's own chain of reasoning about this turn in the light of the whole session; every number in
+      // it was checked against PaceSense's data before it was shown.
+      li.append(h("details", { class: "thinking", open: "" },
+        h("summary", null, h("span", { text: "How PaceSense reasoned" }), h("small", { class: "muted", text: " · AI, numbers checked against the data" })),
+        h("ol", null, card.thinking.map((line) => h("li", { text: line })))));
+    }
+    if (card.reasoning && card.reasoning.length) {
+      li.append(h("details", Object.assign({ class: "why" }, card.thinking && card.thinking.length ? {} : { open: "" }), h("summary", { text: card.thinking && card.thinking.length ? "The numbers" : "Why" }),
+        h("ol", null, card.reasoning.map((line) => h("li", { text: line })))));
+    }
+    if (card.consider && card.consider.length) {
+      const mark = { for: "For", against: "Against", check: "To check" };
+      li.append(h("div", { class: "consider" }, h("b", { text: "Weigh it" }),
+        h("ul", null, card.consider.map((p) => h("li", { class: `c-${p.kind}` }, h("span", { class: "c-tag", text: mark[p.kind] || p.kind }), h("span", { text: p.text }))))));
+    }
     if (card.notes && card.notes.length) li.append(h("ul", { class: "notes-list" }, card.notes.map((n) => h("li", { text: n }))));
     if (card.accuracy) {
       const a = card.accuracy, cls = a.closer ? "closer" : a.same ? "same" : "further";
@@ -612,13 +747,11 @@
 
   function renderSuggestions(list) {
     const box = clear($("#suggestions"));
-    let items = list && list.length ? list : null;
-    if (!items && app.st) {
-      const slow = app.st.races.find((r) => r.evidence.direction > 0) || app.st.races[0];
-      items = [`${slow.year} was a hot day`, "trust the recent races more", "I think she can run "
-        + fmt.time(app.st.prediction.finish_s - 240, false), "simulate 25 degrees", "what does the likely range mean?"];
-    }
-    (items || []).forEach((t) => box.append(h("button", { type: "button", class: "chip-btn", text: t, onclick: () => send(t, "typed") })));
+    // Change-specific options ("undo") first, then the next steps PaceSense worked out for this session.
+    const extra = (list || []).filter((t) => typeof t === "string" && /^undo$/i.test(t)).map((t) => ({ say: t, why: "Reverse the last change." }));
+    const steps = (app.st && app.st.next_steps) || [];
+    [...extra, ...steps].slice(0, 4).forEach((x) => box.append(h("button", {
+      type: "button", class: "chip-btn", text: x.say, title: x.why, onclick: () => send(x.say, "typed") })));
   }
 
   // ---------------------------------------------------------------- actions
@@ -629,27 +762,61 @@
     return queue;
   }
   /** Everything a turn can bring back: new state (sliders animate), a card or reply, UI actions, adaptations. */
-  function applyTurn(r) {
+  async function applyTurn(r) {
     app.changed = new Set((r.card && r.card.items || []).map((it) => r.state.races.findIndex((x) => `${x.event} ${x.year}` === it.race)));
     render(r.state);
     if (r.choice) feed.append(h("li", { class: "uinote choice-note" }, h("span", { text: `You chose: ${r.choice.label}` })));
     if (r.card && r.card.items.length) addCard(r.card);
-    else if (r.reply) addReply(r.reply);
-    handleActions(r.actions || [], r.simulation);
-    adapt(r.adapt);
-    if (!(r.simulation)) runSim();
+    const voiceAction = !!r.voice_action_pending || !!(r.voice_intent && r.voice_intent.status === "action");
+    const runnerAction = (r.actions || []).some((a) => a.type === "runner");
+    // AI-interpreted action replies are deferred until the browser confirms execution.
+    if (r.reply && !voiceAction && !runnerAction) addReply(r.reply);
+    const outcome = await handleActions(r.actions || [], r.simulation, r);
+    if (!outcome.sessionChanged) adapt(r.adapt);
+    if (voiceAction) {
+      const message = outcome.success
+        ? (outcome.confirmation || "Done.")
+        : (outcome.message || "I couldn't complete that action. Nothing was changed.");
+      addReply(message);
+      if (outcome.success && hooks.speak) hooks.speak(r.next_say ? `${message} ${r.next_say}` : message);
+    } else if (runnerAction) {
+      const message = outcome.success
+        ? (outcome.confirmation || "Runner opened.")
+        : (outcome.message || "I couldn't open that runner. Please choose an existing record from the database.");
+      addReply(message);
+      if (outcome.success && hooks.speak) hooks.speak(message);
+    }
+    if (r.opinion) addOpinion(r.opinion);
+    if (r.next_step) addNext(r.next_step);
+    if (!r.simulation && !outcome.sessionChanged) runSim();
+  }
+  /** A second opinion: verdict, the points on each side, and what would settle it. */
+  function addOpinion(o) {
+    const list = (kind, label, items) => (items && items.length ? items.map((t) => h("li", { class: `c-${kind}` }, h("span", { class: "c-tag", text: label }), h("span", { text: t }))) : []);
+    feed.append(h("li", { class: "fcard opinion" },
+      h("div", { class: "op-head" }, h("b", { text: "Second opinion" }), h("small", { class: "muted", text: o.source === "model" ? "AI analysis, checked against the data" : "from the data" })),
+      h("p", { class: "op-verdict", text: o.verdict }),
+      h("div", { class: "consider" }, h("ul", null, [...list("against", "Against", o.against), ...list("for", "For", o.for), ...list("check", "To settle it", o.settle ? [o.settle] : [])]))));
+    scrollFeed();
+  }
+  /** "Next: say …" with the reason, under the turn. Tapping it sends it. */
+  function addNext(step) {
+    const b = h("button", { type: "button", class: "chip-btn", text: step.say, onclick: () => send(step.say, "typed") });
+    feed.append(h("li", { class: "next-step" }, h("span", { class: "next-lbl", text: "Next" }), b,
+      h("span", { class: "next-why", text: step.why })));
+    scrollFeed();
   }
   async function sendNow(text, source, signals) {
     text = text.trim();
     if (!text || !app.sid) return;
-    if (/^undo$/i.test(text) && !(app.pending)) return undo();
+    if (source === "typed" && /^undo$/i.test(text) && !(app.pending)) return undo();
     addSaid(text, source);
     const typing = h("li", { class: "typing", text: "Checking her data" }); feed.append(typing); scrollFeed();
     setBusy(true);
     try {
       const r = await api("POST", `/sessions/${app.sid}/commands`, { text, source, ...(signals ? { voice: signals } : {}) });
       typing.remove();
-      applyTurn(r);
+      await applyTurn(r);
     } catch (e) {
       typing.remove();
       if (e.status === 404) { toast("That session expired; opening the runner again."); return openRunner("demo"); }
@@ -657,22 +824,104 @@
     } finally { setBusy(false); }
   }
 
-  const PANEL = { races: "#panel-races", prediction: ".kpis", pacing: "#panel-analysis", similar: "#panel-analysis",
-    simulator: "#panel-sim", feedback: "#panel-notes", steering: ".kpi-steer", chat: "#panel-notes", log: "#panel-notes" };
-  function handleActions(actions, sim) {
+  const PANEL = { races: "#panel-races", prediction: ".kpis", pacing: "#panel-analysis", similar: "#panel-analysis", contributions: "#panel-analysis", analysis: "#panel-analysis", session: "#panel-analysis",
+    simulator: "#panel-sim", feedback: "#loops-bar", steering: ".kpi-steer", chat: "#panel-notes" };
+  async function handleActions(actions, sim, result = {}) {
+    const outcome = { sessionChanged: false, success: false, confirmation: "", message: "" };
     for (const a of actions) {
-      if (a.type === "simulate") { setSim(a); if (sim) { app.sim = sim; renderSim(sim); } focusPanel("#panel-sim"); }
-      else if ((a.type === "focus" || a.type === "open") && (PANEL[a.panel] || a.panel === "similar")) {
-        if (a.panel === "similar") selectTab("tab-similar"); else if (a.panel === "pacing") selectTab("tab-pacing");
-        focusPanel(PANEL[a.panel]);
-      } else if (a.type === "runner") openRunner(a.id, a.id === "demo" ? null : $("#holdout-check").checked);
-      else if (a.type === "reveal") focusPanel("#kpi-acc");
+      if (a.type === "simulate") {
+        setSim(a);
+        if (sim) { app.sim = sim; renderSim(sim); }
+        const focused = focusPanel("#panel-sim");
+        outcome.success = !!sim && focused;
+        outcome.confirmation = `Updated the race-day simulation to ${a.temp_c} °C, ${a.wind_kmh} km/h headwind, ${a.profile.replace("_", " ")}.`;
+        if (!outcome.success) outcome.message = "I couldn't display the simulation result, so I haven't confirmed the change.";
+      } else if ((a.type === "focus" || a.type === "open") && (PANEL[a.panel] || a.panel === "similar" || a.panel === "log" || a.panel === "record")) {
+        if (a.panel === "log" || a.panel === "record") {
+          const loaded = hooks.profile ? await hooks.profile() : false;
+          const target = $(a.panel === "log" ? "#why-log" : "#record");
+          outcome.success = !!loaded && !!target;
+          if (target) target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          outcome.confirmation = a.panel === "log"
+            ? "Opened the change log in the coach profile."
+            : "Opened the track record in the coach profile.";
+        } else {
+          if (a.panel === "similar") selectTab("tab-similar");
+          else if (a.panel === "pacing") selectTab("tab-pacing");
+          else if (a.panel === "contributions") selectTab("tab-contributions");
+          else if (a.panel === "analysis") selectTab("tab-insights");
+          else if (a.panel === "session") selectTab("tab-session");
+          outcome.success = focusPanel(PANEL[a.panel]);
+          // Say the answer that came with the panel ("The prediction for her next marathon is …"), not only
+          // that it opened.
+          outcome.confirmation = (result.reply && result.reply.trim()) || `Opened the ${a.panel} panel.`;
+        }
+      } else if (a.type === "close" && (PANEL[a.panel] || a.panel === "log" || a.panel === "record")) {
+        if (a.panel === "log" || a.panel === "record") {
+          const dialog = $("#profile-dialog");
+          outcome.success = !!(dialog && dialog.open);
+          if (outcome.success) dialog.close();
+          else outcome.message = "The coach profile is not open, so I couldn't close that section.";
+        } else {
+          const el = $(PANEL[a.panel]);
+          outcome.success = !!el;
+          if (el) el.hidden = true;
+        }
+        outcome.confirmation = `Closed the ${a.panel} panel.`;
+      } else if (a.type === "runner") {
+        outcome.sessionChanged = await openRunner(
+          a.id, a.id === "demo" ? null : $("#holdout-check").checked, a.condition || null,
+        );
+        outcome.success = outcome.sessionChanged;
+        outcome.confirmation = a.name ? `Opened ${a.name}.` : "Runner opened.";
+        outcome.message = "I couldn't open that runner. Please choose an existing record from the database.";
+      } else if (a.type === "runner_database") {
+        const loaded = await openRunnerDatabase(a.query || "", { gender: a.gender || "", min_races: a.min_races || 0 });
+        outcome.success = !!(loaded && loaded.ok);
+        outcome.confirmation = loaded && loaded.count === 0
+          ? "Opened the runner database. No existing runners matched those search filters."
+          : "Opened the runner database with the requested search and filters.";
+        outcome.message = loaded && loaded.error ? `I couldn't search the runner database: ${loaded.error}` : "I couldn't load the runner database.";
+      } else if (a.type === "condition") {
+        outcome.success = !!(result.adapt && result.adapt.ui && result.adapt.ui.condition === a.value);
+        if (outcome.success) {
+          storage.set("pacesense.condition", a.value);
+          const choice = $(`#cond-choice input[value="${a.value}"]`);
+          if (choice) choice.checked = true;
+          outcome.confirmation = a.value === "unknown"
+            ? "Marked this as a runner you are unfamiliar with. The runner remains in the database."
+            : "Marked this as a runner you know personally.";
+        } else {
+          outcome.message = "I couldn't confirm the familiarity change, so I haven't said it was applied.";
+        }
+      } else if (a.type === "reveal") {
+        outcome.success = !!(result.state && result.state.holdout && result.state.holdout.truth_s != null);
+        if (outcome.success) focusPanel("#kpi-acc");
+        outcome.confirmation = (result.reply && result.reply.trim()) || "Revealed the hidden demo result.";
+        outcome.message = "There is no hidden demo result to reveal in this session.";
+      } else if (a.type === "refresh") {
+        const turn = result.turn || {};
+        const changed = turn.source === "undo" || (turn.applied && turn.applied.length)
+          || turn.estimate_s != null;
+        outcome.success = !!changed;
+        // Say what changed and why (the server's reasoning), not a fixed "Updated the race weights."
+        outcome.confirmation = (result.reply && result.reply.trim()) || (turn.source === "undo" ? "Undid the last change."
+          : (turn.applied && turn.applied.length ? "Updated the race weights." : "Saved the coach's estimate."));
+        outcome.message = result.reply || "I couldn't confirm a session change. Please clarify which race or adjustment you meant.";
+      } else {
+        outcome.success = false;
+        outcome.message = "That PaceSense action could not be completed.";
+      }
     }
+    if (!actions.length) outcome.message = "I couldn't map that request to an executable PaceSense action.";
+    return outcome;
   }
   function focusPanel(sel) {
-    const el = $(sel); if (!el) return;
+    const el = $(sel); if (!el) return false;
+    el.hidden = false;
     el.scrollIntoView({ behavior: "smooth", block: "nearest" });
     el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+    return true;
   }
 
   async function setWeight(i, w) {
@@ -682,6 +931,7 @@
       app.changed = new Set([i]);
       render(r.state);
       if (it) { addSaid(`${it.race}: ${it.old.toFixed(2)} → ${it.new.toFixed(2)}`, "manual"); addCard(r.card); }
+      if (it && r.reply) addReply(r.reply);
       adapt(r.adapt);
       runSim();
     } catch (e) { toast(e.message, "error"); render(app.st); }
@@ -706,6 +956,7 @@
       const ho = st.holdout;
       addReply(`Her real ${ho.label} result was ${fmt.time(ho.truth_s)}. The prediction is ${ho.error_pct.toFixed(2)}% off; `
         + `with equal weights it was ${ho.equal_weights_error_pct.toFixed(2)}% off.`);
+      if (st.loop_reply) addReply(st.loop_reply);
       adapt(st.adapt);
     } catch (e) { toast(e.message, "error"); }
   }
@@ -732,57 +983,250 @@
   const FILLER_RE = /\b(um+|uh+|erm*|hmm+)\b/gi;
   const wordsOf = (t) => t.toLowerCase().replace(/[^a-z0-9' ]+/g, " ").split(/\s+/).filter(Boolean);
   /** PaceSense hearing its own voice through the speakers: most words are in what it is saying (or just said). */
+  // The microphone hears PaceSense's own voice through the speakers. While it is speaking, and for a
+  // moment afterwards, recognised words are compared with what it is saying; the recogniser garbles an
+  // echo, so half the words matching is enough to call it one.
+  const ECHO_TAIL_MS = 1500, STOP_RE = /^(?:stop|wait|pause|hold on|hang on|one (?:second|moment)|pacesense|excuse me)\b/i;
+  function echoShare(t) {
+    const tts = hooks.tts();
+    if (!tts.text) return 0;
+    const spoken = new Set(wordsOf(tts.text)), w = wordsOf(t);
+    return w.length ? w.filter((x) => spoken.has(x)).length / w.length : 0;
+  }
   function isEcho(t) {
     const tts = hooks.tts();
-    if (!tts.text || (!tts.speaking && performance.now() - tts.endedAt > 1500)) return false;
-    const spoken = new Set(wordsOf(tts.text)), w = wordsOf(t);
-    return w.length > 0 && w.filter((x) => spoken.has(x)).length / w.length >= 0.7;
+    if (!tts.text || (!tts.speaking && performance.now() - tts.endedAt > ECHO_TAIL_MS)) return false;
+    return wordsOf(t).length > 0 && echoShare(t) >= 0.5;
   }
-  function resetUtterance() { Object.assign(voice, { buf: [], conf: [], t0: 0, barge: false }); clearTimeout(voice.timer); }
+  /** While PaceSense is speaking, only a deliberate interruption counts: "stop" or "wait", or a finished
+   *  phrase of three or more words that is not its own speech. A stray sound or a half-heard word no longer
+   *  cuts the reply off. */
+  function isInterruption(t, isFinal) {
+    if (STOP_RE.test(t.trim()) && echoShare(t) < 0.5) return true;
+    return isFinal && wordsOf(t).length >= 3 && echoShare(t) < 0.34;
+  }
+  function resetUtterance() { Object.assign(voice, { buf: [], conf: [], t0: 0, barge: false, holds: 0 }); clearTimeout(voice.timer); }
+  // A pause is not always the end of a turn. If the words so far stop on "but", "and", "I've seen", or the
+  // coach said "wait, let me finish", keep the turn open and add what comes next to the same sentence.
+  const UNFINISHED_RE = /(?:\b(?:but|and|so|or|because|cause|like|the|a|an|of|to|in|on|at|with|for|from|that|which|who|was|is|are|were|i've|i'm|have|has|had|seen|than|when|if|my|maybe|um|uh|well|wait)|,)[\s.…]*$/i;
+  const HOLD_RE = /\b(?:wait|hold on|hang on|let me (?:complete|finish|think|say)|one (?:second|moment|sec)|not (?:done|finished))\b/i;
+  const HOLD_MS = 2200, HOLD_LIMIT_MS = 25000;
+  function keepTurnOpen(text) {
+    const asked = HOLD_RE.test(text) && wordsOf(text).length <= 14;
+    if (!(asked || UNFINISHED_RE.test(text))) return false;
+    if ((voice.holds || 0) >= (asked ? 3 : 2) || performance.now() - voice.t0 > HOLD_LIMIT_MS) return false;
+    voice.holds = (voice.holds || 0) + 1;
+    clearTimeout(voice.timer);
+    voice.timer = setTimeout(flushUtterance, HOLD_MS);
+    return true;
+  }
   /** Send what was said once the coach has paused for the turn-taking silence (shorter for brisk coaches). */
   function flushUtterance() {
     const text = voice.buf.join(" ").replace(/\s+/g, " ").trim();
     if (!text) return resetUtterance();
+    if (keepTurnOpen(text)) return;
     const now = performance.now(), dur = Math.max(300, now - voice.t0 - hooks.silenceMs()), n = wordsOf(text).length;
-    const confs = voice.conf.filter((c) => c > 0), ended = hooks.tts().endedAt;
+    const confs = voice.conf.filter((c) => Number.isFinite(c) && c >= 0 && c <= 1), ended = hooks.tts().endedAt;
     const signals = {
-      wpm: Math.round(n / (dur / 60000)), duration_ms: Math.round(dur), barge_in: voice.barge,
+      wpm: Math.min(600, Math.round(n / (Math.max(dur, 250) / 60000))), duration_ms: Math.round(dur), barge_in: voice.barge,
       fillers: (text.match(FILLER_RE) || []).length,
-      confidence: confs.length ? +(confs.reduce((a, b) => a + b, 0) / confs.length).toFixed(2) : undefined,
+      confidence: confs.length ? +Math.min(...confs).toFixed(2) : undefined,
       latency_ms: ended && voice.t0 > ended && voice.t0 - ended < 20000 ? Math.round(voice.t0 - ended) : undefined,
+      ui_state: {
+        temp_c: Number($("#sim-temp").value),
+        wind_kmh: Number($("#sim-wind").value),
+        profile: ($('input[name="profile"]:checked') || {}).value || "on_plan",
+      },
     };
+    const startedAt = voice.t0;
     resetUtterance();
+    // Prefer Boson's transcript of the recorded audio; the browser's text stays as the fallback.
+    const wav = sttReady() ? utteranceWav(startedAt - STT_LEAD_MS) : null;
+    // Tell the server which transcript this is, so a deployment's logs show whether audio capture works.
+    signals.transcriber = wav ? "browser:pending" : `browser:${performance.now() < (cap.pausedUntil || 0) ? "paused" : cap.why || (cap.ctx ? (cap.chunks.length ? "short" : "idle") : "not-started")}`;
+    if (wav) {
+      $("#notes-input").value = text; hooks.transcript(text, false);
+      voice.stt = (voice.stt || Promise.resolve()).then(() => deliverWithBoson(text, signals, wav)).catch(() => deliverUtterance(text, signals));
+      return;
+    }
+    deliverUtterance(text, signals);
+  }
+  /** Apply one finished utterance: hold a low-confidence browser transcript for correction, otherwise send it. */
+  function deliverUtterance(text, signals) {
+    if (signals.confidence != null && signals.confidence < 0.55) {
+      // Do not silently apply a potentially misheard race name or year.
+      // Leave the transcript editable so the coach can correct it before sending.
+      $("#notes-input").value = text;
+      hooks.transcript(text, false);
+      stopVoice(); // pause capture so another recognition event cannot overwrite the editable transcript
+      toast("I may have misheard that. Please correct the transcript, then press Send.", "error");
+      $("#notes-input").focus();
+      return;
+    }
     $("#notes-input").value = "";
     hooks.transcript("", true, text);
     send(text, "voice", signals);
   }
+  // ---- server transcription of the utterance audio (OpenRouter or Boson, whichever the server uses) ----
+  // The microphone is also captured as PCM. When the coach pauses, the audio of that utterance is sent to
+  // the server, which asks Boson to transcribe it. Browser recognition still paces the turn and remains the
+  // fallback: if Boson is slow, unavailable or unsure, the browser's text is used exactly as before.
+  const STT_LEAD_MS = 2000, STT_KEEP_MS = 45000, STT_MAX_S = 30, STT_RATE = 16000, STT_TIMEOUT_MS = 7000, STT_RETRY_MS = 45000;
+  const cap = { ctx: null, node: null, src: null, stream: null, chunks: [], rate: 48000, fails: 0, off: false, why: "" };
+  const serverAi = () => !!(app.st && app.st.session && app.st.session.ai);
+  const sttReady = () => !cap.off && performance.now() >= (cap.pausedUntil || 0) && !!cap.ctx && cap.chunks.length > 0 && serverAi();
+  async function startCapture() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (cap.ctx || cap.off) return;
+    if (!serverAi()) { cap.why = "no-ai"; return; }
+    if (!AC || !navigator.mediaDevices) { cap.why = "unsupported"; return; }
+    if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) { cap.why = "mobile"; return; }   // phones cannot share the microphone with recognition
+    cap.why = "";
+    try {
+      cap.stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+      if (!voice.on) { cap.stream.getTracks().forEach((t) => t.stop()); cap.stream = null; return; }
+      cap.ctx = new AC(); cap.rate = cap.ctx.sampleRate; cap.chunks = [];
+      if (cap.ctx.state === "suspended") cap.ctx.resume().catch(() => {});   // some browsers start it paused
+      cap.src = cap.ctx.createMediaStreamSource(cap.stream);
+      cap.node = cap.ctx.createScriptProcessor(4096, 1, 1);
+      cap.node.onaudioprocess = (e) => {
+        const now = performance.now(), tts = hooks.tts();
+        if (tts.speaking || now - tts.endedAt < 250) return;      // that would be PaceSense's own voice
+        cap.chunks.push({ t: now, data: new Float32Array(e.inputBuffer.getChannelData(0)) });
+        while (cap.chunks.length && cap.chunks[0].t < now - STT_KEEP_MS) cap.chunks.shift();
+      };
+      const mute = cap.ctx.createGain(); mute.gain.value = 0;              // keep the graph running without playback
+      cap.src.connect(cap.node); cap.node.connect(mute); mute.connect(cap.ctx.destination);
+    } catch (e) { stopCapture(); cap.off = true; cap.why = `denied:${String((e && e.name) || "error").slice(0, 12)}`; }
+  }
+  function stopCapture() {
+    try { if (cap.node) { cap.node.onaudioprocess = null; cap.node.disconnect(); } } catch { /* ignore */ }
+    try { if (cap.src) cap.src.disconnect(); } catch { /* ignore */ }
+    try { if (cap.stream) cap.stream.getTracks().forEach((t) => t.stop()); } catch { /* ignore */ }
+    try { if (cap.ctx) cap.ctx.close(); } catch { /* ignore */ }
+    Object.assign(cap, { ctx: null, node: null, src: null, stream: null, chunks: [] });
+  }
+  /** The captured audio since `fromMs` (performance.now clock) as a 16 kHz mono 16-bit WAV, or null. */
+  function utteranceWav(fromMs) {
+    const parts = cap.chunks.filter((c) => c.t >= fromMs);
+    let total = parts.reduce((n, c) => n + c.data.length, 0);
+    if (total < cap.rate * 0.3) return null;                              // under 0.3 s: nothing worth sending
+    const max = Math.floor(cap.rate * STT_MAX_S);
+    const all = new Float32Array(Math.min(total, max));
+    let skip = total - all.length, at = 0;                                  // keep the most recent audio
+    for (const c of parts) {
+      let d = c.data;
+      if (skip >= d.length) { skip -= d.length; continue; }
+      if (skip) { d = d.subarray(skip); skip = 0; }
+      all.set(d, at); at += d.length;
+    }
+    const step = cap.rate / STT_RATE, n = Math.floor(all.length / step);
+    const view = new DataView(new ArrayBuffer(44 + n * 2));
+    const str = (o, t) => { for (let i = 0; i < t.length; i++) view.setUint8(o + i, t.charCodeAt(i)); };
+    str(0, "RIFF"); view.setUint32(4, 36 + n * 2, true); str(8, "WAVE"); str(12, "fmt ");
+    view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+    view.setUint32(24, STT_RATE, true); view.setUint32(28, STT_RATE * 2, true);
+    view.setUint16(32, 2, true); view.setUint16(34, 16, true); str(36, "data"); view.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) {
+      const a = Math.floor(i * step), b = Math.min(all.length, Math.max(a + 1, Math.floor((i + 1) * step)));
+      let sum = 0; for (let j = a; j < b; j++) sum += all[j];              // average each window: a simple low-pass
+      const v = Math.max(-1, Math.min(1, sum / (b - a)));
+      view.setInt16(44 + i * 2, v < 0 ? v * 0x8000 : v * 0x7fff, true);
+    }
+    return new Blob([view], { type: "audio/wav" });
+  }
+  async function transcribeAudio(wav) {
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), STT_TIMEOUT_MS);
+    try {
+      const res = await fetch(`/api/v1/sessions/${app.sid}/transcribe`, {
+        method: "POST", headers: { "content-type": "audio/wav" }, body: wav, signal: ctl.signal,
+      });
+      return res.ok ? await res.json() : null;
+    } catch { return null; } finally { clearTimeout(timer); }
+  }
+  async function deliverWithBoson(browserText, signals, wav) {
+    const r = await transcribeAudio(wav);
+    const heard = r && r.source && r.source !== "none" ? String(r.text || "").trim() : "";
+    const plausible = heard && wordsOf(heard).length <= wordsOf(browserText).length * 3 + 5;
+    if (plausible) {
+      cap.fails = 0;
+      const s2 = { ...signals, fillers: (heard.match(FILLER_RE) || []).length };
+      delete s2.confidence;                                                 // that score described the browser's text
+      s2.transcriber = String(r.source).slice(0, 24);
+      return deliverUtterance(heard, s2);
+    }
+    if (r && r.available === false) { cap.off = true; cap.why = "no-ai"; }   // no provider key on the server
+    else if (++cap.fails >= 2) {
+      // Two misses in a row (a server that is still waking up, a slow provider): use the browser's text for
+      // a while and then try again, instead of giving up for the rest of the session.
+      cap.fails = 0; cap.why = "server-failed"; cap.pausedUntil = performance.now() + STT_RETRY_MS;
+      if (!cap.told) { cap.told = true; toast("Server transcription is slow to answer, so PaceSense is using the browser's speech recognition for now."); }
+    }
+    if (cap.off) stopCapture();
+    deliverUtterance(browserText, { ...signals, transcriber: `browser:${r ? (r.error ? "server-error" : "empty") : "timeout"}` });
+  }
+
   function startVoice() {
-    const rec = new SR(); voice.rec = rec; voice.on = true; resetUtterance();
-    rec.lang = "en-US"; rec.continuous = true; rec.interimResults = true;
+    if (!SR) { toast("Speech recognition is unavailable in this browser. You can still type to PaceSense."); return; }
+    let rec;
+    try { rec = new SR(); }
+    catch {
+      toast("PaceSense could not start the microphone. You can still type your command.");
+      hooks.voice(false);
+      return;
+    }
+    voice.rec = rec; voice.on = true; resetUtterance();
+    rec.lang = "en-CA"; rec.continuous = true; rec.interimResults = true;
     const input = $("#notes-input");
     rec.onresult = (e) => {
       let interim = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const res = e.results[i], t = res[0].transcript;
         if (!t.trim() || isEcho(t)) continue;
+        if (hooks.tts().speaking) {
+          if (!isInterruption(t, res.isFinal)) continue;          // let PaceSense finish its sentence
+          voice.barge = true; hooks.bargeIn();                     // the coach really talked over it
+        }
         if (!voice.t0) voice.t0 = performance.now();
-        if (hooks.tts().speaking && wordsOf(t).length >= 2) { voice.barge = true; hooks.bargeIn(); }   // talk over it
-        if (res.isFinal) { voice.buf.push(t.trim()); voice.conf.push(res[0].confidence || 0); } else interim += t;
+        if (res.isFinal) {
+          voice.buf.push(t.trim());
+          // Keep a genuine zero: it is a low-confidence transcript, not missing metadata.
+          const confidence = res[0].confidence;
+          if (Number.isFinite(confidence) && confidence >= 0 && confidence <= 1) voice.conf.push(confidence);
+        } else interim += t;
       }
       const shown = [...voice.buf, interim].join(" ").trim();
       if (shown) { input.value = shown; hooks.transcript(shown, false); }
       clearTimeout(voice.timer);
-      if (voice.buf.length) voice.timer = setTimeout(flushUtterance, interim ? hooks.silenceMs() + 600 : hooks.silenceMs());
+      // The end-of-turn pause: never under 1.1 s, and longer while words are still arriving.
+      const pause = Math.max(1100, hooks.silenceMs());
+      if (voice.buf.length) voice.timer = setTimeout(flushUtterance, interim ? pause + 700 : pause);
     };
-    rec.onerror = (e) => { if (e.error === "not-allowed") { toast("Microphone permission was refused.", "error"); stopVoice(); } };
+    rec.onerror = (e) => {
+      const messages = {
+        "not-allowed": "Microphone permission was refused.",
+        "service-not-allowed": "This browser does not allow speech recognition for this site.",
+        "audio-capture": "No working microphone was found.",
+        network: "Speech recognition is unavailable because of a network error.",
+      };
+      if (messages[e.error]) { toast(messages[e.error], "error"); stopVoice(); }
+    };
     rec.onend = () => { if (voice.on && !voice.paused) try { rec.start(); } catch { /* already started */ } };
-    try { rec.start(); } catch { /* ignore */ }
+    try { rec.start(); }
+    catch {
+      voice.on = false; voice.rec = null;
+      toast("PaceSense could not start speech recognition. You can still type your command.", "error");
+      hooks.voice(false);
+      return;
+    }
     $("#mic-btn").setAttribute("aria-pressed", "true");
     hooks.voice(true);
+    startCapture();
   }
   function stopVoice(silent = false) {
     voice.on = false; if (voice.rec) voice.rec.stop();
     if (voice.buf && voice.buf.length) flushUtterance();
+    stopCapture();
     $("#mic-btn").setAttribute("aria-pressed", "false");
     if (!silent) hooks.voice(false);
   }
@@ -795,11 +1239,20 @@
 
   // ---------------------------------------------------------------- runner picker
   const dlg = $("#runner-dialog");
-  const searchRunners = debounce(async (q) => {
+  let runnerSearchTimer = null, runnerSearchRequest = 0;
+  async function loadRunners(query) {
+    const request = ++runnerSearchRequest;
     const list = clear($("#runner-list"));
+    $("#runner-db-count").textContent = "Searching the existing runner database…";
     try {
-      const rows = await api("GET", `/runners?q=${encodeURIComponent(q)}`);
-      if (!rows.length) list.append(h("li", { class: "muted", text: "No runners match." }));
+      const gender = $("#runner-gender-filter").value;
+      const minRaces = $("#runner-min-races-filter").value || "0";
+      const rows = await api("GET", `/runners?q=${encodeURIComponent(query)}&gender=${encodeURIComponent(gender)}&min_races=${encodeURIComponent(minRaces)}`);
+      if (request !== runnerSearchRequest) return { ok: false, stale: true, count: rows.length, error: "The runner search changed before it finished." };
+      $("#runner-db-count").textContent = rows.length
+        ? `Showing ${rows.length} matching existing runner records. Select one to open it; no new data is added.`
+        : "No existing runners match that search.";
+      if (!rows.length) list.append(h("li", { class: "muted", text: "No runners match. Try another name or runner ID." }));
       for (const r of rows) {
         const b = h("button", { type: "button", role: "option" },
           h("span", null, h("b", { text: r.runner_id === "demo" ? "Demo runner" : r.name }), r.runner_id === "demo" ? h("span", { class: "tag", text: "  recommended" }) : ""),
@@ -812,8 +1265,34 @@
         });
         list.append(h("li", null, b));
       }
-    } catch (e) { list.append(h("li", { class: "muted", text: e.message })); }
-  }, 160);
+      return { ok: true, count: rows.length };
+    } catch (e) {
+      if (request === runnerSearchRequest) list.append(h("li", { class: "muted", text: e.message }));
+      return { ok: false, error: e.message };
+    }
+  }
+  function searchRunners(query) {
+    clearTimeout(runnerSearchTimer);
+    runnerSearchTimer = setTimeout(() => loadRunners(query), 160);
+  }
+  async function openRunnerDatabase(query = "", filters = {}) {
+    if (!dlg.open) {
+      const ask = $('#cond-choice input[value="ask"]');
+      if (ask) ask.checked = true;
+      dlg.showModal();
+    }
+    $("#runner-search").value = query;
+    $("#runner-gender-filter").value = filters.gender || "";
+    const minSelect = $("#runner-min-races-filter");
+    const minValue = String(filters.min_races || 0);
+    if (![...minSelect.options].some((option) => option.value === minValue)) {
+      minSelect.append(h("option", { value: minValue, text: `At least ${minValue}` }));
+    }
+    minSelect.value = minValue;
+    $("#runner-search").focus();
+    clearTimeout(runnerSearchTimer);
+    return loadRunners(query);
+  }
 
   // ---------------------------------------------------------------- tabs
   function selectTab(id, byUser = false) {
@@ -824,7 +1303,7 @@
       $(`#${t.getAttribute("aria-controls")}`).hidden = !on;
     });
     storage.set("pacesense.tab", id);
-    if (app.st) { if (id === "tab-similar") renderSimilar(app.st); if (id === "tab-pacing") renderPacing(app.st); }
+    if (app.st) { if (id === "tab-similar") renderSimilar(app.st); if (id === "tab-pacing") renderPacing(app.st); if (id === "tab-contributions") renderContributions(app.st); if (id === "tab-session") renderSession(app.st); }
   }
 
   // ---------------------------------------------------------------- theme
@@ -872,8 +1351,10 @@
     $("#undo-btn").addEventListener("click", undo);
     $("#export-btn").addEventListener("click", exportSession);
     $("#help-btn").addEventListener("click", () => $("#help-dialog").showModal());
-    $("#runner-btn").addEventListener("click", () => { dlg.showModal(); $("#runner-search").value = ""; searchRunners(""); $("#runner-search").focus(); });
+    $("#runner-btn").addEventListener("click", () => openRunnerDatabase(""));
     $("#runner-search").addEventListener("input", (e) => searchRunners(e.target.value));
+    $("#runner-gender-filter").addEventListener("change", () => searchRunners($("#runner-search").value));
+    $("#runner-min-races-filter").addEventListener("change", () => searchRunners($("#runner-search").value));
 
     $$(".tabs [role=tab]").forEach((t) => {
       t.addEventListener("click", () => selectTab(t.id, true));

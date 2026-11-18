@@ -1,4 +1,4 @@
-"""OpenRouter client, per-task model settings, voice pipeline (transcribe, fill, refine) and the Model lab."""
+"""Boson integration, per-task settings, voice pipeline and evaluation lab tests."""
 import json
 import unittest
 
@@ -99,40 +99,49 @@ class ClientTests(unittest.TestCase):
 class SettingsTests(unittest.TestCase):
     def test_priority_settings_env_default(self):
         repo = Repository(":memory:")
-        s = ModelSettings(repo, env={"PACESENSE_MODEL_REFINE": "google/gemini-2.5-flash",
+        s = ModelSettings(repo, env={"PACESENSE_MODEL_REFINE": "higgs-realtime",
                                      "PACESENSE_TEMPERATURE_REFINE": "0.7"})
         self.assertEqual(s.get("extract"), {"model": TASKS["extract"].default_model, "temperature": 0.0,
                                             "source": "default"})
-        self.assertEqual(s.get("refine"), {"model": "google/gemini-2.5-flash", "temperature": 0.7, "source": "environment"})
-        s.update("refine", model="anthropic/claude-x", temperature=0.2)
-        self.assertEqual(s.get("refine"), {"model": "anthropic/claude-x", "temperature": 0.2, "source": "settings"})
-        self.assertEqual(ModelSettings(repo, env={}).get("refine")["model"], "anthropic/claude-x")   # saved in the db
+        self.assertEqual(s.get("refine"), {"model": "higgs-realtime", "temperature": 0.7, "source": "default"})
+        s.update("refine", model="higgs-realtime", temperature=0.2)
+        self.assertEqual(s.get("refine"), {"model": "higgs-realtime", "temperature": 0.2, "source": "settings"})
+        self.assertEqual(ModelSettings(repo, env={}).get("refine")["model"], "higgs-realtime")   # saved in the db
         s.reset("refine")
-        self.assertEqual(s.get("refine")["source"], "environment")
+        self.assertEqual(s.get("refine")["source"], "default")
         for bad in ({"model": "gpt4"}, {"model": "a/b c"}, {"temperature": 3}):
             with self.assertRaises(ValidationError):
                 s.update("refine", **bad)
         with self.assertRaises(ValidationError):
             s.update("nope", model="a/b")
 
-    def test_every_task_is_used_with_its_own_model(self):
+    def test_with_both_keys_openrouter_analyses_and_boson_listens(self):
+        repo = Repository(":memory:")
+        ai = AIService(repo, env={"BOSON_API_KEY": "boson-test", "OPENROUTER_API_KEY": "or-test"})
+        self.assertEqual((ai.provider, ai.transcribe_provider), ("openrouter", "boson"))
+        ai = AIService(repo, env={"BOSON_API_KEY": "boson-test", "OPENROUTER_API_KEY": "or-test",
+                                  "PACESENSE_AI_PROVIDER": "boson"})
+        self.assertEqual(ai.provider_name, "Boson")
+
+    def test_every_task_uses_the_boson_model(self):
         repo = Repository(":memory:")
         fake = FakeOpenRouter()
         fake.chat_handler = smart_handler
-        repo.set_setting("transcription_backend", "openrouter")
+        repo.set_setting("transcription_backend", "boson")
         ai = AIService(repo, env={}, client=fake.client())
         for task in TASKS:
-            ai.settings.update(task, model=f"test/{task}")
+            ai.settings.update(task, model="higgs-realtime")
         ai.voice("runner", b"audio", "wav")
         ai.chat_model().complete([{"role": "user", "content": "hi"}], [])
         used = [r["body"]["model"] for r in fake.requests]
-        self.assertEqual(used, ["test/transcribe", "test/extract", "test/refine", "test/assistant"])
+        self.assertEqual(used, ["higgs-realtime", "higgs-realtime", "higgs-realtime", "higgs-realtime"])
 
 
 class ServiceTests(unittest.TestCase):
-    def test_local_transcription_is_the_default_backend(self):
+    def test_local_transcription_can_be_selected_as_fallback(self):
         repo = Repository(":memory:")
         ai = AIService(repo, env={})
+        repo.set_setting("transcription_backend", "local")
         self.assertEqual(ai.transcription_backend, "local")
         from pacesense.llm.openrouter import Transcript
         with __import__("unittest.mock", fromlist=["patch"]).patch(
@@ -147,14 +156,20 @@ class ServiceTests(unittest.TestCase):
         self.repo = Repository(":memory:")
         self.fake = FakeOpenRouter()
         self.fake.chat_handler = smart_handler
-        self.repo.set_setting("transcription_backend", "openrouter")
+        self.repo.set_setting("transcription_backend", "boson")
         self.ai = AIService(self.repo, env={}, client=self.fake.client())
 
+    def test_blank_boson_key_is_treated_as_missing(self):
+        for value in ("", "   "):
+            ai = AIService(self.repo, env={"BOSON_API_KEY": value})
+            self.assertFalse(ai.online)
+            self.assertIn("No BOSON_API_KEY", ai.why_offline())
+
     def test_offline_without_key(self):
-        self.repo.set_setting("transcription_backend", "openrouter")
+        self.repo.set_setting("transcription_backend", "boson")
         ai = AIService(self.repo, env={})
         self.assertFalse(ai.online)
-        self.assertIn("No OpenRouter key", ai.why_offline())
+        self.assertIn("No BOSON_API_KEY", ai.why_offline())
         with self.assertRaises(AIUnavailable):
             ai.transcribe(b"x")
         ex = ai.extract("runner", "Add runner Sam Lee, f, 41: Toronto 2022 4:01:10")
@@ -204,7 +219,7 @@ class ReviewRegressionTests(unittest.TestCase):
 
     def setUp(self):
         self.repo = Repository(":memory:")
-        self.repo.set_setting("transcription_backend", "openrouter")
+        self.repo.set_setting("transcription_backend", "boson")
         self.fake = FakeOpenRouter()
         self.ai = AIService(self.repo, env={}, client=self.fake.client())
 
@@ -235,7 +250,7 @@ class ReviewRegressionTests(unittest.TestCase):
     def test_temperature_change_does_not_pin_the_model(self):
         s = ModelSettings(self.repo, env={"PACESENSE_MODEL_REFINE": "google/gemini-2.5-flash"})
         s.update("refine", temperature=0.9)
-        self.assertEqual(s.get("refine")["source"], "environment")
+        self.assertEqual(s.get("refine")["source"], "default")
         self.assertTrue(s.has_saved("refine"))
         s.reset("refine")
         self.assertFalse(s.has_saved("refine"))

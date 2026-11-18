@@ -26,6 +26,18 @@ class CommandParsingTests(unittest.TestCase):
         self.assertEqual(a, [{"type": "perspective", "value": "runner"}])
         self.assertEqual(ui_commands("researcher mode")[0][0]["value"], "researcher")
 
+    def test_graph_requests_open_the_race_contribution_view(self):
+        for phrase in ("show me some graphs", "present the charts", "visualize the prediction breakdown", "plot contributions"):
+            actions, said, rest = ui_commands(phrase)
+            self.assertEqual(actions, [{"type": "focus", "panel": "contributions"}], phrase)
+            self.assertEqual(rest.strip(), "", phrase)
+            self.assertIn("opened contributions", said[0])
+
+    def test_analysis_requests_open_insights(self):
+        actions, _, rest = ui_commands("show the analysis")
+        self.assertEqual(actions, [{"type": "focus", "panel": "analysis"}])
+        self.assertEqual(rest.strip(), "")
+
     def test_simulation_with_conditions(self):
         a, _, rest = ui_commands("simulate 26 degrees with a 15 km/h headwind and she starts too fast")
         self.assertEqual(a, [{"type": "simulate", "temp_c": 26.0, "wind_kmh": 15.0, "profile": "fast_start"}])
@@ -36,7 +48,26 @@ class CommandParsingTests(unittest.TestCase):
         self.assertEqual(types(ui_commands("calm mode please")[0]), ["calm"])
         self.assertEqual(types(ui_commands("reveal")[0]), ["reveal"])
         self.assertEqual(ui_commands("open runner R00042")[0], [{"type": "runner", "id": "R00042"}])
+        self.assertEqual(ui_commands("open runner R0004")[0], [{"type": "runner", "id": "R0004"}])
         self.assertEqual(types(ui_commands("reset the layout")[0]), ["layout"])
+
+    def test_runner_database_and_familiarity_commands(self):
+        a, said, rest = ui_commands("open the runner database")
+        self.assertEqual(a, [{"type": "runner_database"}])
+        self.assertEqual(rest, "")
+        self.assertIn("existing runner database", said[0])
+
+        a, _, rest = ui_commands("I don't know this runner")
+        self.assertEqual(a, [{"type": "condition", "value": "unknown"}])
+        self.assertEqual(rest, "")
+
+        a, _, rest = ui_commands("I know this runner")
+        self.assertEqual(a, [{"type": "condition", "value": "known"}])
+        self.assertEqual(rest, "")
+
+        a, _, rest = ui_commands("this runner is new to me")
+        self.assertEqual(a, [{"type": "condition", "value": "unknown"}])
+        self.assertEqual(rest, "")
 
     def test_race_talk_is_left_for_the_interpreter(self):
         a, _, rest = ui_commands("2016 was a hot day and she was injured")
@@ -74,7 +105,8 @@ class SessionTests(unittest.TestCase):
         self.assertIn(card["accuracy"]["text"], ("closer to her real result", "further from her real result",
                                                  "no closer to her real result"))
         self.assertTrue(card["suggestions"])
-        self.assertIn("the data agrees", r.reply)
+        self.assertIn("went on to run", r.reply)                  # the spoken reply gives the reason
+        self.assertTrue(card["reasoning"])
 
     def test_simulating_a_hot_day_never_changes_a_race(self):
         s = self.demo()
@@ -97,6 +129,39 @@ class SessionTests(unittest.TestCase):
         r = route("what is the likely range?", s)
         self.assertEqual(r.used, ["assistant"])
         self.assertTrue(r.reply)
+
+    def test_ai_steering_reads_natural_language_paraphrases(self):
+        from types import SimpleNamespace
+
+        class FakeClient:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def chat(self, *args, **kwargs):
+                return SimpleNamespace(text=json.dumps(self.payload))
+
+        class FakeAI:
+            online = True
+
+            def __init__(self, payload):
+                self.client = FakeClient(payload)
+
+            def config(self, task):
+                return "fake-model", 0.0
+
+        s = HudSession(self.coach, self.rid, ai=FakeAI({
+            "changes": [{"race": 0, "direction": "down", "strength": "normal",
+                         "quote": "should matter as much"}],
+            "command": None,
+            "estimate": None,
+        }))
+        race = s.steer.races[0]
+        text = f"I don't think {race['event']} {race['year']} is as appealing as the others"
+        s.steer.ai.client.payload["changes"][0]["quote"] = "as appealing as the others"
+        r = route(text, s)
+        self.assertEqual(r.used, ["steer"])
+        self.assertEqual(r.turn["applied"][0]["race"], f"{race['event']} {race['year']}")
+        self.assertAlmostEqual(r.turn["applied"][0]["new"], 0.3)
 
     def test_reactions_are_counted(self):
         s = self.demo()

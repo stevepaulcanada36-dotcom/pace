@@ -2,9 +2,10 @@
 same classes generate the OpenAPI document served at /api/v1/openapi.json."""
 from __future__ import annotations
 
-from typing import Literal
+import math
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class _Body(BaseModel):
@@ -26,6 +27,13 @@ class CreateSession(_Body):
                                                    "(the paper's protocol). Defaults to true for the demo.")
 
 
+class VoiceUIState(_Body):
+    """Current simulator controls, supplied only as context for a voice command."""
+    temp_c: float = Field(12.0, ge=0, le=35)
+    wind_kmh: float = Field(0.0, ge=0, le=40)
+    profile: Literal["on_plan", "fast_start", "late_fade"] = "on_plan"
+
+
 class VoiceSignals(_Body):
     """How an utterance was spoken, measured in the browser (all optional)."""
     wpm: float | None = Field(None, ge=0, le=600, description="Words per minute")
@@ -34,6 +42,21 @@ class VoiceSignals(_Body):
     barge_in: bool = Field(False, description="The coach started talking while PaceSense was speaking")
     fillers: int = Field(0, ge=0, le=100)
     confidence: float | None = Field(None, ge=0, le=1, description="Speech recognition confidence")
+    transcriber: str | None = Field(None, max_length=40, pattern=r"^[A-Za-z0-9:_\- ]*$",
+                                    description="Where the words came from: the server provider, or browser:<why>")
+    ui_state: VoiceUIState | None = None
+
+    @field_validator("wpm", "duration_ms", "latency_ms", "fillers", "confidence", mode="before")
+    @classmethod
+    def _clamp(cls, value: Any, info: Any) -> Any:
+        """These are browser measurements of how something was said. An odd reading (a two-word burst
+        measured at 900 words a minute) must not make the server refuse what was said."""
+        limits = {"wpm": 600, "duration_ms": 120000, "latency_ms": 120000, "fillers": 100, "confidence": 1}
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return value
+        if not math.isfinite(value):
+            return None
+        return min(limits[info.field_name], value)             # a negative reading is still refused below
 
 
 class Command(_Body):
@@ -98,10 +121,10 @@ class ProfileEdit(_Body):
     session_id: str | None = Field(None, max_length=64)
 
 
-BODIES = {"CreateSession": CreateSession, "Command": Command, "SetWeight": SetWeight, "Simulate": Simulate,
+BODIES: dict[str, type[BaseModel]] = {"CreateSession": CreateSession, "Command": Command, "SetWeight": SetWeight, "Simulate": Simulate,
           "React": React, "Estimate": Estimate, "SessionEvent": SessionEvent,
           "InterviewAnswer": InterviewAnswer, "ProfileEdit": ProfileEdit, "Condition": Condition,
-          "Choose": Choose, "VoiceSignals": VoiceSignals}
+          "Choose": Choose, "VoiceSignals": VoiceSignals, "VoiceUIState": VoiceUIState}
 
 __all__ = ["BODIES", "COACH_ID", "Choose", "Command", "Condition", "CreateSession", "Estimate", "InterviewAnswer",
-           "ProfileEdit", "React", "SessionEvent", "SetWeight", "Simulate", "VoiceSignals"]
+           "ProfileEdit", "React", "SessionEvent", "SetWeight", "Simulate", "VoiceSignals", "VoiceUIState"]

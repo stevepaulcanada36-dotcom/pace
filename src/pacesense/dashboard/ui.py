@@ -29,7 +29,7 @@ def services() -> Services:
 
 def ai() -> AIService:
     """The AI features, with a model per task. A key pasted in Settings is kept for this browser session only."""
-    return AIService(services().repo, api_key=st.session_state.get("openrouter_key") or None)
+    return AIService(services().repo)
 
 
 # ---- preferences (saved in the database) ------------------------------------------------------

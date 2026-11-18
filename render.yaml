@@ -1,0 +1,31 @@
+# Render Blueprint for a password-protected PaceSense Studio demo.
+# The free instance has ephemeral storage; SQLite data is not durable across restarts/deploys.
+services:
+  - type: web
+    name: pacesense
+    runtime: docker
+    plan: free
+    branch: deploy/render
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /readyz
+    autoDeploy: true
+    envVars:
+      - key: PACESENSE_DB
+        value: /data/pacesense.sqlite3
+      - key: PACESENSE_LOG_FORMAT
+        value: json
+      - key: PACESENSE_AI
+        value: "1"
+      # OpenRouter leads when its key is set (chat, interpretation and transcription); Boson is the
+      # backup, or the only provider when OPENROUTER_API_KEY is absent. Set the keys in the dashboard.
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: BOSON_API_KEY
+        sync: false
+      - key: PACESENSE_LANGUAGE
+        value: en
+      - key: PACESENSE_ACCESS_USER
+        sync: false
+      - key: PACESENSE_ACCESS_PASSWORD
+        sync: false

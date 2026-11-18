@@ -1,15 +1,7 @@
-"""A small OpenRouter client, using only the Python standard library.
+"""Legacy OpenRouter HTTP client retained for compatibility and its isolated tests.
 
-OpenRouter (https://openrouter.ai) gives one API key and one OpenAI-style API for models from many providers,
-so the same code can call `openai/gpt-4o-mini`, `anthropic/...`, `google/gemini-2.5-flash` and others, and
-the Model lab can compare them. Three calls are used:
-
-    POST /chat/completions        chat, function calling, JSON answers, audio in a message
-    POST /audio/transcriptions    speech to text (JSON body with base64 audio)
-    GET  /models                  the model list with prices and what each model accepts
-
-Every result carries the time taken and the usage OpenRouter reports (tokens and cost in US dollars), which
-the Model lab records. The network is reached through a `transport` function, so tests replace it.
+PaceSense runtime AI requests now use the Boson Higgs Realtime client in boson.py.
+Shared response dataclasses and JSON parsing remain here until legacy integrations are removed.
 """
 from __future__ import annotations
 

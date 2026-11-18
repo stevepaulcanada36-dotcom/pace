@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import weakref
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
@@ -88,6 +89,9 @@ class Repository:
         self.path = str(path)
         self._lock = threading.RLock()
         self._conn = sqlite3.connect(self.path, check_same_thread=False, isolation_level=None)
+        # Close the connection when this repository is garbage-collected, so a throwaway
+        # repository (tests, one-off scripts) never leaks an open SQLite handle.
+        self._finalizer = weakref.finalize(self, self._conn.close)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
         if self.path != ":memory:":
@@ -110,7 +114,7 @@ class Repository:
 
     def close(self) -> None:
         with self._lock:
-            self._conn.close()
+            self._finalizer()
 
     @staticmethod
     def _encode(values: dict[str, Any]) -> dict[str, Any]:

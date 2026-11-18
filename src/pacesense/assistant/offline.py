@@ -54,18 +54,67 @@ class OfflineModel:
             if any(n == "propose_runner" for n, _, _ in done):     # the check is repeated in the proposal
                 done = [d for d in done if d[0] != "check_runner_details"]
             return ModelReply("\n\n".join(_answer(n, r) for n, _, r in done))
-        return self._decide(messages[last_user]["content"], messages[0]["content"])
+        prior = "\n".join(m.get("content", "") for i, m in enumerate(messages)
+                            if m.get("role") == "user" and i != last_user)
+        return self._decide(messages[last_user]["content"], messages[0]["content"], prior)
 
-    def _decide(self, text: str, system: str) -> ModelReply:
+    def _decide(self, text: str, system: str, history: str = "") -> ModelReply:
         t = text.lower()
+        conversation = (history + "\n" + text).lower()
+        has_non_marathon_event = bool(re.search(
+            r"\b(trial run|training run|training session|relay|time trial|track session|parkrun)\b", conversation))
+        has_injury = bool(re.search(r"\b(injur\w*|pain|hurt|sore|strain|sprain|fracture)\b", conversation))
+        asks_about_injury_impact = bool(
+            re.search(r"\b(injur\w*|pain|hurt|sore|strain|sprain|fracture)\b", t)
+            or (has_injury and re.search(r"\b(performance|affect|impact|recovery|recover|training)\b", t))
+        )
+        mentions_non_marathon_event = bool(re.search(
+            r"\b(trial run|training run|training session|relay|time trial|track session|parkrun)\b", t))
+        if has_non_marathon_event and (asks_about_injury_impact or mentions_non_marathon_event):
+            if asks_about_injury_impact:
+                return ModelReply(
+                    "A trial run or relay is not one of her marathon records, so I won't change those race weights. "
+                    "A leg injury could affect her marathon performance depending on its severity, when it happened, "
+                    "and how fully she has recovered. The current marathon estimate does not measure that injury. "
+                    "Is she fully recovered and training normally now?"
+                )
+            return ModelReply(
+                "Got it — that was a trial or training event, not a marathon record in this database. "
+                "I'll keep it separate and won't change the marathon weights. What would you like to know about it?"
+            )
         rid_m = RUNNER_ID.search(text)
-        open_m = re.search(r"runner_id (\S+?)\)", system)
-        rid = rid_m.group(1).upper() if rid_m else (open_m.group(1) if open_m else None)
+        # Studio identifies the selected runner as "(ID R00004)"; older plan context
+        # used "runner_id R00004)". Accept both for contextual questions.
+        open_m = re.search(r"\b(?:runner_id\s+|ID\s+)(R\d{3,}|C-[0-9a-f]{10})\b", system, re.I)
+        rid = rid_m.group(1).upper() if rid_m else (open_m.group(1).upper() if open_m else None)
         if rid and rid.startswith("C-"):
             rid = "C-" + rid[2:].lower()
 
         if re.search(r"\b(add|new)\b.*\brunner\b", t):
             return self._call(("check_runner_details", parse_runner_text(text)))
+
+        # Speech recognition can turn a race name into a different word. If the year
+        # matches one existing record, ask before treating the unknown name as a race.
+        year_m = re.search(r"\b((?:19|20)\d{2})\b", text)
+        records_m = re.search(r"Existing marathon records:\s*([^\n]+)", system, re.I)
+        if year_m and records_m:
+            year = year_m.group(1)
+            candidates = [part.strip() for part in records_m.group(1).split(";")
+                          if re.search(rf"\b{year}\b", part)]
+            mentioned = re.sub(rf"\b{year}\b", "", text, count=1, flags=re.I).strip(" ,.:;?-")
+            mentioned = re.sub(r"\b(?:the|race|marathon|in|at|was|were)\b", " ", mentioned, flags=re.I)
+            mentioned = " ".join(mentioned.split())
+            if (len(mentioned) >= 3
+                    and not re.search(r"\b(hot|heat|humid|injur\w*|sick|wind\w*|rain\w*|cold|weather|training|form)\b",
+                                      mentioned, re.I)
+                    and candidates and not any(
+                    re.search(re.escape(re.sub(rf"\s+{year}\b", "", candidate, flags=re.I)), text, re.I)
+                    for candidate in candidates)):
+                if len(candidates) == 1:
+                    return ModelReply(f"I don't see “{mentioned} {year}” in her marathon records. "
+                                      f"The record for {year} is {candidates[0]}. Did you mean that race?")
+                return ModelReply(f"I don't see “{mentioned} {year}” as an exact race name. "
+                                  f"Which of these {year} records did you mean: {', '.join(candidates)}?")
         watch = re.search(r"(\d+(?:\.\d+)?)\s*km\b.*?(" + CLOCK + ")", t) or \
             re.search(r"(" + CLOCK + r").*?(\d+(?:\.\d+)?)\s*km\b", t)
         if watch and re.search(r"watch|ahead|behind|on plan|on pace|at ", t):
@@ -88,8 +137,9 @@ class OfflineModel:
             for word, topic in TOPICS:
                 if word in t:
                     if topic in ("range", "prediction", "target", "cases") and rid:
-                        # the number for the open runner, and what it means
-                        return self._call(("predict", {"runner_id": rid}), ("explain", {"topic": topic}))
+                        # The prediction tool returns the active runner's actual range and its meaning.
+                        # A second generic explain call would hide that first result in the offline loop.
+                        return self._call(("predict", {"runner_id": rid}))
                     return self._call(("explain", {"topic": topic}))
         if re.search(r"my plan|this plan|the plan|current plan|realistic|ambitious|cautious|check", t):
             return self._call(("current_plan", {}))
@@ -132,6 +182,8 @@ def _answer(name: str, r: dict) -> str:
     if name == "predict":
         lines = [f"The model's target is **{r['finish']}** (likely range {r['likely_range']}, from "
                  f"{r['similar_runners']} similar runners)."]
+        if r.get("range_meaning"):
+            lines.append(r["range_meaning"])
         if r["with_equal_weights"] != r["finish"]:
             lines.append(f"With equal race weights it would be {r['with_equal_weights']}.")
         lines += [f"- {x}" for x in r["insights"]]

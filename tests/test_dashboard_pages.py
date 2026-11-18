@@ -339,7 +339,7 @@ class AssistantPageTests(PageTest):
 
     def test_voice_question_refine_and_send(self):
         fake.run(assistant.render)
-        self.assertIn("Record", fake.texts())  # local transcription remains available without an OpenRouter key
+        self.assertIn("Record", fake.texts())  # local transcription remains available without a hosted key
         router = self.online(["um is my plan for this runner realistic"])
         fake.set_value("ask_voice_rec", fake.UploadedFile(b"RIFF...."))
         fake.run(assistant.render)
@@ -353,7 +353,7 @@ class AssistantPageTests(PageTest):
         fake.run(assistant.render)
         self.assertEqual(fake.session_state["chat"][0]["content"], "Um is my plan for this runner realistic.")
         meta = fake.session_state["chat"][1]["meta"]                                # who answered, and the cost
-        self.assertIn("openai/gpt-4o-mini via OpenRouter", meta)
+        self.assertIn("higgs-realtime via Boson", meta)
         self.assertIn("$0.0001", meta)
         self.assertEqual(fake.session_state["ask_draft"], "")
         fake.run(assistant.render)                          # the recording is still in the widget: not sent again
@@ -438,41 +438,38 @@ class VoiceFormTests(PageTest):
 
 
 class AISettingsAndLabTests(PageTest):
-    def test_model_per_task_in_settings(self):
+    def test_boson_status_and_task_temperature_in_settings(self):
         fake.run(settings.render)
-        self.assertIn("AI models and voice input", fake.texts())
-        self.assertIn("No OpenRouter key", fake.texts())
+        self.assertIn("Boson AI and voice input", fake.texts())
+        self.assertIn("Boson AI is offline", fake.texts())
+        self.assertIn("No BOSON_API_KEY", fake.texts())
         cur = AIService(self.s.repo, env={}).settings.get("refine")
-        fake.set_value(f"ai_model_refine_{cur['model']}", "google/gemini-2.5-flash")
+        self.assertEqual(cur["model"], "higgs-realtime")                          # one hosted model for every task
+        fake.set_value(f"boson_temp_refine_{cur['temperature']}", 0.7)
         fake.run(settings.render)
-        self.assertEqual(AIService(self.s.repo, env={}).settings.get("refine")["model"], "google/gemini-2.5-flash")
-        fake.set_value(f"ai_model_extract_{cur['model']}", "not a model id")
-        fake.run(settings.render)
-        self.assertIn("looks like provider/model", fake.texts())
-        fake.interact("ai_key_input", "sk-or-typed")                              # pasted key, kept for the session
-        self.assertEqual(fake.session_state["openrouter_key"], "sk-or-typed")
+        self.assertEqual(AIService(self.s.repo, env={}).settings.get("refine")["temperature"], 0.7)
+        self.assertNotIn("openrouter_key", fake.session_state)                    # the key is never entered here
         self.online()
-        fake.click("ai_load_models")
         fake.run(settings.render)
-        self.assertIn("Showing 2 of 2 matching models", fake.texts())
+        self.assertIn("Boson API key loaded", fake.texts())
+        self.assertNotIn("Boson AI is offline", fake.texts())
 
-    def test_lab_runs_compares_and_chooses(self):
+    def test_lab_runs_scores_and_keeps_boson(self):
         fake.run(lab.render)
-        self.assertIn("needs an OpenRouter key", fake.texts())
+        self.assertIn("needs BOSON_API_KEY", fake.texts())
         router = self.online()
         fake.set_value("lab_task", "extract")
-        fake.session_state["lab_models_extract"] = "test/a\ntest/b"
         fake.run(lab.render)
         fake.click("lab_run")
         fake.run(lab.render)
-        self.assertEqual({b["model"] for b in router.bodies("/chat/completions")}, {"test/a", "test/b"})
+        self.assertEqual({b["model"] for b in router.bodies("/chat/completions")}, {"higgs-realtime"})
         tables = fake.kinds("dataframe")
-        self.assertEqual(set(tables[0]["Model"]), {"test/a", "test/b"})               # the summary, one row per model
+        self.assertEqual(set(tables[0]["Model"]), {"higgs-realtime"})                 # the summary, one row per model
         self.assertIn("Score", tables[0].columns)
-        fake.set_value("lab_pick", "test/b")
         fake.click("lab_use")
         fake.run(lab.render)
-        self.assertEqual(AIService(self.s.repo, env={}).settings.get("extract")["model"], "test/b")
+        self.assertEqual(AIService(self.s.repo, env={}).settings.get("extract")["model"], "higgs-realtime")
+        self.assertIn("continues to use Boson Higgs Realtime", fake.texts())
         self.assertIn("pacesense_model_lab.csv", fake.kinds("download"))
 
 

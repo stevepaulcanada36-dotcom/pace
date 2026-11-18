@@ -46,8 +46,13 @@ phrases:
                "an off day", "overtrained", "undertrained", "barely trained", "no training", "jet lag",
                "jetlagged", "pregnant", "postpartum", "coming back from", "comeback race", "after surgery"]
   down:
-    verb: ["count a bit less", "trust a bit less"]
-    describe: [windy, wind, rain, rainy, "the rain", humid, humidity, cold, freezing, "a bit off", "not great",
+    verb: ["count a bit less", "trust a bit less", "don't trust", "do not trust", "can't trust", "cannot trust"]
+    describe: ["fast course", "downhill course", tailwind, "bad training block", "poor training",
+               "not precise", imprecise, "not accurate", inaccurate, "not reliable", unreliable, "not typical",
+               "not normal", "an outlier", outlier, "a fluke", fluke, "a one-off", "one-off", "one off",
+               "not correct", "not right", "is wrong", "looks wrong", "data is wrong", misleading,
+               "doesn't reflect", "does not reflect", "can't be trusted", "cannot be trusted",
+               "not trustworthy", windy, wind, rain, rainy, "the rain", humid, humidity, cold, freezing, "a bit off", "not great",
                "not her best", "not his best", "slow", slower, "struggled", "tired", "long ago", "a long time ago", "long time ago", "ages ago",
                outdated, "old race", "a while ago", "years ago", "before she changed", "before he changed",
                "started too fast", "went out too fast", "faded", "crowded", "bad pacing", "poor pacing",
@@ -103,7 +108,9 @@ commands:
 # Words that announce the coach's own estimate ("I think she can run 3:25"): used for the steering index.
 estimate_cues: ["i think", "i reckon", "my guess", "i'd say", "i would say", "i expect", "i believe",
                 "my estimate", "my target", "she can run", "he can run", "she could run", "he could run",
-                "she'll run", "he'll run", "aim for", "target is", "target of", "capable of", "can do"]
+                "she'll run", "he'll run", "aim for", "target is", "target of", "capable of", "can do",
+                "i hope", "hopefully", "the prediction will be", "prediction should be", "she can finish",
+                "he can finish", "finish in", "finish it in", "complete it in", "completed by", "complete in"]
 
 # Recency profile used by the `recency` command: weight = 2 ** (-years_before_latest / half_life),
 # clipped to [floor, 1]. `pacesense reproduce` re-fits half_life on the data and reports it in

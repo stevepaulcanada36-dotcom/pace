@@ -2,6 +2,7 @@
 import unittest
 
 from pacesense.adaptive import AdaptiveEngine, Event, Persona, default_loops, questions
+from pacesense.adaptive.explain import likely_range
 from pacesense.adaptive.loops import cue_category
 from pacesense.coach import CoachService
 from pacesense.storage import Repository
@@ -29,6 +30,14 @@ STATE = {"runner": {"gender": "F"},
                     "evidence": {"direction": -1, "z": -1.1, "others_median_s": 13850}}],
          "prediction": {"finish_s": 12923, "low_s": 12675, "high_s": 13212},
          "steering": {"index": None, "coach_estimate_s": None}}
+
+
+class ExplanationTests(unittest.TestCase):
+    def test_likely_range_explains_percentiles_and_validated_coverage(self):
+        explanation = likely_range(STATE)
+        self.assertIn("20th to 80th percentiles", explanation)
+        self.assertIn("about 80% of runners", explanation)
+        self.assertIn("not a guarantee", explanation)
 
 
 class PersonaTests(unittest.TestCase):
@@ -237,7 +246,11 @@ class AdaptiveApiTests(unittest.TestCase):
 
         r = self.c.post(f"/api/v1/sessions/{sid}/commands", {"text": "trust the recent races more", "source": "voice"}).json()
         self.assertIn("adapt", r)
-        self.assertTrue(r["adapt"]["speak"])
+        # A voice command that changes the prediction is spoken by the browser only after it has applied the
+        # change, so the server defers the confirmation instead of speaking it optimistically.
+        self.assertTrue(r["voice_action_pending"])
+        self.assertTrue(r["reply"])
+        self.assertEqual(r["adapt"]["speak"], "")
 
         r = self.c.post(f"/api/v1/sessions/{sid}/events", {"kind": "voice_on"}).json()
         self.assertEqual(r["adapt"]["ui"]["layout"], "voice")

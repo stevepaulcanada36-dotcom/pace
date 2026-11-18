@@ -65,6 +65,10 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(r.status, 201)
         return r.json()["id"], r.json()["state"]
 
+    def test_script_address_carries_a_content_fingerprint(self):
+        page = self.c.get("/").text
+        self.assertRegex(page, r'/static/studio\.js\?v=[0-9.]+-[0-9a-f]{10}"')
+
     def test_operations_endpoints(self):
         self.assertEqual(self.c.get("/healthz").json()["status"], "ok")
         r = self.c.get("/readyz").json()
@@ -224,5 +228,98 @@ class ApiTests(unittest.TestCase):
         self.assertEqual([round(w, 6) for w in again.plan.weights], [round(w, 6) for w in ex["final"]["weights"]])
 
 
+class TranscribeApiTests(unittest.TestCase):
+    """POST /sessions/{sid}/transcribe: Boson's transcript of one utterance, with the browser as the fallback."""
+
+    class FakeAI:
+        online = True
+        provider = "openrouter"
+
+        def __init__(self, text="reduce the weight for Rotterdam 2014", fail=False):
+            self.text, self.fail, self.calls = text, fail, []
+
+        def transcribe(self, audio, fmt="wav"):
+            self.calls.append((len(audio), fmt))
+            if self.fail:
+                raise RuntimeError("Boson Realtime did not acknowledge the session configuration")
+            from types import SimpleNamespace
+            return SimpleNamespace(text=self.text)
+
+    def make(self, ai=None):
+        coach = CoachService(helpers.model(), helpers.runners(), Repository(":memory:"))
+        service = StudioService(coach, settings=Settings(), ai_factory=(lambda: ai) if ai else None)
+        client = Client(create_app(service))
+        sid = client.post("/api/v1/sessions", json={}).json()["id"]
+        return client, sid
+
+    def send(self, client, sid, data=b"RIFFxxxxWAVE", content_type="audio/wav"):
+        return client.request("POST", f"/api/v1/sessions/{sid}/transcribe", data=data, content_type=content_type)
+
+    def test_returns_the_boson_transcript(self):
+        ai = self.FakeAI()
+        client, sid = self.make(ai)
+        r = self.send(client, sid, content_type="audio/wav; codecs=1")
+        self.assertEqual(r.status, 200)
+        self.assertEqual(r.json()["text"], "reduce the weight for Rotterdam 2014")
+        self.assertEqual(r.json()["source"], "openrouter")
+        self.assertEqual(ai.calls, [(12, "wav")])
+
+    def test_near_miss_race_city_is_snapped_to_the_listed_race(self):
+        client, sid = self.make(self.FakeAI())
+        races = client.get(f"/api/v1/sessions/{sid}").json()["races"]
+        city = next(r["event"] for r in races if len(r["event"]) >= 6 and " " not in r["event"])
+        wrong = city[:-2] + city[-1] + city[-2]                      # swap the last two letters
+        client2, sid2 = self.make(self.FakeAI(text=f"what happened in {wrong.lower()} that year"))
+        races2 = client2.get(f"/api/v1/sessions/{sid2}").json()["races"]
+        self.assertIn(city, {r["event"] for r in races2})            # the demo runner is deterministic
+        self.assertIn(city, self.send(client2, sid2).json()["text"])
+
+    def test_provider_failure_is_a_soft_fallback_not_an_error(self):
+        client, sid = self.make(self.FakeAI(fail=True))
+        r = self.send(client, sid)
+        self.assertEqual(r.status, 200)
+        self.assertEqual((r.json()["text"], r.json()["available"], r.json()["source"]), ("", True, "none"))
+
+    def test_without_a_key_it_reports_unavailable(self):
+        client, sid = self.make()
+        r = self.send(client, sid)
+        self.assertEqual((r.status, r.json()["available"]), (200, False))
+
+    def test_rejects_bad_uploads(self):
+        client, sid = self.make(self.FakeAI())
+        self.assertEqual(self.send(client, sid, data=b"").status, 400)
+        self.assertEqual(self.send(client, sid, content_type="text/plain").status, 415)
+        self.assertEqual(self.send(client, sid, data=b"0" * (4 * 1024 * 1024 + 1)).status, 413)
+        self.assertEqual(self.send(client, "nope").status, 404)
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class ShutdownTests(unittest.TestCase):
+    def test_repository_close_is_idempotent(self):
+        repo = Repository(":memory:")
+        repo.close()
+        repo.close()                       # a second close (or garbage collection) must not raise
+
+    def test_server_shutdown_closes_the_database(self):
+        import asyncio
+        import sqlite3
+
+        repo = Repository(":memory:")
+        app = create_app(StudioService(CoachService(helpers.model(), helpers.runners(), repo), settings=Settings()))
+        sent: list[dict] = []
+        events = iter([{"type": "lifespan.startup"}, {"type": "lifespan.shutdown"}])
+
+        async def receive():
+            return next(events)
+
+        async def send(message):
+            sent.append(message)
+
+        asyncio.run(app({"type": "lifespan", "asgi": {"version": "3.0"}, "state": {}}, receive, send))
+        self.assertEqual([m["type"] for m in sent],
+                         ["lifespan.startup.complete", "lifespan.shutdown.complete"])
+        with self.assertRaises(sqlite3.ProgrammingError):
+            repo._conn.execute("SELECT 1")

@@ -70,6 +70,10 @@ def match_choice(text: str, choices: list[dict]) -> dict | None:
         if not label:
             continue
         hit = said & label
+        # A whole sentence that merely shares a word with a choice ("the data is not accurate" and
+        # "Not at all") is not an answer to the question: it must contain the choice, or a year.
+        if n_words > len(label) + 3 and hit != label and not any(w.isdigit() and len(w) == 4 for w in hit):
+            continue
         # a year is decisive on its own; the first word of a label ("keep", "undo", "show") counts extra;
         # otherwise most of the label must be said
         decisive = any(w.isdigit() and len(w) == 4 for w in hit)
