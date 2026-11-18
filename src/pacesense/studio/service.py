@@ -79,6 +79,8 @@ class Live:
     changes: list = field(default_factory=list)       # each race change this session (race, old, new, verdict, cue)
     last_card: dict | None = None                     # the most recent change card, for the second opinion
     guide_shown: dict = field(default_factory=dict)   # how often each next step has been offered
+    claims: list = field(default_factory=list)        # the coach's claims (one per race change), tested on reveal
+    reflections: list = field(default_factory=list)   # PaceSense's recent reflections, so it does not repeat itself
 
 
 class StudioService:
@@ -186,6 +188,10 @@ class StudioService:
             said=self._coach_said(live), against_data=live.against_n)
         st["next_steps"] = next_steps(st, familiarity=live.engine.ctx.session.condition, used=live.used,
                                       shown=live.guide_shown)
+        from ..hud import loop
+        if (st.get("holdout") or {}).get("revealed"):
+            loop.test(live.claims, st, s.truth_s)
+        st["claims"] = loop.view(live.claims)
         if with_adapt:
             st["adapt"] = live.engine.snapshot()
         return st
@@ -388,6 +394,30 @@ class StudioService:
                      "opening another runner or leaving this session unless the coach asks for that.")
         return " ".join(parts)
 
+    def _reflect(self, live: Live, state: dict, event: str, said: str, draft: str, extra: str = "") -> dict | None:
+        """PaceSense's model reflection on this turn, in the light of the whole session (None if offline)."""
+        from ..hud import loop
+        ai = live.hud.ai
+        if ai is None or not getattr(ai, "online", False):
+            return None
+        sheet = loop.fact_sheet(state, live.claims, event=event, said=said, draft=draft,
+                                coach_first_s=live.first_estimate_s, extra=extra)
+        try:
+            persona = live.engine.ctx.persona.archetype()
+        except Exception:  # noqa: BLE001 - the persona is optional colour for the reply
+            persona = {}
+        said_before = [str(m.get("content", "")) for m in live.hud.history if m.get("role") == "user"][-6:]
+        hedgy = sum(" ".join(said_before).casefold().count(h) for h in self._HEDGES) >= 3
+        who = ", ".join(x for x in (
+            persona.get("name") and f"works as {persona['name']}",
+            f"familiarity with this runner: {live.engine.ctx.session.condition}",
+            "speaks informally and thinks aloud; match that" if hedgy else "") if x)
+        reflection = loop.reflect(ai, sheet, style=live.hud.reply_style, persona=who, recent=live.reflections)
+        if reflection:
+            live.reflections.append(loop.spoken(reflection))
+            del live.reflections[:-6]
+        return reflection
+
     @staticmethod
     def _assistant_context(live: Live) -> str:
         """Ground free-form voice/chat turns in the active runner and any open adaptive question."""
@@ -482,6 +512,12 @@ class StudioService:
         lines.append(
             "Reasoning: every answer that states a judgement must say why in a few words, using a number from "
             "this context (\"because 2019 was 26 min slower than her other races\"). Never give a bare verdict.")
+        from ..hud.loop import ledger_lines
+        claims = ledger_lines(live.claims)
+        if claims:
+            lines.append("The coach's claims so far, and what the data or the hidden race said about each (refer "
+                         "back to them when it helps, and say when a new remark contradicts an earlier one): "
+                         + " ".join(claims))
         lines.append(StudioService._speaking_style(live))
         lines.append(
             "Acting on this session: you can change it only by calling set_race_weight, set_coach_estimate or "
@@ -1010,11 +1046,33 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
             live.last_card = card
             live.changes.extend({k: i.get(k) for k in ("race", "old", "new", "verdict", "cue")} for i in card["items"])
             del live.changes[:-30]
+            from ..hud.loop import record
+            record(live.claims, card)
         state = self.view(sid, live)
+        reflection = None
+        event = ("the coach changed race weights" if card and card.get("items")
+                 else "the hidden race was revealed, so each claim has been tested against it" if revealed
+                 else "the coach stated their own finish estimate" if (r.turn or {}).get("estimate_s") is not None
+                 else "")
+        if event and "assistant" not in r.used:
+            draft = r.reply
+            if revealed:
+                from ..hud.loop import closure
+                draft = " ".join(x for x in (r.reply, closure(live.claims)) if x)
+            reflection = self._reflect(live, state, event, text, draft)
+            if reflection:
+                from ..hud.loop import spoken
+                r.reply = spoken(reflection)
+                if card is not None:
+                    card["thinking"] = reflection["think"]
+            elif revealed and draft != r.reply:
+                r.reply = draft
         out: dict[str, Any] = {"reply": r.reply, "actions": r.actions, "card": card, "used": r.used,
                                "simulation": sim, "state": state, "turn": r.turn}
+        if reflection:
+            out["reflection"] = reflection
         top = (state.get("next_steps") or [None])[0]
-        if top and card and card.get("items"):
+        if top and card and card.get("items") and not (reflection and reflection.get("ask")):
             # After a change, suggest one thing to do next. It is spoken only the first time it is offered,
             # so the coach is not told the same thing after every change.
             first_time = live.guide_shown.get(top["key"], 0) == 0
@@ -1031,6 +1089,8 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                 "notes": turn.get("notes", []),
                 "used": r.used, "ui_only": "ui" in r.used and "steer" not in r.used, **(extra or {})}
         self._observe(sid, live, Event(kind, text, source, data), out)
+        if reflection and reflection.get("ask") and live.engine.pending and live.engine.pending_new:
+            out["reply"] = reflection["say"]           # PaceSense's own follow-up question goes instead: one question
         # AI-interpreted UI actions are confirmed by the browser only after the action succeeds.
         # Do not let the adaptive TTS speak the optimistic route reply before that confirmation.
         turn_changed = bool(turn) and (
@@ -1239,7 +1299,18 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
             if index >= len(s.steer.races):
                 raise ValidationError(f"race index {index} is out of range")
             turn = s.steer.manual(index, round(weight, 2)).to_dict()
-            out = {"card": s.feedback_card(turn), "state": self.view(sid, live)}
+            card = s.feedback_card(turn)
+            from ..hud.loop import record, spoken
+            if card.get("items"):
+                live.last_card = card
+                record(live.claims, card)
+            out: dict[str, Any] = {"card": card, "state": self.view(sid, live)}
+            if card.get("items"):
+                reflection = self._reflect(live, out["state"], "the coach dragged a race's slider by hand, without "
+                                           "saying why", "", s.feedback_text(turn))
+                if reflection:
+                    card["thinking"] = reflection["think"]
+                    out["reflection"], out["reply"] = reflection, spoken(reflection)
             return self._observe(sid, live, Event("slider", source="manual",
                                                   data={"applied": turn["applied"], "turn": turn["n"]}), out)
         return self._with(sid, run)
@@ -1281,6 +1352,15 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
             s.revealed = True
             st = self.view(sid, live)
             st["adapt"] = live.engine.process(self._reveal_event(live), st)
+            from ..hud.loop import closure, spoken
+            draft = closure(live.claims)
+            reflection = self._reflect(live, st, "the hidden race was revealed, so each claim has been tested "
+                                       "against it", "", draft)
+            st["loop_reply"] = spoken(reflection) if reflection else draft
+            if reflection:
+                st["reflection"] = reflection
+            if st["loop_reply"]:
+                s.remember_turn("reveal the real result", st["loop_reply"])
             return st
         return self._with(sid, run)
 

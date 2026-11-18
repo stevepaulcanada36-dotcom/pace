@@ -37,3 +37,14 @@ says whether the words came from the server provider or from the browser's speec
 
 The spoken reply is the answer to the coach. A follow-up question that a feedback loop has just raised is
 read after it; one that was already open stays on screen and is not read again.
+
+## The reasoning loop (`hud/loop.py`)
+
+After every change (spoken, typed or dragged), stated estimate and reveal, PaceSense makes one extra call to the
+assistant model to reflect on the session as a whole: the coach's claims so far (one per race change), what the
+runner's own times say about each, how the target and the coach's estimate have moved, and the coach's words. The
+model returns two or three reasoning steps (shown on the card as "How PaceSense reasoned"), a spoken reply in the
+coach's register, and one question or test to end on. Every sentence is checked against the fact sheet PaceSense
+wrote; a sentence quoting a number that is not on it is dropped, and if nothing survives the deterministic reply is
+used. When the hidden race is revealed each claim is tested on its own (the same session with only that race put
+back to an equal weight) and the coach hears which calls helped. Offline, nothing changes.

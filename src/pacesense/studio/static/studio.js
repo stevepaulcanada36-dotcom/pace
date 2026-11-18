@@ -479,6 +479,23 @@
       kn.categories.map((c) => h("span", { class: "chip neutral", text: `${c.name} ×${c.mentions}` }))) : null);
     section("Familiarity (RQ2)", a.familiarity);
     if (a.bias) section("Expertise or expectation?", a.bias);
+    const claims = st.claims || [];
+    const revealed = !!(st.holdout && st.holdout.revealed);
+    section("Your claims and what tested them", {
+      available: claims.length > 0,
+      text: !claims.length ? "Each change you make becomes a claim about the runner. PaceSense keeps them here and tests them when the hidden race is revealed."
+        : revealed ? "Each claim tested on its own: the same session with only that race put back to an equal weight."
+          : "Reveal the hidden race to see which of these calls helped." }, claims.length ? claimList(claims) : null);
+  }
+  /** The coach's claims, newest first, each with what tested it (the runner's own times, or the hidden race). */
+  function claimList(claims) {
+    const cls = { helped: "supported", backed: "supported", hurt: "against_data", questioned: "against_data", knowledge: "your_knowledge", neutral: "neutral", undone: "neutral" };
+    return h("ul", { class: "claims" }, claims.slice().reverse().map((c) => h("li", null,
+      h("div", { class: "claim-top" }, h("b", { text: c.race }),
+        h("span", { class: "wchange", text: `${c.direction} · ${c.old.toFixed(2)} → ${c.new.toFixed(2)}` }),
+        h("span", { class: `chip ${(VERDICT[cls[c.status]] || ["neutral"])[0]}`,
+          text: c.effect_pct != null && (c.status === "helped" || c.status === "hurt") ? `${c.status_text} (${Math.abs(c.effect_pct).toFixed(2)} pts)` : c.status_text })),
+      c.cue ? h("q", { text: c.cue }) : "")));
   }
   /** The four acceptance cases as positions on one time line: where you and the model started and ended. */
   function whoseViewChart(wv) {
@@ -661,8 +678,15 @@
         inlineSlider(it)));
     }
     const li = h("li", { class: "fcard" }, items);
+    if (card.thinking && card.thinking.length) {
+      // The model's own chain of reasoning about this turn in the light of the whole session; every number in
+      // it was checked against PaceSense's data before it was shown.
+      li.append(h("details", { class: "thinking", open: "" },
+        h("summary", null, h("span", { text: "How PaceSense reasoned" }), h("small", { class: "muted", text: " · AI, numbers checked against the data" })),
+        h("ol", null, card.thinking.map((line) => h("li", { text: line })))));
+    }
     if (card.reasoning && card.reasoning.length) {
-      li.append(h("details", { class: "why", open: "" }, h("summary", { text: "Why" }),
+      li.append(h("details", Object.assign({ class: "why" }, card.thinking && card.thinking.length ? {} : { open: "" }), h("summary", { text: card.thinking && card.thinking.length ? "The numbers" : "Why" }),
         h("ol", null, card.reasoning.map((line) => h("li", { text: line })))));
     }
     if (card.consider && card.consider.length) {
@@ -871,7 +895,7 @@
       } else if (a.type === "reveal") {
         outcome.success = !!(result.state && result.state.holdout && result.state.holdout.truth_s != null);
         if (outcome.success) focusPanel("#kpi-acc");
-        outcome.confirmation = "Revealed the hidden demo result.";
+        outcome.confirmation = (result.reply && result.reply.trim()) || "Revealed the hidden demo result.";
         outcome.message = "There is no hidden demo result to reveal in this session.";
       } else if (a.type === "refresh") {
         const turn = result.turn || {};
@@ -905,6 +929,7 @@
       app.changed = new Set([i]);
       render(r.state);
       if (it) { addSaid(`${it.race}: ${it.old.toFixed(2)} → ${it.new.toFixed(2)}`, "manual"); addCard(r.card); }
+      if (it && r.reply) addReply(r.reply);
       adapt(r.adapt);
       runSim();
     } catch (e) { toast(e.message, "error"); render(app.st); }
@@ -929,6 +954,7 @@
       const ho = st.holdout;
       addReply(`Her real ${ho.label} result was ${fmt.time(ho.truth_s)}. The prediction is ${ho.error_pct.toFixed(2)}% off; `
         + `with equal weights it was ${ho.equal_weights_error_pct.toFixed(2)}% off.`);
+      if (st.loop_reply) addReply(st.loop_reply);
       adapt(st.adapt);
     } catch (e) { toast(e.message, "error"); }
   }

@@ -542,6 +542,13 @@ input[type="range"].moving::-moz-range-thumb { box-shadow: 0 0 0 6px var(--accen
 .fcard .why { margin: 4px 12px 8px; font-size: 12.5px; color: var(--ink-2); }
 .fcard .why summary { cursor: pointer; font-weight: 600; color: var(--ink); }
 .fcard .why ol { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 2px; }
+.fcard .thinking { margin: 6px 12px 4px; padding: 8px 10px; border-left: 3px solid var(--accent, #3b82f6); background: color-mix(in srgb, var(--accent, #3b82f6) 7%, transparent); border-radius: 6px; font-size: 12.5px; color: var(--ink-2); }
+.fcard .thinking summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+.fcard .thinking ol { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 3px; }
+.claims { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
+.claims li { padding: 6px 8px; border: 1px solid var(--line, rgba(127,127,127,.25)); border-radius: 6px; font-size: 12.5px; }
+.claims .claim-top { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.claims q { display: block; margin-top: 3px; color: var(--ink-2); font-style: italic; }
 .next-step { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 12.5px; color: var(--ink-2); padding: 2px 0 6px; }
 .next-step .next-lbl { font-weight: 600; color: var(--accent-ink); }
 .next-step .next-why { flex-basis: 100%; }
