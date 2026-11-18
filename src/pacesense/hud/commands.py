@@ -207,10 +207,30 @@ _RAISE_AS_RACE = (
 )
 
 
+_HOURS = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6}
+_TENS = {"ten": 10, "fifteen": 15, "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50}
+_UNITS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9}
+_SPOKEN_TIME = re.compile(r"\b(two|three|four|five|six)[\s-]+(?:oh[\s-]+)?(ten|fifteen|twenty|thirty|forty|fifty)"
+                          r"(?:[\s-]+(one|two|three|four|five|six|seven|eight|nine))?(?:\s+minutes?)?\b", re.IGNORECASE)
+# "completed 350", "close to 3 50", "under 420": a finish time said as digits, after a word that introduces one.
+_DIGIT_TIME = re.compile(r"\b((?:complete[ds]?|finish(?:ed|es)?|run|ran|do|in|under|around|about|close to|by|"
+                         r"be|like|maybe|is)\s+)([2-6])\s?([0-5]\d)\b(?![:\d])", re.IGNORECASE)
+
+
+def spoken_times(text: str) -> str:
+    """Write finish times the way the parser reads them: "three twenty one" -> 3:21, "completed 350" -> 3:50."""
+    def words(m: re.Match) -> str:
+        mins = _TENS[m.group(2).casefold()] + (_UNITS[m.group(3).casefold()] if m.group(3) else 0)
+        return f"{_HOURS[m.group(1).casefold()]}:{mins:02d}"
+    text = _SPOKEN_TIME.sub(words, text)
+    return _DIGIT_TIME.sub(lambda m: f"{m.group(1)}{m.group(2)}:{m.group(3)}", text)
+
+
 def repair_mishearings(text: str) -> str:
-    """Fix the "race"/"raise" confusion where the grammar shows a race was meant ("which raise", "raise in 2019")."""
+    """Fix the "race"/"raise" confusion where the grammar shows a race was meant ("which raise", "raise in 2019"),
+    and write spoken finish times as times."""
     text = _RAISE_AS_RACE[0].sub(lambda m: f"{m.group(1)} race{m.group(2)}", text)
-    return _RAISE_AS_RACE[1].sub(lambda m: f"race{m.group(1)} {m.group(2)}", text)
+    return spoken_times(_RAISE_AS_RACE[1].sub(lambda m: f"race{m.group(1)} {m.group(2)}", text))
 
 
 # ---- "show me a graph" -------------------------------------------------------------------------

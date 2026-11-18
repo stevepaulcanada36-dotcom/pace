@@ -81,6 +81,7 @@ class Live:
     guide_shown: dict = field(default_factory=dict)   # how often each next step has been offered
     claims: list = field(default_factory=list)        # the coach's claims (one per race change), tested on reveal
     reflections: list = field(default_factory=list)   # PaceSense's recent reflections, so it does not repeat itself
+    side_talk: int = 0                                # consecutive sentences that were not for PaceSense
 
 
 class StudioService:
@@ -802,14 +803,14 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
     )
 
     @classmethod
-    def _familiarity_answer(cls, text: str, choices: list[dict]) -> dict | None:
+    def _familiarity_answer(cls, text: str, choices: list[dict], any_length: bool = False) -> dict | None:
         """"I've seen him once, maybe in 2013" answers "How well do you know this runner?" without the
         coach having to say a button's exact words. Returns None unless exactly one reading fits."""
         by_key = {(c.get("interview") or [None, None])[1]: c for c in choices
                   if (c.get("interview") or [None])[0] == "familiarity"}
         about_the_runner = re.search(r"\b(?:runner|athlete|person|him|her|he|she|them|guy|man|woman|lady)\b",
                                      text, re.IGNORECASE)
-        if not by_key or len(text.split()) > 30 or not about_the_runner:
+        if not by_key or (len(text.split()) > 30 and not any_length) or not about_the_runner:
             return None
         if cls._FAMILIARITY[1][1].search(text) and "some" in by_key:      # "seen him once" beats "not much"
             return by_key["some"]
@@ -892,6 +893,23 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
         out["voice_action_pending"] = False
         out["unheard"] = True
         return out
+
+    _SIDE_TALK_RE = re.compile(r"\bdidn'?t catch (?:a|any) question about the runner\b|\bnot (?:about|for) (?:the )?runner\b",
+                               re.IGNORECASE)
+
+    def _side_talk(self, sid: str, live: Live, text: str, source: str, voice: dict | None, out: dict) -> dict:
+        """The microphone is hearing a conversation that is not for PaceSense. Say so once, then wait quietly
+        instead of answering every sentence with the same line."""
+        live.side_talk += 1
+        if live.hud.history and live.hud.history[-2:] and live.hud.history[-2].get("content") == text:
+            del live.hud.history[-2:]                         # keep the side talk out of the conversation
+        if live.side_talk == 1:
+            reply = ("Sounds like you're talking to someone else, so I'll wait. Mention one of her races or ask me "
+                     "something when you're back.")
+            out.update(reply=reply, voice_action_pending=False)
+            out.setdefault("adapt", {})["speak"] = ""         # shown, not said over a conversation
+            return out
+        return self._unheard(sid, live, text, source, voice, reply="(side conversation: PaceSense is waiting)")
 
     def _guide(self, sid: str, live: Live, text: str) -> dict:
         """"Guide me", spoken or typed, starts the guided interview exactly like the button."""
@@ -982,7 +1000,11 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
             r = self._voice_route(text, source, live, voice_intent)
         elif source == "voice" and not chart_request(text):          # a chart request is one request
             ui_actions, _, remainder = ui_commands(text)
-            if len(ui_actions) > 1 or (ui_actions and remainder.strip()):
+            only_views = bool(ui_actions) and all(a.get("type") in ("focus", "open") for a in ui_actions)
+            if only_views:
+                # "Open the prediction. I hope she can do 3:20, what do you say?": open it and answer the rest.
+                r = route(text, s, source)
+            elif len(ui_actions) > 1 or (ui_actions and remainder.strip()):
                 r = Routed(reply="I heard more than one request. Which action should I do first?", used=["prompt"])
             elif ui_actions and ui_actions[0].get("type") == "simulate":
                 fallback_intent = self._fallback_voice_simulation(text, voice_signals)
@@ -1054,7 +1076,7 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                  else "the hidden race was revealed, so each claim has been tested against it" if revealed
                  else "the coach stated their own finish estimate" if (r.turn or {}).get("estimate_s") is not None
                  else "")
-        if event and "assistant" not in r.used:
+        if event and ("assistant" not in r.used or (card and card.get("items"))):
             draft = r.reply
             if revealed:
                 from ..hud.loop import closure
@@ -1194,6 +1216,10 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                 self._keep_fragment(live, said, waited + 1)
                 return self._unheard(sid, live, text, source, voice, reply="Go on, I'm listening.")
             out = answer(live, said)
+            if (self._SIDE_TALK_RE.search(str(out.get("reply", ""))) and not out.get("card")
+                    and not out.get("unheard")):
+                return self._side_talk(sid, live, said, source, voice, out)
+            live.side_talk = 0
             if "didn't catch" in str(out.get("reply", "")) and not out.get("unheard"):
                 # Not understood yet. Do not say so aloud over a coach who is still talking; keep the words
                 # in case the next sentence completes them.
@@ -1230,6 +1256,14 @@ Interpret the transcript, not assumptions. Use only one intent. A question about
                         return out
                 if c is not None:
                     return self._take_choice(sid, live, c, text, source, pend, voice)
+                known = self._familiarity_answer(text, choices, any_length=True)
+                if known is not None and known.get("interview"):
+                    # "I don't know this runner, but I've seen her 2013 race...": answer the open question and
+                    # still act on the rest of the sentence.
+                    self._interview(sid, live, known["interview"][0], known["interview"][1])
+                    out = self._run_command(sid, live, text, source, extra={"voice": voice} if voice else None)
+                    out["reply"] = f"Noted: {str(known.get('label') or '').lower()}. {out.get('reply') or ''}".strip()
+                    return out
             if source == "voice" and self._not_for_pacesense(text, live):
                 return self._unheard(sid, live, text, source, voice)
             # A bare "yes" goes to the assistant only if its last reply asked something; otherwise there

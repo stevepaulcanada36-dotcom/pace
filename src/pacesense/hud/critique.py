@@ -19,7 +19,8 @@ import re
 HEDGE_RE = re.compile(r"\b(?:maybe|i hope|hopefully|i guess|i think|i feel|probably|perhaps|not sure|kind of|"
                       r"sort of|might|could be)\b", re.IGNORECASE)
 FACT_RE = re.compile(r"\b(?:injur\w*|sick|ill|flu|hot|heat|wind\w*|rain\w*|fell|fall|cramp\w*|stomach|"
-                     r"pregnan\w*|course|hill\w*|told me|i coach|i saw|i watched|was there|trained|training)\b",
+                     r"pregnan\w*|course|hill\w*|told me|i coach|i saw|i watched|i'?ve seen|i have seen|i'?ve watched|saw (?:her|him|it)|"
+                     r"was there|trained|training)\b",
                      re.IGNORECASE)
 
 

@@ -852,7 +852,9 @@
           else if (a.panel === "analysis") selectTab("tab-insights");
           else if (a.panel === "session") selectTab("tab-session");
           outcome.success = focusPanel(PANEL[a.panel]);
-          outcome.confirmation = `Opened the ${a.panel} panel.`;
+          // Say the answer that came with the panel ("The prediction for her next marathon is …"), not only
+          // that it opened.
+          outcome.confirmation = (result.reply && result.reply.trim()) || `Opened the ${a.panel} panel.`;
         }
       } else if (a.type === "close" && (PANEL[a.panel] || a.panel === "log" || a.panel === "record")) {
         if (a.panel === "log" || a.panel === "record") {

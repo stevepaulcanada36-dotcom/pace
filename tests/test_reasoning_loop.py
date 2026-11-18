@@ -119,3 +119,67 @@ class ReflectionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LiveSessionFixesTests(unittest.TestCase):
+    """From a live session on 18 Nov."""
+
+    def test_a_change_made_by_the_assistant_is_reflected_on_too(self):
+        service, sid, live = open_session()
+        settled(service, sid, live)
+        live.hud.ai = FakeAI(REFLECTION)
+        from pacesense.hud.commands import Routed
+
+        r = live.hud.steer.races[0]
+        turn = live.hud.steer.manual(0, 0.8).to_dict()
+        import pacesense.studio.service as svc
+        original = svc.route
+        svc.route = lambda text, s, source: Routed(reply="template", turn={**turn, "said": text},
+                                                   actions=[{"type": "refresh"}], used=["assistant", "steer"])
+        try:
+            out = service.command(sid, f"make {r['year']} a bit less", source="typed")
+        finally:
+            svc.route = original
+        self.assertIn("reflection", out)
+        self.assertTrue(out["card"]["thinking"])
+
+    def test_spoken_times(self):
+        from pacesense.hud.commands import spoken_times
+        self.assertEqual(spoken_times("I hope she completes it by three twenty minutes"), "I hope she completes it by 3:20")
+        self.assertEqual(spoken_times("the prediction will be like three twenty one"), "the prediction will be like 3:21")
+        self.assertEqual(spoken_times("close to 350"), "close to 3:50")
+        self.assertEqual(spoken_times("in 2013 she ran well"), "in 2013 she ran well")
+
+    def test_seeing_a_race_is_a_reason_not_a_guess(self):
+        from pacesense.hud.critique import FACT_RE
+        self.assertTrue(FACT_RE.search("I know I've seen this race in 2013"))
+
+    def test_side_conversation_is_named_once_then_waited_out(self):
+        service, sid, live = open_session()
+        settled(service, sid, live)
+        import pacesense.studio.service as svc
+        from pacesense.hud.commands import Routed
+        original = svc.route
+        svc.route = lambda text, s, source: Routed(reply="I didn't catch a question about the runner there.",
+                                                   used=["assistant"])
+        try:
+            first = service.command(sid, "how was the quiz today, were you able to answer it", source="voice")
+            second = service.command(sid, "we still have two more classes this term right", source="voice")
+        finally:
+            svc.route = original
+        self.assertIn("talking to someone else", first["reply"])
+        self.assertEqual(second["adapt"]["speak"], "")
+        self.assertTrue(second.get("unheard"))
+        self.assertFalse(any("quiz" in str(m.get("content")) for m in live.hud.history))
+
+    def test_a_long_sentence_answers_the_familiarity_question_and_still_counts(self):
+        service, sid, live = open_session()
+        pend = live.engine.pending
+        self.assertTrue(pend)
+        r = live.hud.steer.races[0]
+        out = service.command(sid, "So, I think I'm not much aware of this runner, like, I don't know her at all. "
+                                   f"But I know I've seen the {r['event']} race, which is in {r['year']}, like she was "
+                                   "pretty much good in this race, I would count it a lot more honestly.",
+                              source="typed")
+        self.assertTrue(out["reply"].startswith("Noted"))
+        self.assertEqual(live.engine.ctx.session.condition, "unknown")

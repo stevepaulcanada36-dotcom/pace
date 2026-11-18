@@ -463,7 +463,7 @@ class TurnTakingTests(unittest.TestCase):
             "I didn't catch a question about the runner there.", [], Usage(), 0.0, model)
         out = service.command(sid, "one case alone which happened a while back somewhere", source="voice")
         client.chat = original
-        self.assertIn("didn't catch", out["reply"])
+        self.assertIn("talking to someone else", out["reply"])
         self.assertEqual(out["adapt"]["speak"], "")
 
 
